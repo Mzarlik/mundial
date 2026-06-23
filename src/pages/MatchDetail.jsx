@@ -27,7 +27,7 @@ export default function MatchDetail() {
       <p style={{color:'var(--text-secondary)',fontSize:'0.88rem',marginBottom:'1rem'}}>Comparación directa de las probabilidades asignadas por cada modelo al resultado del partido.</p>
       <GraphImage src={match.graphs.Resumen} alt={`Resumen comparativo ${match.home} vs ${match.away}`} />
     </div>
-    <div className="graph-section"><h2>Predicción — modelo estadístico (Dixon-Coles)</h2><GraphImage src={match.graphs.mcmc} alt={`Dixon-Coles ${match.home} vs ${match.away}`} /></div>
+    <div className="graph-section"><h2>Predicción — Modelo Estadístico (MCMC Bayesiano)</h2><GraphImage src={match.graphs.mcmc} alt={`MCMC Bayesiano ${match.home} vs ${match.away}`} /></div>
     <div className="graph-section"><h2>Predicción — XGBoost + ratings</h2><GraphImage src={match.graphs.xgboost} alt={`XGBoost ${match.home} vs ${match.away}`} /></div>
     <div className="graph-section"><h2>Accuracy comparativo</h2><p style={{color:'var(--text-secondary)',fontSize:'0.88rem',marginBottom:'1rem'}}>Rendimiento fuera de muestra sobre cientos de partidos que el modelo nunca vio.</p><GraphImage src={match.graphs.accuracy} alt={`Accuracy ${match.home} vs ${match.away}`} /></div>
     <div style={{textAlign:'center',margin:'2.5rem 0'}}>

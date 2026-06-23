@@ -23,9 +23,16 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-:: Si esta instalado, instalar modulos y ejecutar
+:: Si esta instalado, verificar si las dependencias estan completas
+set install_needed=0
 if not exist node_modules (
-    echo [INFO] Carpeta node_modules no encontrada. Instalando dependencias de npm...
+    set install_needed=1
+) else if not exist node_modules\vite (
+    set install_needed=1
+)
+
+if !install_needed! equ 1 (
+    echo [INFO] Dependencias incompletas o no encontradas. Ejecutando npm install...
     call npm install
     if !errorlevel! neq 0 (
         echo [ERROR] Error al instalar dependencias con npm.

@@ -17,12 +17,12 @@ warnings.filterwarnings('ignore')
 sns.set_style('whitegrid')
 
 # Configuración global
-DESDE = pd.Timestamp('2018-01-01')    # ventana Dixon-Coles / XGBoost
-DESDE_BAYES = pd.Timestamp('2022-09-01') # ventana MCMC
+DESDE = pd.Timestamp('2018-01-01')       # ventana Dixon-Coles / XGBoost
+DESDE_BAYES = pd.Timestamp('2018-01-01') # Ampliado para capturar el ciclo mundialista anterior y evitar fallbacks
 VAL_CUTOFF = pd.Timestamp('2025-09-01')  # corte de validación
 MATCH_DATE = pd.Timestamp('2026-06-22')  # fecha base de predicción
-HALF_LIFE = 547
-MIN_PARTIDOS_BAYES = 10                  # reducido para incluir selecciones con menos partidos
+HALF_LIFE = 547                          # 1.5 años de vida media para decaimiento exponencial (Dixon-Coles)
+MIN_PARTIDOS_BAYES = 15                  # Aumentado a 15 porque la ventana de tiempo ahora es más amplia
 MAXG = 7
 
 # Colores premium consistentes
@@ -234,7 +234,7 @@ def fit_mcmc(train, draws=1000, tune=1000, seed=1):
         pm.Poisson('gh', pm.math.exp(base + home*lm + ac[hi] - dc_[ai]), observed=hs)
         pm.Poisson('ga', pm.math.exp(base + ac[ai] - dc_[hi]), observed=as_)
         
-        trace = pm.sample(draws, tune=tune, chains=2, cores=2, target_accept=0.9,
+        trace = pm.sample(draws, tune=tune, chains=4, cores=4, target_accept=0.95,
                           progressbar=False, random_seed=seed)
     return {'trace': trace, 'idxb': idxb, 'keep': keep}
 
@@ -288,7 +288,22 @@ def get_form_at_date(team, date, form_by_team):
         return (1.0, 1.0, 1.0)
     return (history[idx-1][1], history[idx-1][2], history[idx-1][3])
 
-def make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos):
+def get_h2h_at_date(h, a, date, h2h_dict):
+    pair = tuple(sorted([h, a]))
+    if pair not in h2h_dict:
+        return 0.0
+    history = h2h_dict[pair]
+    dates = [x[0] for x in history]
+    idx = bisect.bisect_left(dates, date)
+    if idx == 0:
+        return 0.0
+    recent = history[max(0, idx-5):idx]
+    gd = sum([x[1] for x in recent]) / len(recent)
+    if h != pair[0]:
+        gd = -gd
+    return gd
+
+def make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp):
     idx = dcm['idx']
     if h not in idx or a not in idx:
         return None
@@ -304,13 +319,15 @@ def make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos):
     elo_a = get_elo_at_date(a, date, elo_by_team, final_elos)
     elo_diff = elo_h - elo_a
     
+    h2h_gd = get_h2h_at_date(h, a, date, h2h_dict)
+    
     return [
         lam, mu, att[idx[h]] - att[idx[a]], dfn[idx[h]] - dfn[idx[a]], float(host),
         fh[0], fh[1], fh[2], fa[0], fa[1], fa[2],
-        elo_h, elo_a, elo_diff
+        elo_h, elo_a, elo_diff, h2h_gd, float(is_comp)
     ]
 
-def build_dataset(dcm, fecha_max, df_all, form_by_team, elo_by_team, final_elos):
+def build_dataset(dcm, fecha_max, df_all, form_by_team, elo_by_team, final_elos, h2h_dict):
     known = set(dcm['teams'])
     rows, yh, ya = [], [], []
     sub = df_all[(df_all.date >= DESDE) & (df_all.date < fecha_max)]
@@ -318,7 +335,8 @@ def build_dataset(dcm, fecha_max, df_all, form_by_team, elo_by_team, final_elos)
         if r.home_team not in known or r.away_team not in known:
             continue
         host = 1.0 if r.neutral == False else 0.0
-        f = make_features(dcm, r.home_team, r.away_team, host, r.date, form_by_team, elo_by_team, final_elos)
+        is_comp = 0.0 if 'friendly' in str(r.tournament).lower() else 1.0
+        f = make_features(dcm, r.home_team, r.away_team, host, r.date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp)
         if f is None or any(pd.isna(f)):
             continue
         rows.append(f)
@@ -327,12 +345,14 @@ def build_dataset(dcm, fecha_max, df_all, form_by_team, elo_by_team, final_elos)
     return np.array(rows), np.array(yh), np.array(ya)
 
 def train_xgb_goals(X, yh, ya):
+    # Ajuste de hiperparámetros: Se añade reg_lambda y min_child_weight para mayor robustez
     params = dict(objective='count:poisson', n_estimators=300, max_depth=4,
-                  learning_rate=0.05, subsample=0.8, colsample_bytree=0.8, random_state=42)
+                  learning_rate=0.05, subsample=0.8, colsample_bytree=0.8, 
+                  min_child_weight=2, reg_lambda=1.5, random_state=42)
     return xgb.XGBRegressor(**params).fit(X, yh), xgb.XGBRegressor(**params).fit(X, ya)
 
-def xgb_matrix(rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team, final_elos):
-    f = make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos)
+def xgb_matrix(rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp):
+    f = make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp)
     if f is None:
         M = np.outer(poisson.pmf(range(MAXG), 1.2), poisson.pmf(range(MAXG), 1.2))
         return M / M.sum(), 1.2, 1.2
@@ -482,23 +502,34 @@ if __name__ == '__main__':
     for team in form_by_team:
         form_by_team[team].sort(key=lambda x: x[0])
         
+    print("[INFO] Calculando historial Head-to-Head (H2H)...")
+    h2h_dict = {}
+    for r in df_all.itertuples():
+        pair = tuple(sorted([r.home_team, r.away_team]))
+        if pair not in h2h_dict:
+            h2h_dict[pair] = []
+        gd = r.home_score - r.away_score if r.home_team == pair[0] else r.away_score - r.home_score
+        h2h_dict[pair].append((r.date, gd))
+    for pair in h2h_dict:
+        h2h_dict[pair].sort(key=lambda x: x[0])
+        
     # 4. Ajustar modelos GLOBALES finales
     print("\n[INFO] Ajustando Dixon-Coles global...")
     dc_final = fit_dixon_coles(df_all[(df_all.date >= DESDE) & (df_all.date < MATCH_DATE)], MATCH_DATE)
     
-    print("[INFO] Muestreando MCMC Bayesiano global (PyMC)... Esto puede tardar ~1-2 min...")
-    mc_final = fit_mcmc(df_all[(df_all.date >= DESDE_BAYES) & (df_all.date < MATCH_DATE)], draws=1000, tune=1000)
+    print("[INFO] Muestreando MCMC Bayesiano global (PyMC)... Esto puede tardar ~2-4 min...")
+    mc_final = fit_mcmc(df_all[(df_all.date >= DESDE_BAYES) & (df_all.date < MATCH_DATE)], draws=3000, tune=3000)
     
     print("[INFO] Entrenando regresores XGBoost globales...")
-    X_f, yh_f, ya_f = build_dataset(dc_final, MATCH_DATE, df_all, form_by_team, elo_by_team, final_elos)
+    X_f, yh_f, ya_f = build_dataset(dc_final, MATCH_DATE, df_all, form_by_team, elo_by_team, final_elos, h2h_dict)
     reg_home, reg_away = train_xgb_goals(X_f, yh_f, ya_f)
     print(f"[INFO] XGBoost entrenado con {len(X_f)} partidos.")
     
     # 5. Ajustar modelos GLOBALES para validación (Accuracy)
     print("\n[INFO] Ejecutando simulación de validación para gráficos de Accuracy...")
     dc_val = fit_dixon_coles(df_all[(df_all.date >= DESDE) & (df_all.date < VAL_CUTOFF)], VAL_CUTOFF)
-    mc_val = fit_mcmc(df_all[(df_all.date >= DESDE_BAYES) & (df_all.date < VAL_CUTOFF)], draws=600, tune=600)
-    X_v, yh_v, ya_v = build_dataset(dc_val, VAL_CUTOFF, df_all, form_by_team, elo_by_team, final_elos)
+    mc_val = fit_mcmc(df_all[(df_all.date >= DESDE_BAYES) & (df_all.date < VAL_CUTOFF)], draws=2000, tune=2000)
+    X_v, yh_v, ya_v = build_dataset(dc_val, VAL_CUTOFF, df_all, form_by_team, elo_by_team, final_elos, h2h_dict)
     reg_home_val, reg_away_val = train_xgb_goals(X_v, yh_v, ya_v)
     
     # Evaluar sobre conjunto de prueba posterior a VAL_CUTOFF
@@ -524,8 +555,9 @@ if __name__ == '__main__':
         res['MCMC Bayesiano'][1] += rps_1x2(p_mc, o)
         
         # XGB
+        is_comp_val = 0.0 if 'friendly' in str(r.tournament).lower() else 1.0
         p_xg = matrix_to_1x2(xgb_matrix(reg_home_val, reg_away_val, dc_val, r.home_team, r.away_team, host_val, r.date,
-                                       form_by_team, elo_by_team, final_elos)[0])
+                                       form_by_team, elo_by_team, final_elos, h2h_dict, is_comp_val)[0])
         res['XGBoost'][0] += int(np.argmax(p_xg) == o)
         res['XGBoost'][1] += rps_1x2(p_xg, o)
         
@@ -583,12 +615,13 @@ if __name__ == '__main__':
         # En el mundial todos juegan en sede NEUTRAL (neutral=True)
         # por ende host = 0.0
         host = 0.0
+        is_comp = 1.0
         
         # Obtener matrices de predicción
         M_dc = dc_matrix(dc_final, h, a, host)
         M_mc = mcmc_matrix_mean(mc_final, h, a, host, dc_final)
         M_xgb, lh_xgb, la_xgb = xgb_matrix(reg_home, reg_away, dc_final, h, a, host, MATCH_DATE,
-                                          form_by_team, elo_by_team, final_elos)
+                                          form_by_team, elo_by_team, final_elos, h2h_dict, is_comp)
         
         # Dataframes ordenados para top 10
         top_mc = build_top_df(M_mc, h, a)

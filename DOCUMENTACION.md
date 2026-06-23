@@ -114,3 +114,24 @@ Por cada partido, se actualizan automáticamente 4 archivos de imagen dentro de 
 > [!WARNING]
 > El fútbol posee una **aleatoriedad irreducible**. Ningún modelo estadístico o de Machine Learning puede predecir con absoluta certeza un resultado debido a variables no medibles (tarjetas rojas, fallos arbitrales, lesiones de último minuto, estado anímico).
 > Estos modelos alcanzan una precisión típica del **55-60%** en la predicción del resultado (1X2) y menos del **20%** en el marcador exacto. Utiliza esta herramienta con fines estrictamente académicos.
+
+---
+
+## Solución de Problemas (Troubleshooting)
+
+### 1. Error: Node.js/NPM no se reconoce (después de instalarlo)
+* **Síntoma**: Al ejecutar `run_frontend.bat` sale el aviso de que Node no está instalado, aunque winget haya completado la instalación con éxito.
+* **Causa**: Tu terminal o tu editor (VS Code) se abrieron antes de instalar Node, por lo que tienen variables de entorno desactualizadas.
+* **Solución**: Cierra por completo todas las ventanas de VS Code y vuelve a abrirlo. Alternativamente, puedes forzar la recarga del Path en PowerShell ejecutando:
+  ```powershell
+  $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+  ```
+
+### 2. Error: "Cannot find module ..." o pantallas rojas de Vite en el navegador
+* **Síntoma**: El servidor web arranca pero el navegador muestra un error como `Cannot find module 'caniuse-lite/...'` o fallos relativos a la carpeta `node_modules`.
+* **Causa**: La carpeta `node_modules` se creó o clonó con datos corruptos o incompletos.
+* **Solución**: Ejecuta una limpieza e instalación limpia desde tu consola de PowerShell:
+  ```powershell
+  Remove-Item -Recurse -Force node_modules, package-lock.json ; npm install
+  ```
+  Una vez finalice la reinstalación de paquetes, vuelve a ejecutar `.\run_frontend.bat`.

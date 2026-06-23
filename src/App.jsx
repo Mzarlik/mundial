@@ -6,7 +6,6 @@ import Home from './pages/Home';
 import HowToTest from './pages/HowToTest';
 import DayResults from './pages/DayResults';
 import MatchDetail from './pages/MatchDetail';
-import Support from './pages/Support';
 export default function App() {
   const [accepted, setAccepted] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -22,7 +21,6 @@ export default function App() {
           <Route path="/como-probar" element={<HowToTest />} />
           <Route path="/resultados/:dayId" element={<DayResults />} />
           <Route path="/partido/:matchId" element={<MatchDetail />} />
-          <Route path="/soporte" element={<Support />} />
         </Routes>
       </main>
     </div>
