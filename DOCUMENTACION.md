@@ -23,20 +23,39 @@ Los archivos principales de datos consumidos son:
 
 ---
 
-## Ejecución en Un Solo Clic (Recomendado)
+## Ejecución de Predicciones y Gráficas
 
-Hemos creado un script unificado que inicializa el entorno de Python, ejecuta los modelos predictivos, genera todas las gráficas y luego levanta la aplicación React abriéndola en tu navegador automáticamente:
+Para entrenar los modelos de Machine Learning (Dixon-Coles, MCMC Bayesiano y XGBoost) y generar todas las gráficas estadísticas de la fase de grupos:
 
-* **Opción A (Doble Clic - La más fácil)**:
-  Simplemente busca el archivo `run_all.bat` en tu explorador de archivos de Windows y dale doble clic.
+* **Opción A (Doble Clic)**:
+  Busca el archivo `run_all.bat` en tu explorador de archivos y dale doble clic.
 * **Opción B (Desde Terminal / Consola)**:
-  - Si usas **PowerShell** (la terminal azul por defecto en VS Code / Windows), debes anteponer `.\` para ejecutar archivos locales:
+  - Si usas **PowerShell**:
     ```powershell
     .\run_all.bat
     ```
-  - Si usas el **Símbolo del Sistema (CMD)** clásico:
+  - Si usas el **Símbolo del Sistema (CMD)**:
     ```cmd
     run_all.bat
+    ```
+  *Al finalizar con éxito en unos segundos, la ventana se cerrará o volverá a tu prompt, indicándote que todas las gráficas en `public/graphs/` están al día.*
+
+---
+
+## Levantamiento de la Interfaz Web (React)
+
+Una vez generadas las gráficas, puedes levantar la página web de forma independiente para visualizar los resultados:
+
+* **Opción A (Doble Clic)**:
+  Busca el archivo `run_frontend.bat` en tu explorador de archivos y dale doble clic.
+* **Opción B (Desde Terminal / Consola)**:
+  - En **PowerShell**:
+    ```powershell
+    .\run_frontend.bat
+    ```
+  - En **CMD**:
+    ```cmd
+    run_frontend.bat
     ```
 
 ---
