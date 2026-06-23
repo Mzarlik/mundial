@@ -1,0 +1,627 @@
+import os
+import re
+import bisect
+import warnings
+import time
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import seaborn as sns
+from scipy.stats import poisson
+from scipy.optimize import minimize
+import pymc as pm
+import xgboost as xgb
+
+warnings.filterwarnings('ignore')
+sns.set_style('whitegrid')
+
+# Configuración global
+DESDE = pd.Timestamp('2018-01-01')    # ventana Dixon-Coles / XGBoost
+DESDE_BAYES = pd.Timestamp('2022-09-01') # ventana MCMC
+VAL_CUTOFF = pd.Timestamp('2025-09-01')  # corte de validación
+MATCH_DATE = pd.Timestamp('2026-06-22')  # fecha base de predicción
+HALF_LIFE = 547
+MIN_PARTIDOS_BAYES = 10                  # reducido para incluir selecciones con menos partidos
+MAXG = 7
+
+# Colores premium consistentes
+C_HOME = '#1d4ed8'  # Azul rey
+C_DRAW = '#94a3b8'  # Gris pizarra
+C_AWAY = '#b91c1c'  # Rojo oscuro
+
+def resultado_real(hs, as_):
+    return 0 if hs > as_ else (1 if hs == as_ else 2)
+
+def rps_1x2(p, o):
+    e = [0., 0., 0.]
+    e[o] = 1.
+    cp = ce = s = 0.
+    for k in range(2):
+        cp += p[k]
+        ce += e[k]
+        s += (cp - ce) ** 2
+    return s / 2
+
+# --- PARSEO DE PARTIDOS DESDE JS ---
+def parse_matches(js_path):
+    if not os.path.exists(js_path):
+        print(f"[ERROR] No se encontró el archivo de configuración en {js_path}")
+        return []
+    
+    with open(js_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+        
+    start = content.find("export const MATCHES = [")
+    if start == -1:
+        return []
+    end = content.find("];", start)
+    matches_block = content[start:end]
+    
+    # Dividir por "}," para obtener cada bloque de objeto
+    match_objs = matches_block.split("},")
+    matches = []
+    for obj_str in match_objs:
+        if 'id:' not in obj_str:
+            continue
+        # Limpiar saltos de línea para facilitar regex
+        obj_str = obj_str.replace('\n', ' ').replace('\r', ' ')
+        
+        match_id = re.search(r"id\s*:\s*'([^']*)'", obj_str)
+        day = re.search(r"day\s*:\s*'([^']*)'", obj_str)
+        home = re.search(r"home\s*:\s*'([^']*)'", obj_str)
+        away = re.search(r"away\s*:\s*'([^']*)'", obj_str)
+        home_code = re.search(r"homeCode\s*:\s*'([^']*)'", obj_str)
+        away_code = re.search(r"awayCode\s*:\s*'([^']*)'", obj_str)
+        
+        mcmc_path = re.search(r"mcmc\s*:\s*'([^']*)'", obj_str)
+        xgb_path = re.search(r"xgboost\s*:\s*'([^']*)'", obj_str)
+        acc_path = re.search(r"accuracy\s*:\s*'([^']*)'", obj_str)
+        res_path = re.search(r"Resumen\s*:\s*'([^']*)'", obj_str)
+        
+        if match_id and day and home and away:
+            matches.append({
+                'id': match_id.group(1),
+                'day': day.group(1),
+                'home': home.group(1),
+                'away': away.group(1),
+                'homeCode': home_code.group(1) if home_code else 'default',
+                'awayCode': away_code.group(1) if away_code else 'default',
+                'mcmc_file': mcmc_path.group(1).split('/')[-1] if mcmc_path else f"{match_id.group(1)}_mcmc.png",
+                'xgb_file': xgb_path.group(1).split('/')[-1] if xgb_path else f"{match_id.group(1)}_xgboost.png",
+                'accuracy_file': acc_path.group(1).split('/')[-1] if acc_path else f"{match_id.group(1)}_accuracy.png",
+                'resumen_file': res_path.group(1).split('/')[-1] if res_path else f"{match_id.group(1)}_resumen.png",
+            })
+    return matches
+
+# --- CÁLCULO ELO DINÁMICO ---
+def compute_elo_ratings(df):
+    print("[INFO] Calculando ratings ELO históricos...")
+    df = df.sort_values('date').reset_index(drop=True)
+    elos = {}
+    elo_history = []
+    elo_by_team = {}
+    
+    for row in df.itertuples():
+        h = row.home_team
+        a = row.away_team
+        date = row.date
+        
+        if h not in elos: elos[h] = 1500.0
+        if a not in elos: elos[a] = 1500.0
+        
+        elo_h = elos[h]
+        elo_a = elos[a]
+        
+        elo_history.append((row.Index, elo_h, elo_a))
+        
+        # Diferencia de rating con ventaja de localía si no es neutral
+        dr = elo_h - elo_a
+        if not row.neutral:
+            dr += 100.0
+            
+        we_h = 1.0 / (10.0 ** (-dr / 400.0) + 1.0)
+        we_a = 1.0 - we_h
+        
+        # Resultado real
+        if row.home_score > row.away_score:
+            w_h, w_a = 1.0, 0.0
+        elif row.home_score == row.away_score:
+            w_h, w_a = 0.5, 0.5
+        else:
+            w_h, w_a = 0.0, 1.0
+            
+        # Importancia del torneo (K-factor)
+        tournament = str(row.tournament).lower()
+        if 'world cup' in tournament:
+            K = 60
+        elif 'cup' in tournament or 'championship' in tournament or 'nations' in tournament:
+            K = 40
+        else:
+            K = 20
+            
+        new_elo_h = elo_h + K * (w_h - we_h)
+        new_elo_a = elo_a + K * (w_a - we_a)
+        
+        elos[h] = new_elo_h
+        elos[a] = new_elo_a
+        
+        if h not in elo_by_team: elo_by_team[h] = []
+        if a not in elo_by_team: elo_by_team[a] = []
+        elo_by_team[h].append((date, new_elo_h))
+        elo_by_team[a].append((date, new_elo_a))
+        
+    elo_df = pd.DataFrame(elo_history, columns=['index', 'home_elo', 'away_elo']).set_index('index')
+    df = df.join(elo_df)
+    
+    # Ordenar historial para búsquedas rápidas con bisect
+    for team in elo_by_team:
+        elo_by_team[team].sort(key=lambda x: x[0])
+        
+    return df, elo_by_team, elos
+
+def get_elo_at_date(team, date, elo_by_team, final_elos):
+    if team not in elo_by_team:
+        return 1500.0
+    history = elo_by_team[team]
+    dates = [x[0] for x in history]
+    idx = bisect.bisect_left(dates, date)
+    if idx == 0:
+        return 1500.0
+    return history[idx-1][1]
+
+# --- MODELO DIXON-COLES ---
+def fit_dixon_coles(train, cutoff, half_life=HALF_LIFE):
+    train = train.copy()
+    train['w'] = 0.5 ** ((cutoff - train['date']).dt.days / half_life)
+    teams = sorted(set(train['home_team']) | set(train['away_team']))
+    idx = {t:i for i,t in enumerate(teams)}; n = len(teams)
+    hi = train['home_team'].map(idx).values; ai = train['away_team'].map(idx).values
+    hs = train['home_score'].values; as_ = train['away_score'].values; w = train['w'].values
+    lm = (train['neutral'] == False).values.astype(float)
+    
+    def tau(x, y, l, m, r):
+        t = np.ones_like(l)
+        a = (x==0)&(y==0); t[a] = 1 - l[a]*m[a]*r
+        a = (x==0)&(y==1); t[a] = 1 + l[a]*r
+        a = (x==1)&(y==0); t[a] = 1 + m[a]*r
+        a = (x==1)&(y==1); t[a] = 1 - r
+        return t
+        
+    def nll(p):
+        at = p[:n] - p[:n].mean(); dn = p[n:2*n]; h = p[2*n]; r = p[2*n+1]
+        l = np.exp(at[hi] - dn[ai] + h*lm); m = np.exp(at[ai] - dn[hi])
+        t = np.clip(tau(hs, as_, l, m, r), 1e-10, None)
+        return -(w * (np.log(t) + poisson.logpmf(hs, l) + poisson.logpmf(as_, m))).sum()
+        
+    r = minimize(nll, np.concatenate([np.zeros(n), np.zeros(n), [.25, -.05]]), method='L-BFGS-B')
+    at = r.x[:n] - r.x[:n].mean()
+    return {'att': at, 'dfn': r.x[n:2*n], 'home': r.x[2*n], 'rho': r.x[2*n+1], 'idx': idx, 'teams': teams}
+
+def dc_matrix(dcm, h, a, host):
+    idx = dcm['idx']
+    if h not in idx or a not in idx:
+        # Fallback si el equipo no está en Dixon-Coles
+        M = np.outer(poisson.pmf(range(MAXG), 1.2), poisson.pmf(range(MAXG), 1.2))
+        return M / M.sum()
+        
+    att, dfn, home, rho = dcm['att'], dcm['dfn'], dcm['home'], dcm['rho']
+    l = np.exp(att[idx[h]] - dfn[idx[a]] + (home if host else 0))
+    m = np.exp(att[idx[a]] - dfn[idx[h]])
+    M = np.outer(poisson.pmf(range(MAXG), l), poisson.pmf(range(MAXG), m))
+    M[0,0] *= 1 - l*m*rho; M[0,1] *= 1 + l*rho; M[1,0] *= 1 + m*rho; M[1,1] *= 1 - rho
+    return M / M.sum()
+
+def matrix_to_1x2(M):
+    return [np.tril(M, -1).sum(), np.trace(M), np.triu(M, 1).sum()]
+
+# --- MODELO MCMC BAYESIANO ---
+def fit_mcmc(train, draws=1000, tune=1000, seed=1):
+    cnt = pd.concat([train.home_team, train.away_team]).value_counts()
+    keep = set(cnt[cnt >= MIN_PARTIDOS_BAYES].index)
+    tb = train[train.home_team.isin(keep) & train.away_team.isin(keep)]
+    teams = sorted(keep); idxb = {t:i for i,t in enumerate(teams)}; n = len(teams)
+    hi = tb.home_team.map(idxb).values; ai = tb.away_team.map(idxb).values
+    hs = tb.home_score.values; as_ = tb.away_score.values
+    lm = (tb.neutral == False).values.astype(float)
+    
+    with pm.Model():
+        sa = pm.HalfNormal('sa', 1.0); sd = pm.HalfNormal('sd', 1.0)
+        att = pm.Normal('att', 0, sa, shape=n); dfn = pm.Normal('dfn', 0, sd, shape=n)
+        home = pm.Normal('home', 0.25, 0.5); base = pm.Normal('base', 0, 1)
+        ac = att - att.mean(); dc_ = dfn - dfn.mean()
+        
+        pm.Poisson('gh', pm.math.exp(base + home*lm + ac[hi] - dc_[ai]), observed=hs)
+        pm.Poisson('ga', pm.math.exp(base + ac[ai] - dc_[hi]), observed=as_)
+        
+        trace = pm.sample(draws, tune=tune, chains=2, cores=2, target_accept=0.9,
+                          progressbar=False, random_seed=seed)
+    return {'trace': trace, 'idxb': idxb, 'keep': keep}
+
+def mcmc_matrix_mean(mc, h, a, host, dc_model):
+    post = mc['trace'].posterior
+    idxb = mc['idxb']
+    
+    am = post['att'].mean(('chain','draw')).values
+    am -= am.mean()
+    dm = post['dfn'].mean(('chain','draw')).values
+    dm -= dm.mean()
+    hm = float(post['home'].mean())
+    bm = float(post['base'].mean())
+    
+    # Fallback si el equipo no está en MCMC
+    if h in idxb:
+        att_h = am[idxb[h]]
+        dfn_h = dm[idxb[h]]
+    else:
+        dc_idx = dc_model['idx']
+        if h in dc_idx:
+            att_h = dc_model['att'][dc_idx[h]]
+            dfn_h = dc_model['dfn'][dc_idx[h]]
+        else:
+            att_h, dfn_h = 0.0, 0.0
+            
+    if a in idxb:
+        att_a = am[idxb[a]]
+        dfn_a = dm[idxb[a]]
+    else:
+        dc_idx = dc_model['idx']
+        if a in dc_idx:
+            att_a = dc_model['att'][dc_idx[a]]
+            dfn_a = dc_model['dfn'][dc_idx[a]]
+        else:
+            att_a, dfn_a = 0.0, 0.0
+            
+    l = np.exp(bm + hm * host + att_h - dfn_a)
+    m = np.exp(bm + att_a - dfn_h)
+    M = np.outer(poisson.pmf(range(MAXG), l), poisson.pmf(range(MAXG), m))
+    return M / M.sum()
+
+# --- PREPARACIÓN DE CARACTERÍSTICAS XGBOOST ---
+def get_form_at_date(team, date, form_by_team):
+    if team not in form_by_team:
+        return (1.0, 1.0, 1.0)
+    history = form_by_team[team]
+    dates = [x[0] for x in history]
+    idx = bisect.bisect_left(dates, date)
+    if idx == 0:
+        return (1.0, 1.0, 1.0)
+    return (history[idx-1][1], history[idx-1][2], history[idx-1][3])
+
+def make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos):
+    idx = dcm['idx']
+    if h not in idx or a not in idx:
+        return None
+    att, dfn, home = dcm['att'], dcm['dfn'], dcm['home']
+    lam = np.exp(att[idx[h]] - dfn[idx[a]] + home * host)
+    mu = np.exp(att[idx[a]] - dfn[idx[h]])
+    
+    fh = get_form_at_date(h, date, form_by_team)
+    fa = get_form_at_date(a, date, form_by_team)
+    
+    # ELO rating (Mejora clave de precisión)
+    elo_h = get_elo_at_date(h, date, elo_by_team, final_elos)
+    elo_a = get_elo_at_date(a, date, elo_by_team, final_elos)
+    elo_diff = elo_h - elo_a
+    
+    return [
+        lam, mu, att[idx[h]] - att[idx[a]], dfn[idx[h]] - dfn[idx[a]], float(host),
+        fh[0], fh[1], fh[2], fa[0], fa[1], fa[2],
+        elo_h, elo_a, elo_diff
+    ]
+
+def build_dataset(dcm, fecha_max, df_all, form_by_team, elo_by_team, final_elos):
+    known = set(dcm['teams'])
+    rows, yh, ya = [], [], []
+    sub = df_all[(df_all.date >= DESDE) & (df_all.date < fecha_max)]
+    for r in sub.itertuples():
+        if r.home_team not in known or r.away_team not in known:
+            continue
+        host = 1.0 if r.neutral == False else 0.0
+        f = make_features(dcm, r.home_team, r.away_team, host, r.date, form_by_team, elo_by_team, final_elos)
+        if f is None or any(pd.isna(f)):
+            continue
+        rows.append(f)
+        yh.append(r.home_score)
+        ya.append(r.away_score)
+    return np.array(rows), np.array(yh), np.array(ya)
+
+def train_xgb_goals(X, yh, ya):
+    params = dict(objective='count:poisson', n_estimators=300, max_depth=4,
+                  learning_rate=0.05, subsample=0.8, colsample_bytree=0.8, random_state=42)
+    return xgb.XGBRegressor(**params).fit(X, yh), xgb.XGBRegressor(**params).fit(X, ya)
+
+def xgb_matrix(rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team, final_elos):
+    f = make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos)
+    if f is None:
+        M = np.outer(poisson.pmf(range(MAXG), 1.2), poisson.pmf(range(MAXG), 1.2))
+        return M / M.sum(), 1.2, 1.2
+    
+    f_arr = np.array(f).reshape(1, -1)
+    lh = float(rh.predict(f_arr)[0])
+    la = float(ra.predict(f_arr)[0])
+    M = np.outer(poisson.pmf(range(MAXG), lh), poisson.pmf(range(MAXG), la))
+    return M / M.sum(), lh, la
+
+# --- GRAFICACIÓN ---
+def plot_3panel(M, top_df, nombre, home, away, abbr_home, abbr_away, out_path):
+    pH, pD, pA = matrix_to_1x2(M)
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    fig.suptitle(f'Predicción: {home} vs {away} | Mundial FIFA 2026\nModelo: {nombre}',
+                 fontsize=13, fontweight='bold')
+    
+    # 1. Heatmap
+    ax = axes[0]
+    hd = pd.DataFrame(M[:6,:6]*100, index=[f'{abbr_home} {i}' for i in range(6)],
+                    columns=[f'{abbr_away} {j}' for j in range(6)])
+    sns.heatmap(hd, annot=True, fmt='.1f', cmap='YlOrRd', ax=ax, cbar_kws={'label': 'Probabilidad (%)'})
+    ax.set_title('Probabilidad por marcador (%)', fontweight='bold')
+    ax.set_xlabel(f'Goles {away}'); ax.set_ylabel(f'Goles {home}')
+    
+    # 2. Resultado 1X2
+    ax = axes[1]
+    labs = [f'{home}\ngana', 'Empate', f'{away}\ngana']
+    vals = [pH*100, pD*100, pA*100]
+    bars = ax.bar(labs, vals, color=[C_HOME, C_DRAW, C_AWAY], width=0.5, edgecolor='white', linewidth=1.5)
+    for b, v in zip(bars, vals):
+        ax.text(b.get_x() + b.get_width()/2, v + 0.5, f'{v:.1f}%', ha='center', fontweight='bold', fontsize=12)
+    ax.set_ylim(0, max(vals)*1.2)
+    ax.set_title('Probabilidad de resultado', fontweight='bold')
+    ax.set_ylabel('Probabilidad (%)')
+    ax.spines[['top', 'right']].set_visible(False)
+    
+    # 3. Top 10 Marcadores
+    ax = axes[2]
+    t10 = top_df.head(10).copy()
+    cmap = {f'{home} gana': C_HOME, 'Empate': C_DRAW, f'{away} gana': C_AWAY}
+    labels_h = [f'{abbr_home} {m} {abbr_away}' for m in t10['Marcador']]
+    colors = [cmap[r] for r in t10['Resultado']]
+    ax.barh(labels_h[::-1], t10['Prob (%)'][::-1], color=colors[::-1])
+    for k, v in enumerate(t10['Prob (%)'][::-1]):
+        ax.text(v + 0.1, k, f'{v:.1f}%', va='center', fontsize=8, fontweight='bold')
+    ax.set_title('Top 10 marcadores más probables', fontweight='bold')
+    ax.set_xlabel('Probabilidad (%)')
+    ax.legend(handles=[mpatches.Patch(color=C_HOME, label=f'{home} gana'),
+                       mpatches.Patch(color=C_DRAW, label='Empate'),
+                       mpatches.Patch(color=C_AWAY, label=f'{away} gana')], loc='lower right', fontsize=8)
+    ax.spines[['top', 'right']].set_visible(False)
+    
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    plt.savefig(out_path, dpi=120, bbox_inches='tight')
+    plt.close()
+
+def plot_resumen(M_dc, M_mc, M_xg, home, away, out_path):
+    pH_dc, pD_dc, pA_dc = matrix_to_1x2(M_dc)
+    pH_mc, pD_mc, pA_mc = matrix_to_1x2(M_mc)
+    pH_xg, pD_xg, pA_xg = matrix_to_1x2(M_xg)
+    
+    labels = [f'Gana {home}', 'Empate', f'Gana {away}']
+    x = np.arange(len(labels))
+    width = 0.25
+    
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    rects1 = ax.bar(x - width, [pH_dc*100, pD_dc*100, pA_dc*100], width, label='Dixon-Coles', color=C_DRAW)
+    rects2 = ax.bar(x, [pH_mc*100, pD_mc*100, pA_mc*100], width, label='MCMC Bayesiano', color='#3b82f6')
+    rects3 = ax.bar(x + width, [pH_xg*100, pD_xg*100, pA_xg*100], width, label='XGBoost', color='#10b981')
+    
+    ax.set_ylabel('Probabilidad (%)', fontweight='bold')
+    ax.set_title(f'Resumen: {home} vs {away} (Comparativa)', fontweight='bold', fontsize=12)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, fontweight='bold')
+    ax.legend(frameon=True)
+    ax.set_ylim(0, 100)
+    
+    for rect in rects1 + rects2 + rects3:
+        height = rect.get_height()
+        ax.annotate(f'{height:.1f}%',
+                    xy=(rect.get_x() + rect.get_width() / 2, height),
+                    xytext=(0, 3),
+                    textcoords="offset points",
+                    ha='center', va='bottom', fontsize=8, fontweight='bold')
+                    
+    sns.despine()
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    plt.savefig(out_path, dpi=120, bbox_inches='tight')
+    plt.close()
+
+def build_top_df(M, home, away):
+    rows = []
+    for i in range(MAXG):
+        for j in range(MAXG):
+            rs = f'{home} gana' if i > j else ('Empate' if i == j else f'{away} gana')
+            rows.append({'Marcador': f'{i}-{j}', 'Prob (%)': round(M[i,j]*100, 2), 'Resultado': rs})
+    return pd.DataFrame(rows).sort_values('Prob (%)', ascending=False).reset_index(drop=True)
+
+# --- PROGRAMA PRINCIPAL ---
+if __name__ == '__main__':
+    t_start = time.time()
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # 1. Cargar partidos de matches.js
+    js_path = os.path.join(script_dir, 'src', 'config', 'matches.js')
+    matches = parse_matches(js_path)
+    print(f"[INFO] Se cargaron {len(matches)} partidos de config/matches.js")
+    
+    # 2. Cargar datos locales CSV
+    csv_path = os.path.join(script_dir, 'international_results-master', 'international_results-master', 'results.csv')
+    if not os.path.exists(csv_path):
+        print(f"[ERROR] Archivo CSV no encontrado en: {csv_path}")
+        exit(1)
+        
+    print("[INFO] Cargando resultados históricos...")
+    df_raw = pd.read_csv(csv_path)
+    df_raw['date'] = pd.to_datetime(df_raw['date'])
+    df_all = df_raw[df_raw['home_score'].notna()].copy()
+    df_all['home_score'] = df_all['home_score'].astype(int)
+    df_all['away_score'] = df_all['away_score'].astype(int)
+    print(f"[INFO] {len(df_all):,} partidos históricos cargados ({df_all.date.min().date()} a {df_all.date.max().date()})")
+    
+    # 3. Calcular ratings ELO y forma
+    df_all, elo_by_team, final_elos = compute_elo_ratings(df_all)
+    
+    print("[INFO] Calculando rachas de forma...")
+    long_list = []
+    for r in df_all[df_all.date >= DESDE].itertuples():
+        long_list.append((r.date, r.home_team, r.home_score, r.away_score, 1))
+        long_list.append((r.date, r.away_team, r.away_score, r.home_score, 0))
+    L = pd.DataFrame(long_list, columns=['date', 'team', 'gf', 'ga', 'ishome']).sort_values('date')
+    L['pts'] = np.where(L.gf > L.ga, 3, np.where(L.gf == L.ga, 1, 0))
+    g = L.groupby('team')
+    L['form5'] = g['pts'].transform(lambda s: s.shift().rolling(5, min_periods=1).mean())
+    L['gf5'] = g['gf'].transform(lambda s: s.shift().rolling(5, min_periods=1).mean())
+    L['ga5'] = g['ga'].transform(lambda s: s.shift().rolling(5, min_periods=1).mean())
+    
+    # Agrupar historial de forma para bisect rápido
+    form_by_team = {}
+    for row in L.itertuples():
+        if row.team not in form_by_team:
+            form_by_team[row.team] = []
+        form_by_team[row.team].append((row.date, row.form5, row.gf5, row.ga5))
+    for team in form_by_team:
+        form_by_team[team].sort(key=lambda x: x[0])
+        
+    # 4. Ajustar modelos GLOBALES finales
+    print("\n[INFO] Ajustando Dixon-Coles global...")
+    dc_final = fit_dixon_coles(df_all[(df_all.date >= DESDE) & (df_all.date < MATCH_DATE)], MATCH_DATE)
+    
+    print("[INFO] Muestreando MCMC Bayesiano global (PyMC)... Esto puede tardar ~1-2 min...")
+    mc_final = fit_mcmc(df_all[(df_all.date >= DESDE_BAYES) & (df_all.date < MATCH_DATE)], draws=1000, tune=1000)
+    
+    print("[INFO] Entrenando regresores XGBoost globales...")
+    X_f, yh_f, ya_f = build_dataset(dc_final, MATCH_DATE, df_all, form_by_team, elo_by_team, final_elos)
+    reg_home, reg_away = train_xgb_goals(X_f, yh_f, ya_f)
+    print(f"[INFO] XGBoost entrenado con {len(X_f)} partidos.")
+    
+    # 5. Ajustar modelos GLOBALES para validación (Accuracy)
+    print("\n[INFO] Ejecutando simulación de validación para gráficos de Accuracy...")
+    dc_val = fit_dixon_coles(df_all[(df_all.date >= DESDE) & (df_all.date < VAL_CUTOFF)], VAL_CUTOFF)
+    mc_val = fit_mcmc(df_all[(df_all.date >= DESDE_BAYES) & (df_all.date < VAL_CUTOFF)], draws=600, tune=600)
+    X_v, yh_v, ya_v = build_dataset(dc_val, VAL_CUTOFF, df_all, form_by_team, elo_by_team, final_elos)
+    reg_home_val, reg_away_val = train_xgb_goals(X_v, yh_v, ya_v)
+    
+    # Evaluar sobre conjunto de prueba posterior a VAL_CUTOFF
+    known_teams = set(dc_val['teams']) & mc_val['keep']
+    test_matches = df_all[(df_all.date >= VAL_CUTOFF) & (df_all.date < MATCH_DATE)].copy()
+    test_matches = test_matches[test_matches.home_team.isin(known_teams) & test_matches.away_team.isin(known_teams)]
+    
+    print(f"[INFO] Evaluando accuracy sobre {len(test_matches)} partidos fuera de muestra...")
+    res = {'Dixon-Coles': [0, 0.], 'MCMC Bayesiano': [0, 0.], 'XGBoost': [0, 0.]}
+    n_test = 0
+    for r in test_matches.itertuples():
+        host_val = 1.0 if not r.neutral else 0.0
+        o = resultado_real(r.home_score, r.away_score)
+        
+        # DC
+        p_dc = matrix_to_1x2(dc_matrix(dc_val, r.home_team, r.away_team, host_val))
+        res['Dixon-Coles'][0] += int(np.argmax(p_dc) == o)
+        res['Dixon-Coles'][1] += rps_1x2(p_dc, o)
+        
+        # MCMC
+        p_mc = matrix_to_1x2(mcmc_matrix_mean(mc_val, r.home_team, r.away_team, host_val, dc_val))
+        res['MCMC Bayesiano'][0] += int(np.argmax(p_mc) == o)
+        res['MCMC Bayesiano'][1] += rps_1x2(p_mc, o)
+        
+        # XGB
+        p_xg = matrix_to_1x2(xgb_matrix(reg_home_val, reg_away_val, dc_val, r.home_team, r.away_team, host_val, r.date,
+                                       form_by_team, elo_by_team, final_elos)[0])
+        res['XGBoost'][0] += int(np.argmax(p_xg) == o)
+        res['XGBoost'][1] += rps_1x2(p_xg, o)
+        
+        n_test += 1
+        
+    summary_metrics = []
+    for k, (acc, rps) in res.items():
+        acc_pct = (acc / n_test) * 100 if n_test > 0 else 0
+        rps_mean = rps / n_test if n_test > 0 else 0
+        summary_metrics.append((k, acc_pct, rps_mean))
+        
+    print("\nResultados de Validación:")
+    for k, acc_pct, rps_mean in summary_metrics:
+        print(f"  {k:<18} Accuracy 1X2: {acc_pct:>5.1f}%  RPS: {rps_mean:.4f}")
+        
+    # Generar la gráfica global de Accuracy
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
+    names = [s[0] for s in summary_metrics]
+    accs = [s[1] for s in summary_metrics]
+    rpss = [s[2] for s in summary_metrics]
+    cols = ['#888888', '#3b82f6', '#10b981']
+    
+    axes[0].bar(names, accs, color=cols, width=0.55, edgecolor='white', linewidth=1.5)
+    for i, v in enumerate(accs):
+        axes[0].text(i, v + 0.2, f'{v:.1f}%', ha='center', fontweight='bold')
+    axes[0].set_title('Accuracy 1X2 (mayor = mejor)', fontweight='bold')
+    axes[0].set_ylabel('%')
+    axes[0].set_ylim(min(accs) - 5, max(accs) + 5)
+    axes[0].spines[['top', 'right']].set_visible(False)
+    
+    axes[1].bar(names, rpss, color=cols, width=0.55, edgecolor='white', linewidth=1.5)
+    for i, v in enumerate(rpss):
+        axes[1].text(i, v + 0.0004, f'{v:.4f}', ha='center', fontweight='bold')
+    axes[1].set_title('RPS (menor = mejor)', fontweight='bold')
+    axes[1].set_ylabel('RPS')
+    axes[1].set_ylim(min(rpss) - 0.005, max(rpss) + 0.005)
+    axes[1].spines[['top', 'right']].set_visible(False)
+    plt.tight_layout()
+    
+    temp_acc_path = os.path.join(script_dir, 'public', 'graphs', 'accuracy_temp.png')
+    os.makedirs(os.path.dirname(temp_acc_path), exist_ok=True)
+    plt.savefig(temp_acc_path, dpi=130, bbox_inches='tight')
+    plt.close()
+    
+    # 6. Bucle de predicción para los 32 partidos del Mundial
+    print(f"\n[INFO] Generando gráficas de predicción para los {len(matches)} partidos...")
+    for idx, match in enumerate(matches):
+        h = match['home']
+        a = match['away']
+        day = match['day']
+        m_id = match['id']
+        abbr_h = match['homeCode'].upper()
+        abbr_a = match['awayCode'].upper()
+        
+        # En el mundial todos juegan en sede NEUTRAL (neutral=True)
+        # por ende host = 0.0
+        host = 0.0
+        
+        # Obtener matrices de predicción
+        M_dc = dc_matrix(dc_final, h, a, host)
+        M_mc = mcmc_matrix_mean(mc_final, h, a, host, dc_final)
+        M_xgb, lh_xgb, la_xgb = xgb_matrix(reg_home, reg_away, dc_final, h, a, host, MATCH_DATE,
+                                          form_by_team, elo_by_team, final_elos)
+        
+        # Dataframes ordenados para top 10
+        top_mc = build_top_df(M_mc, h, a)
+        top_xgb = build_top_df(M_xgb, h, a)
+        
+        # Definir rutas de salida físicas
+        graphs_dir = os.path.join(script_dir, 'public', 'graphs', day)
+        
+        mcmc_out = os.path.join(graphs_dir, match['mcmc_file'])
+        xgb_out = os.path.join(graphs_dir, match['xgb_file'])
+        acc_out = os.path.join(graphs_dir, match['accuracy_file'])
+        res_out = os.path.join(graphs_dir, match['resumen_file'])
+        
+        # Guardar gráficos de 3 paneles
+        plot_3panel(M_mc, top_mc, 'MCMC Bayesiano (PyMC)', h, a, abbr_h, abbr_a, mcmc_out)
+        plot_3panel(M_xgb, top_xgb, 'XGBoost (Regresión de Goles + ELO)', h, a, abbr_h, abbr_a, xgb_out)
+        
+        # Guardar gráfico resumen comparativo
+        plot_resumen(M_dc, M_mc, M_xgb, h, a, res_out)
+        
+        # Copiar gráfico de Accuracy general
+        if os.path.exists(temp_acc_path):
+            import shutil
+            shutil.copy(temp_acc_path, acc_out)
+            
+        print(f"  [{idx+1}/{len(matches)}] Gráficas generadas para: {h} vs {a} ({m_id}) -> public/graphs/{day}/")
+        
+    # Eliminar gráfica temporal de accuracy
+    if os.path.exists(temp_acc_path):
+        os.remove(temp_acc_path)
+        
+    print(f"\n[OK] Finalizado exitosamente en {time.time() - t_start:.1f} segundos!")
+    print("[INFO] Todos los gráficos de predicción han sido actualizados en public/graphs/")
+    
+    # Forzar la salida del proceso para evitar que PyMC / PyTensor mantengan hilos activos que congelen la consola en Windows
+    os._exit(0)

@@ -22,6 +22,11 @@ export default function MatchDetail() {
     </div>
     <div className="match-disclaimer"><strong>Aviso:</strong> Las predicciones son estimaciones generadas por modelos estadísticos con fines exclusivamente académicos y de entretenimiento. La precisión es limitada (~55-60% para el resultado, menos del 20% para el marcador exacto) debido a la aleatoriedad del fútbol. No se recomienda utilizar esta información como base para tomar decisiones que impliquen riesgo financiero.</div>
     <div className="data-note"><strong>Nota:</strong> Los datos pueden cambiar según los resultados de partidos anteriores. Se recomienda ejecutar el notebook al inicio de cada día para obtener las estimaciones más actualizadas.</div>
+    <div className="graph-section">
+      <h2>Comparativa de Modelos (Resumen)</h2>
+      <p style={{color:'var(--text-secondary)',fontSize:'0.88rem',marginBottom:'1rem'}}>Comparación directa de las probabilidades asignadas por cada modelo al resultado del partido.</p>
+      <GraphImage src={match.graphs.Resumen} alt={`Resumen comparativo ${match.home} vs ${match.away}`} />
+    </div>
     <div className="graph-section"><h2>Predicción — modelo estadístico (Dixon-Coles)</h2><GraphImage src={match.graphs.mcmc} alt={`Dixon-Coles ${match.home} vs ${match.away}`} /></div>
     <div className="graph-section"><h2>Predicción — XGBoost + ratings</h2><GraphImage src={match.graphs.xgboost} alt={`XGBoost ${match.home} vs ${match.away}`} /></div>
     <div className="graph-section"><h2>Accuracy comparativo</h2><p style={{color:'var(--text-secondary)',fontSize:'0.88rem',marginBottom:'1rem'}}>Rendimiento fuera de muestra sobre cientos de partidos que el modelo nunca vio.</p><GraphImage src={match.graphs.accuracy} alt={`Accuracy ${match.home} vs ${match.away}`} /></div>
