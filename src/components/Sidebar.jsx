@@ -9,9 +9,8 @@ export default function Sidebar({ open, onClose }) {
       <nav>
         <div className="sidebar-section-label">Principal</div>
         <NavLink to="/" end>Inicio</NavLink>
-        <NavLink to="/como-probar">Cómo probar el código</NavLink>
         <div className="sidebar-section-label">Resultados por día</div>
-        <button onClick={() => setDaysOpen(!daysOpen)}>Fase de grupos {daysOpen ? '▾' : '▸'}</button>
+        <button className="sidebar-toggle-btn" onClick={() => setDaysOpen(!daysOpen)}>Fase de grupos <span style={{marginLeft: 'auto'}}>{daysOpen ? '▾' : '▸'}</span></button>
         {daysOpen && DAYS.map(d => (<NavLink key={d.id} to={`/resultados/${d.id}`} className="day-link">{d.label}</NavLink>))}
       </nav>
     </aside>

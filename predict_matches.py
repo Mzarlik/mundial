@@ -8,10 +8,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import seaborn as sns
-from scipy.stats import poisson
 from scipy.optimize import minimize
+from scipy.stats import poisson
 import pymc as pm
 import xgboost as xgb
+from catboost import CatBoostRegressor
+from sklearn.neural_network import MLPRegressor
+from sklearn.preprocessing import StandardScaler
 
 warnings.filterwarnings('ignore')
 sns.set_style('whitegrid')
@@ -170,6 +173,73 @@ def get_elo_at_date(team, date, elo_by_team, final_elos):
         return 1500.0
     return history[idx-1][1]
 
+# --- CÁLCULO PI-RATINGS ---
+def compute_pi_ratings(df):
+    print("[INFO] Calculando Pi-Ratings históricos...")
+    df = df.sort_values('date').reset_index(drop=True)
+    pis = {}
+    pi_history = []
+    pi_by_team = {}
+    
+    lambda_rate = 0.05
+    
+    for row in df.itertuples():
+        h = row.home_team
+        a = row.away_team
+        date = row.date
+        
+        if h not in pis: pis[h] = 0.0
+        if a not in pis: pis[a] = 0.0
+        
+        pi_h = pis[h]
+        pi_a = pis[a]
+        
+        pi_history.append((row.Index, pi_h, pi_a))
+        
+        expected_gd = pi_h - pi_a
+        if not row.neutral:
+            expected_gd += 0.5  # ventaja de local en goles
+            
+        actual_gd = row.home_score - row.away_score
+        
+        if actual_gd > 0:
+            adj_gd = 1.5 * np.log10(1 + actual_gd)
+        elif actual_gd < 0:
+            adj_gd = -1.5 * np.log10(1 + abs(actual_gd))
+        else:
+            adj_gd = 0.0
+            
+        error = adj_gd - expected_gd
+        
+        new_pi_h = pi_h + lambda_rate * error
+        new_pi_a = pi_a - lambda_rate * error
+        
+        pis[h] = new_pi_h
+        pis[a] = new_pi_a
+        
+        if h not in pi_by_team: pi_by_team[h] = []
+        if a not in pi_by_team: pi_by_team[a] = []
+        pi_by_team[h].append((date, new_pi_h))
+        pi_by_team[a].append((date, new_pi_a))
+        
+    pi_df = pd.DataFrame(pi_history, columns=['index', 'home_pi', 'away_pi']).set_index('index')
+    df = df.join(pi_df)
+    
+    for team in pi_by_team:
+        pi_by_team[team].sort(key=lambda x: x[0])
+        
+    return df, pi_by_team, pis
+
+def get_pi_at_date(team, date, pi_by_team, final_pis):
+    if team not in pi_by_team:
+        return 0.0
+    history = pi_by_team[team]
+    dates = [x[0] for x in history]
+    idx = bisect.bisect_left(dates, date)
+    if idx == 0:
+        return 0.0
+    return history[idx-1][1]
+
 # --- MODELO DIXON-COLES ---
 def fit_dixon_coles(train, cutoff, half_life=HALF_LIFE):
     train = train.copy()
@@ -303,10 +373,11 @@ def get_h2h_at_date(h, a, date, h2h_dict):
         gd = -gd
     return gd
 
-def make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp):
+def make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis):
     idx = dcm['idx']
     if h not in idx or a not in idx:
         return None
+        
     att, dfn, home = dcm['att'], dcm['dfn'], dcm['home']
     lam = np.exp(att[idx[h]] - dfn[idx[a]] + home * host)
     mu = np.exp(att[idx[a]] - dfn[idx[h]])
@@ -319,30 +390,43 @@ def make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, 
     elo_a = get_elo_at_date(a, date, elo_by_team, final_elos)
     elo_diff = elo_h - elo_a
     
+    # Pi-Ratings
+    pi_h = get_pi_at_date(h, date, pi_by_team, final_pis)
+    pi_a = get_pi_at_date(a, date, pi_by_team, final_pis)
+    
     h2h_gd = get_h2h_at_date(h, a, date, h2h_dict)
+    
+    # Market Values
+    mv_h = MARKET_VALUES.get(h, 0.0) if 'MARKET_VALUES' in globals() else 0.0
+    mv_a = MARKET_VALUES.get(a, 0.0) if 'MARKET_VALUES' in globals() else 0.0
+    mv_diff = mv_h - mv_a
     
     return [
         lam, mu, att[idx[h]] - att[idx[a]], dfn[idx[h]] - dfn[idx[a]], float(host),
         fh[0], fh[1], fh[2], fa[0], fa[1], fa[2],
-        elo_h, elo_a, elo_diff, h2h_gd, float(is_comp)
+        elo_h, elo_a, elo_diff, pi_h, pi_a, h2h_gd, float(is_comp),
+        mv_h, mv_a, mv_diff
     ]
 
-def build_dataset(dcm, fecha_max, df_all, form_by_team, elo_by_team, final_elos, h2h_dict):
+def build_dataset(dcm, fecha_max, df_all, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis):
     known = set(dcm['teams'])
     rows, yh, ya = [], [], []
+    th, ta = [], []
     sub = df_all[(df_all.date >= DESDE) & (df_all.date < fecha_max)]
     for r in sub.itertuples():
         if r.home_team not in known or r.away_team not in known:
             continue
         host = 1.0 if r.neutral == False else 0.0
         is_comp = 0.0 if 'friendly' in str(r.tournament).lower() else 1.0
-        f = make_features(dcm, r.home_team, r.away_team, host, r.date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp)
+        f = make_features(dcm, r.home_team, r.away_team, host, r.date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)
         if f is None or any(pd.isna(f)):
             continue
         rows.append(f)
         yh.append(r.home_score)
         ya.append(r.away_score)
-    return np.array(rows), np.array(yh), np.array(ya)
+        th.append(r.home_team)
+        ta.append(r.away_team)
+    return np.array(rows), np.array(yh), np.array(ya), th, ta
 
 def train_xgb_goals(X, yh, ya):
     # Ajuste de hiperparámetros: Se añade reg_lambda y min_child_weight para mayor robustez
@@ -351,8 +435,42 @@ def train_xgb_goals(X, yh, ya):
                   min_child_weight=2, reg_lambda=1.5, random_state=42)
     return xgb.XGBRegressor(**params).fit(X, yh), xgb.XGBRegressor(**params).fit(X, ya)
 
-def xgb_matrix(rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp):
-    f = make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp)
+def train_mlp_goals(X, yh, ya):
+    scaler = StandardScaler().fit(X)
+    X_s = scaler.transform(X)
+    params = dict(hidden_layer_sizes=(64, 32), activation='relu', max_iter=500, alpha=0.05, random_state=42)
+    return scaler, MLPRegressor(**params).fit(X_s, yh), MLPRegressor(**params).fit(X_s, ya)
+
+def train_catboost_goals(X, yh, ya, teams_h, teams_a):
+    import pandas as pd
+    df_x = pd.DataFrame(X)
+    df_x['home'] = teams_h
+    df_x['away'] = teams_a
+    cat_features = ['home', 'away']
+    
+    cb_h = CatBoostRegressor(iterations=300, depth=4, learning_rate=0.05, loss_function='Poisson',
+                             cat_features=cat_features, verbose=False, random_seed=42)
+    cb_a = CatBoostRegressor(iterations=300, depth=4, learning_rate=0.05, loss_function='Poisson',
+                             cat_features=cat_features, verbose=False, random_seed=42)
+    
+    cb_h.fit(df_x, yh)
+    cb_a.fit(df_x, ya)
+    return cb_h, cb_a
+
+def mlp_matrix(scaler, rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis):
+    f = make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)
+    if f is None:
+        M = np.outer(poisson.pmf(range(MAXG), 1.2), poisson.pmf(range(MAXG), 1.2))
+        return M / M.sum(), 1.2, 1.2
+    
+    f_arr = scaler.transform(np.array(f).reshape(1, -1))
+    lh = float(max(0.01, rh.predict(f_arr)[0]))
+    la = float(max(0.01, ra.predict(f_arr)[0]))
+    M = np.outer(poisson.pmf(range(MAXG), lh), poisson.pmf(range(MAXG), la))
+    return M / M.sum(), lh, la
+
+def xgb_matrix(rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis):
+    f = make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)
     if f is None:
         M = np.outer(poisson.pmf(range(MAXG), 1.2), poisson.pmf(range(MAXG), 1.2))
         return M / M.sum(), 1.2, 1.2
@@ -360,6 +478,22 @@ def xgb_matrix(rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team, final_e
     f_arr = np.array(f).reshape(1, -1)
     lh = float(rh.predict(f_arr)[0])
     la = float(ra.predict(f_arr)[0])
+    M = np.outer(poisson.pmf(range(MAXG), lh), poisson.pmf(range(MAXG), la))
+    return M / M.sum(), lh, la
+
+def catboost_matrix(cb_h, cb_a, dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis):
+    f = make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)
+    if f is None:
+        M = np.outer(poisson.pmf(range(MAXG), 1.2), poisson.pmf(range(MAXG), 1.2))
+        return M / M.sum(), 1.2, 1.2
+    
+    import pandas as pd
+    df_x = pd.DataFrame([f])
+    df_x['home'] = [h]
+    df_x['away'] = [a]
+    
+    lh = float(cb_h.predict(df_x)[0])
+    la = float(cb_a.predict(df_x)[0])
     M = np.outer(poisson.pmf(range(MAXG), lh), poisson.pmf(range(MAXG), la))
     return M / M.sum(), lh, la
 
@@ -411,34 +545,38 @@ def plot_3panel(M, top_df, nombre, home, away, abbr_home, abbr_away, out_path):
     plt.savefig(out_path, dpi=120, bbox_inches='tight')
     plt.close()
 
-def plot_resumen(M_dc, M_mc, M_xg, home, away, out_path):
+def plot_resumen(M_dc, M_mc, M_xg, M_mlp, M_cb, M_ens, home, away, out_path):
     pH_dc, pD_dc, pA_dc = matrix_to_1x2(M_dc)
     pH_mc, pD_mc, pA_mc = matrix_to_1x2(M_mc)
     pH_xg, pD_xg, pA_xg = matrix_to_1x2(M_xg)
+    pH_ml, pD_ml, pA_ml = matrix_to_1x2(M_mlp)
+    pH_cb, pD_cb, pA_cb = matrix_to_1x2(M_cb)
+    pH_en, pD_en, pA_en = matrix_to_1x2(M_ens)
     
     labels = [f'Gana {home}', 'Empate', f'Gana {away}']
     x = np.arange(len(labels))
-    width = 0.25
+    width = 0.14
     
-    fig, ax = plt.subplots(figsize=(8, 4.5))
-    rects1 = ax.bar(x - width, [pH_dc*100, pD_dc*100, pA_dc*100], width, label='Dixon-Coles', color=C_DRAW)
-    rects2 = ax.bar(x, [pH_mc*100, pD_mc*100, pA_mc*100], width, label='MCMC Bayesiano', color='#3b82f6')
-    rects3 = ax.bar(x + width, [pH_xg*100, pD_xg*100, pA_xg*100], width, label='XGBoost', color='#10b981')
+    fig, ax = plt.subplots(figsize=(11, 4.5))
+    rects1 = ax.bar(x - width*2.5, [pH_dc*100, pD_dc*100, pA_dc*100], width, label='Dixon-Coles', color=C_DRAW)
+    rects2 = ax.bar(x - width*1.5, [pH_mc*100, pD_mc*100, pA_mc*100], width, label='MCMC', color='#3b82f6')
+    rects3 = ax.bar(x - width*0.5, [pH_xg*100, pD_xg*100, pA_xg*100], width, label='XGBoost', color='#10b981')
+    rects4 = ax.bar(x + width*0.5, [pH_ml*100, pD_ml*100, pA_ml*100], width, label='MLP (Red Neuronal)', color='#8b5cf6')
+    rects5 = ax.bar(x + width*1.5, [pH_cb*100, pD_cb*100, pA_cb*100], width, label='CatBoost', color='#ec4899')
+    rects6 = ax.bar(x + width*2.5, [pH_en*100, pD_en*100, pA_en*100], width, label='Ensemble', color='#f59e0b')
     
     ax.set_ylabel('Probabilidad (%)', fontweight='bold')
-    ax.set_title(f'Resumen: {home} vs {away} (Comparativa)', fontweight='bold', fontsize=12)
+    ax.set_title(f'Resumen de Modelos: {home} vs {away}', fontweight='bold', fontsize=12)
     ax.set_xticks(x)
     ax.set_xticklabels(labels, fontweight='bold')
-    ax.legend(frameon=True)
+    ax.legend(frameon=True, bbox_to_anchor=(1.05, 1), loc='upper left')
     ax.set_ylim(0, 100)
     
-    for rect in rects1 + rects2 + rects3:
-        height = rect.get_height()
-        ax.annotate(f'{height:.1f}%',
-                    xy=(rect.get_x() + rect.get_width() / 2, height),
-                    xytext=(0, 3),
-                    textcoords="offset points",
-                    ha='center', va='bottom', fontsize=8, fontweight='bold')
+    for rects in [rects1, rects2, rects3, rects4, rects5]:
+        for rect in rects:
+            height = rect.get_height()
+            if height > 1:
+                ax.annotate(f'{height:.0f}%', xy=(rect.get_x() + rect.get_width() / 2, height), xytext=(0, 2), textcoords="offset points", ha='center', va='bottom', fontsize=7, fontweight='bold')
                     
     sns.despine()
     plt.tight_layout()
@@ -464,6 +602,50 @@ if __name__ == '__main__':
     matches = parse_matches(js_path)
     print(f"[INFO] Se cargaron {len(matches)} partidos de config/matches.js")
     
+    # 1.5 Cargar datos financieros (Market Value)
+    global MARKET_VALUES
+    MARKET_VALUES = {}
+    
+    # Diccionario maestro de mapeo: Español (UI/matches.js) -> Inglés (results.csv)
+    SPANISH_TO_ENGLISH = {
+        'Alemania': 'Germany', 'Arabia Saudita': 'Saudi Arabia', 'Argelia': 'Algeria',
+        'Argentina': 'Argentina', 'Australia': 'Australia', 'Austria': 'Austria',
+        'Bosnia y Herzegovina': 'Bosnia and Herzegovina', 'Brasil': 'Brazil',
+        'Bélgica': 'Belgium', 'Cabo Verde': 'Cape Verde', 'Canadá': 'Canada',
+        'Catar': 'Qatar', 'Chequia': 'Czech Republic', 'Colombia': 'Colombia',
+        'Corea del Sur': 'South Korea', 'Costa de Marfil': 'Ivory Coast',
+        'Croacia': 'Croatia', 'Curazao': 'Curaçao', 'Ecuador': 'Ecuador',
+        'Egipto': 'Egypt', 'Escocia': 'Scotland', 'España': 'Spain',
+        'Estados Unidos': 'United States', 'Francia': 'France', 'Ghana': 'Ghana',
+        'Haití': 'Haiti', 'Inglaterra': 'England', 'Irak': 'Iraq', 'Irán': 'Iran',
+        'Japón': 'Japan', 'Jordania': 'Jordan', 'Marruecos': 'Morocco',
+        'México': 'Mexico', 'Noruega': 'Norway', 'Nueva Zelanda': 'New Zealand',
+        'Panamá': 'Panama', 'Paraguay': 'Paraguay', 'Países Bajos': 'Netherlands',
+        'Portugal': 'Portugal', 'RD Congo': 'DR Congo', 'Senegal': 'Senegal',
+        'Sudáfrica': 'South Africa', 'Suecia': 'Sweden', 'Suiza': 'Switzerland',
+        'Turquía': 'Turkey', 'Túnez': 'Tunisia', 'Uruguay': 'Uruguay',
+        'Uzbekistán': 'Uzbekistan'
+    }
+
+    mv_path = os.path.join(script_dir, 'public', 'data', 'market_values.csv')
+    if os.path.exists(mv_path):
+        try:
+            df_mv = pd.read_csv(mv_path)
+            # Normalización rápida de nombres
+            alias_map = {
+                'United States': 'USA', 'South Korea': 'South Korea',
+                'Ivory Coast': 'Ivory Coast', 'DR Congo': 'DR Congo',
+                'Republic of Ireland': 'Republic of Ireland'
+            }
+            for row in df_mv.itertuples():
+                t_name = alias_map.get(row.team, row.team)
+                MARKET_VALUES[t_name] = row.market_value_num
+            print(f"[INFO] Cargados valores de mercado para {len(MARKET_VALUES)} selecciones.")
+        except Exception as e:
+            print(f"[WARNING] No se pudo leer market_values.csv: {e}")
+    else:
+        print("[WARNING] No se encontró market_values.csv. Se asumirá 0 para todos.")
+    
     # 2. Cargar datos locales CSV
     csv_path = os.path.join(script_dir, 'international_results-master', 'international_results-master', 'results.csv')
     if not os.path.exists(csv_path):
@@ -478,8 +660,9 @@ if __name__ == '__main__':
     df_all['away_score'] = df_all['away_score'].astype(int)
     print(f"[INFO] {len(df_all):,} partidos históricos cargados ({df_all.date.min().date()} a {df_all.date.max().date()})")
     
-    # 3. Calcular ratings ELO y forma
+    # 3. Calcular ratings ELO, Pi y forma
     df_all, elo_by_team, final_elos = compute_elo_ratings(df_all)
+    df_all, pi_by_team, final_pis = compute_pi_ratings(df_all)
     
     print("[INFO] Calculando rachas de forma...")
     long_list = []
@@ -521,16 +704,24 @@ if __name__ == '__main__':
     mc_final = fit_mcmc(df_all[(df_all.date >= DESDE_BAYES) & (df_all.date < MATCH_DATE)], draws=3000, tune=3000)
     
     print("[INFO] Entrenando regresores XGBoost globales...")
-    X_f, yh_f, ya_f = build_dataset(dc_final, MATCH_DATE, df_all, form_by_team, elo_by_team, final_elos, h2h_dict)
+    X_f, yh_f, ya_f, th_f, ta_f = build_dataset(dc_final, MATCH_DATE, df_all, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis)
     reg_home, reg_away = train_xgb_goals(X_f, yh_f, ya_f)
     print(f"[INFO] XGBoost entrenado con {len(X_f)} partidos.")
+    
+    print("[INFO] Entrenando Red Neuronal (MLP) global...")
+    scaler_f, mlp_home, mlp_away = train_mlp_goals(X_f, yh_f, ya_f)
+
+    print("[INFO] Entrenando CatBoost global...")
+    cb_home, cb_away = train_catboost_goals(X_f, yh_f, ya_f, th_f, ta_f)
     
     # 5. Ajustar modelos GLOBALES para validación (Accuracy)
     print("\n[INFO] Ejecutando simulación de validación para gráficos de Accuracy...")
     dc_val = fit_dixon_coles(df_all[(df_all.date >= DESDE) & (df_all.date < VAL_CUTOFF)], VAL_CUTOFF)
     mc_val = fit_mcmc(df_all[(df_all.date >= DESDE_BAYES) & (df_all.date < VAL_CUTOFF)], draws=2000, tune=2000)
-    X_v, yh_v, ya_v = build_dataset(dc_val, VAL_CUTOFF, df_all, form_by_team, elo_by_team, final_elos, h2h_dict)
+    X_v, yh_v, ya_v, th_v, ta_v = build_dataset(dc_val, VAL_CUTOFF, df_all, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis)
     reg_home_val, reg_away_val = train_xgb_goals(X_v, yh_v, ya_v)
+    scaler_v, mlp_home_val, mlp_away_val = train_mlp_goals(X_v, yh_v, ya_v)
+    cb_home_val, cb_away_val = train_catboost_goals(X_v, yh_v, ya_v, th_v, ta_v)
     
     # Evaluar sobre conjunto de prueba posterior a VAL_CUTOFF
     known_teams = set(dc_val['teams']) & mc_val['keep']
@@ -538,7 +729,7 @@ if __name__ == '__main__':
     test_matches = test_matches[test_matches.home_team.isin(known_teams) & test_matches.away_team.isin(known_teams)]
     
     print(f"[INFO] Evaluando accuracy sobre {len(test_matches)} partidos fuera de muestra...")
-    res = {'Dixon-Coles': [0, 0.], 'MCMC Bayesiano': [0, 0.], 'XGBoost': [0, 0.]}
+    res = {'Dixon-Coles': [0, 0.], 'MCMC Bayesiano': [0, 0.], 'XGBoost': [0, 0.], 'Red Neuronal': [0, 0.], 'CatBoost': [0, 0.], 'Ensemble': [0, 0.]}
     n_test = 0
     for r in test_matches.itertuples():
         host_val = 1.0 if not r.neutral else 0.0
@@ -556,10 +747,32 @@ if __name__ == '__main__':
         
         # XGB
         is_comp_val = 0.0 if 'friendly' in str(r.tournament).lower() else 1.0
-        p_xg = matrix_to_1x2(xgb_matrix(reg_home_val, reg_away_val, dc_val, r.home_team, r.away_team, host_val, r.date,
-                                       form_by_team, elo_by_team, final_elos, h2h_dict, is_comp_val)[0])
+        M_xg_v = xgb_matrix(reg_home_val, reg_away_val, dc_val, r.home_team, r.away_team, host_val, r.date,
+                                       form_by_team, elo_by_team, final_elos, h2h_dict, is_comp_val, pi_by_team, final_pis)[0]
+        p_xg = matrix_to_1x2(M_xg_v)
         res['XGBoost'][0] += int(np.argmax(p_xg) == o)
         res['XGBoost'][1] += rps_1x2(p_xg, o)
+        
+        # MLP
+        M_ml_v = mlp_matrix(scaler_v, mlp_home_val, mlp_away_val, dc_val, r.home_team, r.away_team, host_val, r.date,
+                                       form_by_team, elo_by_team, final_elos, h2h_dict, is_comp_val, pi_by_team, final_pis)[0]
+        p_ml = matrix_to_1x2(M_ml_v)
+        res['Red Neuronal'][0] += int(np.argmax(p_ml) == o)
+        res['Red Neuronal'][1] += rps_1x2(p_ml, o)
+
+        # CatBoost
+        M_cb_v = catboost_matrix(cb_home_val, cb_away_val, dc_val, r.home_team, r.away_team, host_val, r.date,
+                                       form_by_team, elo_by_team, final_elos, h2h_dict, is_comp_val, pi_by_team, final_pis)[0]
+        p_cb = matrix_to_1x2(M_cb_v)
+        res['CatBoost'][0] += int(np.argmax(p_cb) == o)
+        res['CatBoost'][1] += rps_1x2(p_cb, o)
+        
+        # Ensemble
+        M_ens_val = (dc_matrix(dc_val, r.home_team, r.away_team, host_val) + 
+                     mcmc_matrix_mean(mc_val, r.home_team, r.away_team, host_val, dc_val) + M_xg_v + M_ml_v + M_cb_v) / 5
+        p_en = matrix_to_1x2(M_ens_val)
+        res['Ensemble'][0] += int(np.argmax(p_en) == o)
+        res['Ensemble'][1] += rps_1x2(p_en, o)
         
         n_test += 1
         
@@ -574,11 +787,11 @@ if __name__ == '__main__':
         print(f"  {k:<18} Accuracy 1X2: {acc_pct:>5.1f}%  RPS: {rps_mean:.4f}")
         
     # Generar la gráfica global de Accuracy
-    fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
     names = [s[0] for s in summary_metrics]
     accs = [s[1] for s in summary_metrics]
     rpss = [s[2] for s in summary_metrics]
-    cols = ['#888888', '#3b82f6', '#10b981']
+    cols = ['#94a3b8', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#f59e0b']
     
     axes[0].bar(names, accs, color=cols, width=0.55, edgecolor='white', linewidth=1.5)
     for i, v in enumerate(accs):
@@ -587,6 +800,7 @@ if __name__ == '__main__':
     axes[0].set_ylabel('%')
     axes[0].set_ylim(min(accs) - 5, max(accs) + 5)
     axes[0].spines[['top', 'right']].set_visible(False)
+    axes[0].tick_params(axis='x', rotation=15)
     
     axes[1].bar(names, rpss, color=cols, width=0.55, edgecolor='white', linewidth=1.5)
     for i, v in enumerate(rpss):
@@ -595,6 +809,7 @@ if __name__ == '__main__':
     axes[1].set_ylabel('RPS')
     axes[1].set_ylim(min(rpss) - 0.005, max(rpss) + 0.005)
     axes[1].spines[['top', 'right']].set_visible(False)
+    axes[1].tick_params(axis='x', rotation=15)
     plt.tight_layout()
     
     temp_acc_path = os.path.join(script_dir, 'public', 'graphs', 'accuracy_temp.png')
@@ -617,30 +832,49 @@ if __name__ == '__main__':
         host = 0.0
         is_comp = 1.0
         
+        # Traducir al inglés para la inferencia algorítmica
+        h_eng = SPANISH_TO_ENGLISH.get(h, h)
+        a_eng = SPANISH_TO_ENGLISH.get(a, a)
+        
         # Obtener matrices de predicción
-        M_dc = dc_matrix(dc_final, h, a, host)
-        M_mc = mcmc_matrix_mean(mc_final, h, a, host, dc_final)
-        M_xgb, lh_xgb, la_xgb = xgb_matrix(reg_home, reg_away, dc_final, h, a, host, MATCH_DATE,
-                                          form_by_team, elo_by_team, final_elos, h2h_dict, is_comp)
+        M_dc = dc_matrix(dc_final, h_eng, a_eng, host)
+        M_mc = mcmc_matrix_mean(mc_final, h_eng, a_eng, host, dc_final)
+        M_xgb, lh_xgb, la_xgb = xgb_matrix(reg_home, reg_away, dc_final, h_eng, a_eng, host, MATCH_DATE,
+                                          form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)
+        M_mlp, lh_mlp, la_mlp = mlp_matrix(scaler_f, mlp_home, mlp_away, dc_final, h_eng, a_eng, host, MATCH_DATE,
+                                          form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)
+        M_cb, lh_cb, la_cb = catboost_matrix(cb_home, cb_away, dc_final, h_eng, a_eng, host, MATCH_DATE,
+                                          form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)
+        
+        M_ens = (M_mc + M_xgb + M_mlp + M_cb) / 4
         
         # Dataframes ordenados para top 10
         top_mc = build_top_df(M_mc, h, a)
         top_xgb = build_top_df(M_xgb, h, a)
+        top_mlp = build_top_df(M_mlp, h, a)
+        top_cb = build_top_df(M_cb, h, a)
+        top_ens = build_top_df(M_ens, h, a)
         
         # Definir rutas de salida físicas
         graphs_dir = os.path.join(script_dir, 'public', 'graphs', day)
         
         mcmc_out = os.path.join(graphs_dir, match['mcmc_file'])
         xgb_out = os.path.join(graphs_dir, match['xgb_file'])
+        mlp_out = os.path.join(graphs_dir, f"{m_id}_mlp.png")
+        cb_out = os.path.join(graphs_dir, f"{m_id}_catboost.png")
+        ens_out = os.path.join(graphs_dir, f"{m_id}_ensemble.png")
         acc_out = os.path.join(graphs_dir, match['accuracy_file'])
         res_out = os.path.join(graphs_dir, match['resumen_file'])
         
         # Guardar gráficos de 3 paneles
         plot_3panel(M_mc, top_mc, 'MCMC Bayesiano (PyMC)', h, a, abbr_h, abbr_a, mcmc_out)
-        plot_3panel(M_xgb, top_xgb, 'XGBoost (Regresión de Goles + ELO)', h, a, abbr_h, abbr_a, xgb_out)
+        plot_3panel(M_xgb, top_xgb, 'XGBoost (Regresión de Goles + Pi-Ratings)', h, a, abbr_h, abbr_a, xgb_out)
+        plot_3panel(M_mlp, top_mlp, 'Red Neuronal (MLP)', h, a, abbr_h, abbr_a, mlp_out)
+        plot_3panel(M_cb, top_cb, 'CatBoost', h, a, abbr_h, abbr_a, cb_out)
+        plot_3panel(M_ens, top_ens, 'Ensemble (Promedio Predictivo)', h, a, abbr_h, abbr_a, ens_out)
         
         # Guardar gráfico resumen comparativo
-        plot_resumen(M_dc, M_mc, M_xgb, h, a, res_out)
+        plot_resumen(M_dc, M_mc, M_xgb, M_mlp, M_cb, M_ens, h, a, res_out)
         
         # Copiar gráfico de Accuracy general
         if os.path.exists(temp_acc_path):
