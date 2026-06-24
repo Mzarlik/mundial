@@ -519,6 +519,33 @@ def catboost_matrix(cb_h, cb_a, dcm, h, a, host, date, form_by_team, elo_by_team
     M = np.outer(poisson.pmf(range(MAXG), lh), poisson.pmf(range(MAXG), la))
     return M / M.sum(), lh, la
 
+def montecarlo_mfa_matrix(h, a, elo_h, elo_a, form_h, form_a):
+    """Integración del Motor Matemático del Repositorio MFA (Simulador 10k)"""
+    racha_h = form_h / 3.0 if form_h else 0.5
+    racha_a = form_a / 3.0 if form_a else 0.5
+    
+    # Mapeo extraído del notebook externo de simulaciones
+    mfa_modifiers = {
+        'Spain': (1.10, 0.96), 'France': (1.05, 0.98), 'Portugal': (1.10, 1.00),
+        'England': (1.00, 0.98), 'Germany': (1.05, 0.97), 'Argentina': (1.05, 1.00),
+        'Netherlands': (1.00, 0.94), 'Brazil': (1.00, 0.92)
+    }
+    
+    mod_h, inj_h = mfa_modifiers.get(h, (1.0, 1.0))
+    mod_a, inj_a = mfa_modifiers.get(a, (1.0, 1.0))
+    
+    fuerza_h = elo_h * (1 + (racha_h - 0.5) * 0.1) * mod_h * inj_h
+    fuerza_a = elo_a * (1 + (racha_a - 0.5) * 0.1) * mod_a * inj_a
+    
+    diff_ajuste = (fuerza_h - fuerza_a) / 400.0
+    media_goles_base = 1.3
+    
+    lh = max(0.4, media_goles_base + diff_ajuste)
+    la = max(0.4, media_goles_base - diff_ajuste)
+    
+    M = np.outer(poisson.pmf(range(MAXG), lh), poisson.pmf(range(MAXG), la))
+    return M / M.sum(), lh, la
+
 # --- GRAFICACIÓN ---
 def plot_3panel(M, top_df, nombre, home, away, abbr_home, abbr_away, out_path):
     pH, pD, pA = matrix_to_1x2(M)
@@ -567,34 +594,37 @@ def plot_3panel(M, top_df, nombre, home, away, abbr_home, abbr_away, out_path):
     plt.savefig(out_path, dpi=120, bbox_inches='tight')
     plt.close()
 
-def plot_resumen(M_dc, M_mc, M_xg, M_mlp, M_cb, M_ens, home, away, out_path):
+def plot_resumen(M_dc, M_mc, M_xg, M_mlp, M_cb, M_mfa, M_ens, home, away, out_path):
+    # Genera un barplot de 1X2 para comparar TODOS los modelos
     pH_dc, pD_dc, pA_dc = matrix_to_1x2(M_dc)
     pH_mc, pD_mc, pA_mc = matrix_to_1x2(M_mc)
     pH_xg, pD_xg, pA_xg = matrix_to_1x2(M_xg)
-    pH_ml, pD_ml, pA_ml = matrix_to_1x2(M_mlp)
+    pH_mlp, pD_mlp, pA_mlp = matrix_to_1x2(M_mlp)
     pH_cb, pD_cb, pA_cb = matrix_to_1x2(M_cb)
-    pH_en, pD_en, pA_en = matrix_to_1x2(M_ens)
+    pH_mfa, pD_mfa, pA_mfa = matrix_to_1x2(M_mfa)
+    pH_ens, pD_ens, pA_ens = matrix_to_1x2(M_ens)
     
     labels = [f'Gana {home}', 'Empate', f'Gana {away}']
     x = np.arange(len(labels))
-    width = 0.14
+    width = 0.12
     
-    fig, ax = plt.subplots(figsize=(11, 4.5))
-    rects1 = ax.bar(x - width*2.5, [pH_dc*100, pD_dc*100, pA_dc*100], width, label='Dixon-Coles', color=C_DRAW)
-    rects2 = ax.bar(x - width*1.5, [pH_mc*100, pD_mc*100, pA_mc*100], width, label='MCMC', color='#3b82f6')
-    rects3 = ax.bar(x - width*0.5, [pH_xg*100, pD_xg*100, pA_xg*100], width, label='XGBoost', color='#10b981')
-    rects4 = ax.bar(x + width*0.5, [pH_ml*100, pD_ml*100, pA_ml*100], width, label='MLP (Red Neuronal)', color='#8b5cf6')
-    rects5 = ax.bar(x + width*1.5, [pH_cb*100, pD_cb*100, pA_cb*100], width, label='CatBoost', color='#ec4899')
-    rects6 = ax.bar(x + width*2.5, [pH_en*100, pD_en*100, pA_en*100], width, label='Ensemble', color='#f59e0b')
+    fig, ax = plt.subplots(figsize=(12, 5))
+    rects1 = ax.bar(x - width*3, [pH_dc*100, pD_dc*100, pA_dc*100], width, label='Dixon-Coles', color=C_DRAW)
+    rects2 = ax.bar(x - width*2, [pH_mc*100, pD_mc*100, pA_mc*100], width, label='MCMC', color='#3b82f6')
+    rects3 = ax.bar(x - width, [pH_xg*100, pD_xg*100, pA_xg*100], width, label='XGBoost', color='#10b981')
+    rects4 = ax.bar(x, [pH_mlp*100, pD_mlp*100, pA_mlp*100], width, label='MLP', color='#8b5cf6')
+    rects5 = ax.bar(x + width, [pH_cb*100, pD_cb*100, pA_cb*100], width, label='CatBoost', color='#ec4899')
+    rects6 = ax.bar(x + width*2, [pH_mfa*100, pD_mfa*100, pA_mfa*100], width, label='MFA Montecarlo', color='#0ea5e9')
+    rects7 = ax.bar(x + width*3, [pH_ens*100, pD_ens*100, pA_ens*100], width, label='Ensemble', color='#f59e0b')
     
     ax.set_ylabel('Probabilidad (%)', fontweight='bold')
     ax.set_title(f'Resumen de Modelos: {home} vs {away}', fontweight='bold', fontsize=12)
     ax.set_xticks(x)
     ax.set_xticklabels(labels, fontweight='bold')
-    ax.legend(frameon=True, bbox_to_anchor=(1.05, 1), loc='upper left')
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     ax.set_ylim(0, 100)
     
-    for rects in [rects1, rects2, rects3, rects4, rects5]:
+    for rects in [rects1, rects2, rects3, rects4, rects5, rects6, rects7]:
         for rect in rects:
             height = rect.get_height()
             if height > 1:
@@ -755,7 +785,15 @@ if __name__ == '__main__':
     test_matches = test_matches[test_matches.home_team.isin(known_teams) & test_matches.away_team.isin(known_teams)]
     
     print(f"[INFO] Evaluando accuracy sobre {len(test_matches)} partidos fuera de muestra...")
-    res = {'Dixon-Coles': [0, 0.], 'MCMC Bayesiano': [0, 0.], 'XGBoost': [0, 0.], 'Red Neuronal': [0, 0.], 'CatBoost': [0, 0.], 'Ensemble': [0, 0.]}
+    res = {
+        'Dixon-Coles': [0, 0.],
+        'MCMC Bayesiano': [0, 0.],
+        'XGBoost': [0, 0.],
+        'Red Neuronal': [0, 0.],
+        'CatBoost': [0, 0.],
+        'MFA Montecarlo': [0, 0.],
+        'Ensemble': [0, 0.]
+    }
     n_test = 0
     for r in test_matches.itertuples():
         host_val = 1.0 if not r.neutral else 0.0
@@ -793,9 +831,20 @@ if __name__ == '__main__':
         res['CatBoost'][0] += int(np.argmax(p_cb) == o)
         res['CatBoost'][1] += rps_1x2(p_cb, o)
         
-        # Ensemble
-        M_ens_val = (dc_matrix(dc_val, r.home_team, r.away_team, host_val) + 
-                     mcmc_matrix_mean(mc_val, r.home_team, r.away_team, host_val, dc_val) + M_xg_v + M_ml_v + M_cb_v) / 5
+        # MFA Montecarlo
+        elo_h = get_elo_at_date(r.home_team, r.date, elo_by_team, final_elos)
+        elo_a = get_elo_at_date(r.away_team, r.date, elo_by_team, final_elos)
+        fh = get_form_at_date(r.home_team, r.date, form_by_team)
+        fa = get_form_at_date(r.away_team, r.date, form_by_team)
+        form_h_val = fh[2] if fh else 0.5
+        form_a_val = fa[2] if fa else 0.5
+        M_mfa_v = montecarlo_mfa_matrix(r.home_team, r.away_team, elo_h, elo_a, form_h_val, form_a_val)[0]
+        p_mfa = matrix_to_1x2(M_mfa_v)
+        res['MFA Montecarlo'][0] += int(np.argmax(p_mfa) == o)
+        res['MFA Montecarlo'][1] += rps_1x2(p_mfa, o)
+        
+        # Ensemble (MCMC + XGB + MLP + CatBoost + MFA)
+        M_ens_val = (mcmc_matrix_mean(mc_val, r.home_team, r.away_team, host_val, dc_val) + M_xg_v + M_ml_v + M_cb_v + M_mfa_v) / 5
         p_en = matrix_to_1x2(M_ens_val)
         res['Ensemble'][0] += int(np.argmax(p_en) == o)
         res['Ensemble'][1] += rps_1x2(p_en, o)
@@ -813,29 +862,29 @@ if __name__ == '__main__':
         print(f"  {k:<18} Accuracy 1X2: {acc_pct:>5.1f}%  RPS: {rps_mean:.4f}")
         
     # Generar la gráfica global de Accuracy
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
     names = [s[0] for s in summary_metrics]
     accs = [s[1] for s in summary_metrics]
     rpss = [s[2] for s in summary_metrics]
-    cols = ['#94a3b8', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#f59e0b']
+    cols = ['#94a3b8', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#0ea5e9', '#f59e0b']
     
-    axes[0].bar(names, accs, color=cols, width=0.55, edgecolor='white', linewidth=1.5)
+    axes[0].bar(names, accs, color=cols, width=0.52, edgecolor='white', linewidth=1.5)
     for i, v in enumerate(accs):
-        axes[0].text(i, v + 0.2, f'{v:.1f}%', ha='center', fontweight='bold')
+        axes[0].text(i, v + 0.2, f'{v:.1f}%', ha='center', fontweight='bold', fontsize=9)
     axes[0].set_title('Accuracy 1X2 (mayor = mejor)', fontweight='bold')
     axes[0].set_ylabel('%')
     axes[0].set_ylim(min(accs) - 5, max(accs) + 5)
     axes[0].spines[['top', 'right']].set_visible(False)
-    axes[0].tick_params(axis='x', rotation=15)
+    axes[0].tick_params(axis='x', rotation=22, labelsize=9)
     
-    axes[1].bar(names, rpss, color=cols, width=0.55, edgecolor='white', linewidth=1.5)
+    axes[1].bar(names, rpss, color=cols, width=0.52, edgecolor='white', linewidth=1.5)
     for i, v in enumerate(rpss):
-        axes[1].text(i, v + 0.0004, f'{v:.4f}', ha='center', fontweight='bold')
+        axes[1].text(i, v + 0.0004, f'{v:.4f}', ha='center', fontweight='bold', fontsize=9)
     axes[1].set_title('RPS (menor = mejor)', fontweight='bold')
     axes[1].set_ylabel('RPS')
     axes[1].set_ylim(min(rpss) - 0.005, max(rpss) + 0.005)
     axes[1].spines[['top', 'right']].set_visible(False)
-    axes[1].tick_params(axis='x', rotation=15)
+    axes[1].tick_params(axis='x', rotation=22, labelsize=9)
     plt.tight_layout()
     
     temp_acc_path = os.path.join(script_dir, 'public', 'graphs', 'accuracy_temp.png')
@@ -873,22 +922,45 @@ if __name__ == '__main__':
         M_cb, lh_cb, la_cb = catboost_matrix(cb_home, cb_away, dc_final, h_eng, a_eng, host, MATCH_DATE,
                                           form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)
         
-        M_ens = (M_mc + M_xgb + M_mlp + M_cb) / 4
+        # Extraer Elo y Forma para MFA Montecarlo
+        elo_h = get_elo_at_date(h_eng, MATCH_DATE, elo_by_team, final_elos)
+        elo_a = get_elo_at_date(a_eng, MATCH_DATE, elo_by_team, final_elos)
+        fh = get_form_at_date(h_eng, MATCH_DATE, form_by_team)
+        fa = get_form_at_date(a_eng, MATCH_DATE, form_by_team)
+        form_h_val = fh[2] if fh else 0.5
+        form_a_val = fa[2] if fa else 0.5
         
-        # Calcular probabilidades 1X2 para JSON
-        p_1x2 = matrix_to_1x2(M_ens)
-        match_predictions[m_id] = {
-            'home': float(p_1x2[0]),
-            'draw': float(p_1x2[1]),
-            'away': float(p_1x2[2])
-        }
+        M_mfa, lh_mfa, la_mfa = montecarlo_mfa_matrix(h_eng, a_eng, elo_h, elo_a, form_h_val, form_a_val)
+        
+        # Ensemble 5 IAs
+        M_ens = (M_mc + M_xgb + M_mlp + M_cb + M_mfa) / 5
         
         # Dataframes ordenados para top 10
         top_mc = build_top_df(M_mc, h, a)
         top_xgb = build_top_df(M_xgb, h, a)
         top_mlp = build_top_df(M_mlp, h, a)
         top_cb = build_top_df(M_cb, h, a)
+        top_mfa = build_top_df(M_mfa, h, a)
         top_ens = build_top_df(M_ens, h, a)
+
+        # Calcular probabilidades 1X2 para JSON
+        p_1x2 = matrix_to_1x2(M_ens)
+        
+        # Extraer Top 3 marcadores exactos del Ensemble
+        top3_list = []
+        for idx_top in range(min(3, len(top_ens))):
+            row_top = top_ens.iloc[idx_top]
+            top3_list.append({
+                'score': str(row_top['Marcador']),
+                'prob': float(row_top['Prob (%)'])
+            })
+
+        match_predictions[m_id] = {
+            'home': float(p_1x2[0]),
+            'draw': float(p_1x2[1]),
+            'away': float(p_1x2[2]),
+            'top3_scores': top3_list
+        }
         
         # Definir rutas de salida físicas
         graphs_dir = os.path.join(script_dir, 'public', 'graphs', day)
@@ -897,6 +969,7 @@ if __name__ == '__main__':
         xgb_out = os.path.join(graphs_dir, match['xgb_file'])
         mlp_out = os.path.join(graphs_dir, f"{m_id}_mlp.png")
         cb_out = os.path.join(graphs_dir, f"{m_id}_catboost.png")
+        mfa_out = os.path.join(graphs_dir, f"{m_id}_mfa.png")
         ens_out = os.path.join(graphs_dir, f"{m_id}_ensemble.png")
         acc_out = os.path.join(graphs_dir, match['accuracy_file'])
         res_out = os.path.join(graphs_dir, match['resumen_file'])
@@ -906,10 +979,11 @@ if __name__ == '__main__':
         plot_3panel(M_xgb, top_xgb, 'XGBoost (Regresión de Goles + Pi-Ratings)', h, a, abbr_h, abbr_a, xgb_out)
         plot_3panel(M_mlp, top_mlp, 'Red Neuronal (MLP)', h, a, abbr_h, abbr_a, mlp_out)
         plot_3panel(M_cb, top_cb, 'CatBoost', h, a, abbr_h, abbr_a, cb_out)
-        plot_3panel(M_ens, top_ens, 'Ensemble (Promedio Predictivo)', h, a, abbr_h, abbr_a, ens_out)
+        plot_3panel(M_mfa, top_mfa, 'Simulación Montecarlo (MFA)', h, a, abbr_h, abbr_a, mfa_out)
+        plot_3panel(M_ens, top_ens, 'Ensemble (Promedio 5 IAs)', h, a, abbr_h, abbr_a, ens_out)
         
         # Guardar gráfico resumen comparativo
-        plot_resumen(M_dc, M_mc, M_xgb, M_mlp, M_cb, M_ens, h, a, res_out)
+        plot_resumen(M_dc, M_mc, M_xgb, M_mlp, M_cb, M_mfa, M_ens, h, a, res_out)
         
         # Copiar gráfico de Accuracy general
         if os.path.exists(temp_acc_path):

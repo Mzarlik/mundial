@@ -15,6 +15,10 @@ def evaluate_tournament(df_all, start_date, end_date, tournament_name):
     
     cutoff = pd.Timestamp(start_date)
     
+    # Redefinir dinámicamente las ventanas temporales en el módulo importado
+    pm.DESDE = cutoff - pd.Timedelta(days=4*365)       # 4 años de ventana para ML/Dixon-Coles
+    pm.DESDE_BAYES = cutoff - pd.Timedelta(days=8*365) # 8 años de ventana para Bayesiano (evita arrays vacíos)
+    
     # Train data: everything before cutoff
     df_train = df_all[df_all.date < cutoff].copy()
     
@@ -65,58 +69,103 @@ def evaluate_tournament(df_all, start_date, end_date, tournament_name):
         h2h_dict[pair].sort(key=lambda x: x[0])
         
     print("[INFO] Building Train Dataset...")
-    X_train, yh_train, ya_train, _, _ = pm.build_dataset(dc_model, cutoff, df_train, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis)
+    X_train, yh_train, ya_train, th_train, ta_train = pm.build_dataset(dc_model, cutoff, df_train, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis)
     
-    print("[INFO] Training XGBoost...")
-    params = dict(objective='count:poisson', n_estimators=1500, max_depth=4,
-                  learning_rate=0.03, subsample=0.8, colsample_bytree=0.8, 
-                  min_child_weight=2, reg_lambda=1.5, random_state=42)
-    model_h = xgb.XGBRegressor(**params)
-    model_a = xgb.XGBRegressor(**params)
-    model_h.fit(X_train, yh_train, verbose=False)
-    model_a.fit(X_train, ya_train, verbose=False)
+    print("[INFO] Muestreando MCMC Bayesiano (PyMC)... Esto puede tardar ~1 min (draws=1500, tune=1500)...")
+    mc_model = pm.fit_mcmc(df_train[df_train.date >= pm.DESDE_BAYES], draws=1500, tune=1500)
     
-    print("[INFO] Evaluating on Tournament...")
-    # Predict match by match
-    hits = 0
-    rps_sum = 0
+    print("[INFO] Training XGBoost (early stopping)...")
+    model_h, model_a = pm.train_xgb_goals(X_train, yh_train, ya_train)
+    
+    print("[INFO] Training Red Neuronal (MLP)...")
+    scaler, mlp_h, mlp_a = pm.train_mlp_goals(X_train, yh_train, ya_train)
+    
+    print("[INFO] Training CatBoost...")
+    cb_h, cb_a = pm.train_catboost_goals(X_train, yh_train, ya_train, th_train, ta_train)
+    
+    print("[INFO] Evaluating all models on Tournament...")
+    
+    # Estructura para registrar aciertos (hits) y RPS para cada modelo
+    eval_results = {
+        'Dixon-Coles': {'hits': 0, 'rps_sum': 0.0},
+        'MCMC Bayesiano': {'hits': 0, 'rps_sum': 0.0},
+        'XGBoost': {'hits': 0, 'rps_sum': 0.0},
+        'Red Neuronal (MLP)': {'hits': 0, 'rps_sum': 0.0},
+        'CatBoost': {'hits': 0, 'rps_sum': 0.0},
+        'MFA Montecarlo': {'hits': 0, 'rps_sum': 0.0},
+        'Ensemble': {'hits': 0, 'rps_sum': 0.0}
+    }
+    
+    n_test = len(df_test)
     
     for row in df_test.itertuples():
         h = row.home_team
         a = row.away_team
-        host = 1.0 if row.country == h else (0.0) # simplify
+        host = 1.0 if row.country == h else 0.0
         
-        # Build features for test match
-        # To avoid data leakage, we evaluate using features as they were EXACTLY before the match
-        # But for simplicity in this script, we just use the final_elos from cutoff.
-        # This is slightly inaccurate because forms update during the tournament, but it's a good proxy.
+        # 1. Dixon-Coles
+        M_dc = pm.dc_matrix(dc_model, h, a, host)
         
-        # We can just call build_dataset on a df with 1 row, but we need dc_model which is trained.
-        # Actually, let's just use xgb_matrix from predict_matches.
+        # 2. MCMC Bayesiano
+        M_mc = pm.mcmc_matrix_mean(mc_model, h, a, host, dc_model)
         
-        # xgb_matrix returns M, lam, mu. We just want M.
-        # Wait, xgb_matrix takes reg_home, reg_away.
-        M, lh, la = pm.xgb_matrix(model_h, model_a, dc_model, h, a, host, row.date, form_by_team, elo_by_team, final_elos, h2h_dict, 1.0, pi_by_team, final_pis)
+        # 3. XGBoost
+        M_xgb, _, _ = pm.xgb_matrix(model_h, model_a, dc_model, h, a, host, row.date, form_by_team, elo_by_team, final_elos, h2h_dict, 1.0, pi_by_team, final_pis)
         
-        p_1x2 = pm.matrix_to_1x2(M)
+        # 4. MLP
+        M_mlp, _, _ = pm.mlp_matrix(scaler, mlp_h, mlp_a, dc_model, h, a, host, row.date, form_by_team, elo_by_team, final_elos, h2h_dict, 1.0, pi_by_team, final_pis)
+        
+        # 5. CatBoost
+        M_cb, _, _ = pm.catboost_matrix(cb_h, cb_a, dc_model, h, a, host, row.date, form_by_team, elo_by_team, final_elos, h2h_dict, 1.0, pi_by_team, final_pis)
+        
+        # 6. MFA Montecarlo (Elo + Forma a la fecha del partido histórico)
+        elo_h = pm.get_elo_at_date(h, row.date, elo_by_team, final_elos)
+        elo_a = pm.get_elo_at_date(a, row.date, elo_by_team, final_elos)
+        fh = pm.get_form_at_date(h, row.date, form_by_team)
+        fa = pm.get_form_at_date(a, row.date, form_by_team)
+        form_h_val = fh[2] if fh else 0.5
+        form_a_val = fa[2] if fa else 0.5
+        M_mfa, _, _ = pm.montecarlo_mfa_matrix(h, a, elo_h, elo_a, form_h_val, form_a_val)
+        
+        # 7. Ensemble (Promedio de 5 modelos)
+        M_ens = (M_mc + M_xgb + M_mlp + M_cb + M_mfa) / 5
         
         real_outcome = 0 if row.home_score > row.away_score else (2 if row.home_score < row.away_score else 1)
-        pred_outcome = int(np.argmax(p_1x2))
         
-        if real_outcome == pred_outcome:
-            hits += 1
+        # Evaluar cada modelo
+        matrices = {
+            'Dixon-Coles': M_dc,
+            'MCMC Bayesiano': M_mc,
+            'XGBoost': M_xgb,
+            'Red Neuronal (MLP)': M_mlp,
+            'CatBoost': M_cb,
+            'MFA Montecarlo': M_mfa,
+            'Ensemble': M_ens
+        }
+        
+        for name, M_pred in matrices.items():
+            p_1x2 = pm.matrix_to_1x2(M_pred)
+            pred_outcome = int(np.argmax(p_1x2))
             
-        rps_sum += pm.rps_1x2(p_1x2, real_outcome)
-        
-    accuracy = hits / len(df_test)
-    avg_rps = rps_sum / len(df_test)
+            if pred_outcome == real_outcome:
+                eval_results[name]['hits'] += 1
+            eval_results[name]['rps_sum'] += pm.rps_1x2(p_1x2, real_outcome)
+            
+    print(f"\nResultados Comparativos de Backtesting para {tournament_name}:")
+    print(f"{'Modelo':<25} | {'Accuracy 1X2':<12} | {'RPS Promedio':<12}")
+    print("-" * 57)
     
-    print(f"--> Accuracy (Aciertos 1X2): {accuracy*100:.2f}%")
-    print(f"--> RPS Promedio (Menor es mejor): {avg_rps:.4f}")
-    if accuracy > 0.50:
-        print(f"[OK] El modelo pasa la prueba histórica en {tournament_name}.")
+    for name, metrics in eval_results.items():
+        acc = (metrics['hits'] / n_test) * 100
+        avg_rps = metrics['rps_sum'] / n_test
+        print(f"{name:<25} | {acc:>11.2f}% | {avg_rps:>12.4f}")
+        
+    # Verificar si el Ensemble pasa el umbral de aciertos
+    ens_acc = eval_results['Ensemble']['hits'] / n_test
+    if ens_acc > 0.50:
+        print(f"\n[OK] El Ensemble pasa la prueba histórica en {tournament_name} (Accuracy > 50%).")
     else:
-        print(f"[WARNING] El modelo podría estar sobreajustado o tener problemas en {tournament_name}.")
+        print(f"\n[WARNING] El Ensemble tiene un rendimiento bajo en {tournament_name}.")
 
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
