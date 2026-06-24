@@ -15,6 +15,7 @@ import xgboost as xgb
 from catboost import CatBoostRegressor
 from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
 
 warnings.filterwarnings('ignore')
 sns.set_style('whitegrid')
@@ -24,7 +25,7 @@ DESDE = pd.Timestamp('2018-01-01')       # ventana Dixon-Coles / XGBoost
 DESDE_BAYES = pd.Timestamp('2018-01-01') # Ampliado para capturar el ciclo mundialista anterior y evitar fallbacks
 VAL_CUTOFF = pd.Timestamp('2025-09-01')  # corte de validación
 MATCH_DATE = pd.Timestamp('2026-06-22')  # fecha base de predicción
-HALF_LIFE = 547                          # 1.5 años de vida media para decaimiento exponencial (Dixon-Coles)
+HALF_LIFE = 365                          # 1 año de vida media para decaimiento exponencial más rápido (Dixon-Coles)
 MIN_PARTIDOS_BAYES = 15                  # Aumentado a 15 porque la ventana de tiempo ahora es más amplia
 MAXG = 7
 
@@ -396,16 +397,24 @@ def make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, 
     
     h2h_gd = get_h2h_at_date(h, a, date, h2h_dict)
     
-    # Market Values
+    # Market Values & Scraped Features
     mv_h = MARKET_VALUES.get(h, 0.0) if 'MARKET_VALUES' in globals() else 0.0
     mv_a = MARKET_VALUES.get(a, 0.0) if 'MARKET_VALUES' in globals() else 0.0
     mv_diff = mv_h - mv_a
     
+    age_h = AVG_AGE.get(h, 27.0) if 'AVG_AGE' in globals() else 27.0
+    age_a = AVG_AGE.get(a, 27.0) if 'AVG_AGE' in globals() else 27.0
+    age_diff = age_h - age_a
+    
+    sq_h = SQUAD_SIZE.get(h, 23.0) if 'SQUAD_SIZE' in globals() else 23.0
+    sq_a = SQUAD_SIZE.get(a, 23.0) if 'SQUAD_SIZE' in globals() else 23.0
+    sq_diff = sq_h - sq_a
+    
+    # Devolvemos un vector purgado de ruido (sin variables scrapeadas vacías)
     return [
         lam, mu, att[idx[h]] - att[idx[a]], dfn[idx[h]] - dfn[idx[a]], float(host),
         fh[0], fh[1], fh[2], fa[0], fa[1], fa[2],
-        elo_h, elo_a, elo_diff, pi_h, pi_a, h2h_gd, float(is_comp),
-        mv_h, mv_a, mv_diff
+        elo_h, elo_a, elo_diff, pi_h, pi_a, h2h_gd, float(is_comp)
     ]
 
 def build_dataset(dcm, fecha_max, df_all, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis):
@@ -429,11 +438,24 @@ def build_dataset(dcm, fecha_max, df_all, form_by_team, elo_by_team, final_elos,
     return np.array(rows), np.array(yh), np.array(ya), th, ta
 
 def train_xgb_goals(X, yh, ya):
-    # Ajuste de hiperparámetros: Se añade reg_lambda y min_child_weight para mayor robustez
-    params = dict(objective='count:poisson', n_estimators=300, max_depth=4,
-                  learning_rate=0.05, subsample=0.8, colsample_bytree=0.8, 
-                  min_child_weight=2, reg_lambda=1.5, random_state=42)
-    return xgb.XGBRegressor(**params).fit(X, yh), xgb.XGBRegressor(**params).fit(X, ya)
+    # Ajuste de hiperparámetros y Early Stopping
+    # Aumentamos reg_lambda a 4.0 y reducimos max_depth a 3 para forzar conservadurismo anti-sobreajuste
+    params = dict(objective='count:poisson', n_estimators=1500, max_depth=3,
+                  learning_rate=0.03, subsample=0.8, colsample_bytree=0.8, 
+                  min_child_weight=2, reg_lambda=4.0, random_state=42, early_stopping_rounds=50)
+    
+    # Hacemos validación interna 85/15
+    X_train_h, X_val_h, y_train_h, y_val_h = train_test_split(X, yh, test_size=0.15, random_state=42)
+    X_train_a, X_val_a, y_train_a, y_val_a = train_test_split(X, ya, test_size=0.15, random_state=42)
+    
+    model_h = xgb.XGBRegressor(**params)
+    model_h.fit(X_train_h, y_train_h, eval_set=[(X_val_h, y_val_h)], verbose=False)
+    
+    model_a = xgb.XGBRegressor(**params)
+    model_a.fit(X_train_a, y_train_a, eval_set=[(X_val_a, y_val_a)], verbose=False)
+    
+    print(f"[INFO] XGBoost Home detenido en {model_h.best_iteration} iteraciones. Away en {model_a.best_iteration}.")
+    return model_h, model_a
 
 def train_mlp_goals(X, yh, ya):
     scaler = StandardScaler().fit(X)
@@ -602,9 +624,11 @@ if __name__ == '__main__':
     matches = parse_matches(js_path)
     print(f"[INFO] Se cargaron {len(matches)} partidos de config/matches.js")
     
-    # 1.5 Cargar datos financieros (Market Value)
-    global MARKET_VALUES
+    # 1.5 Cargar datos financieros y scrapeados (Market Value, Edad, Plantilla)
+    global MARKET_VALUES, AVG_AGE, SQUAD_SIZE
     MARKET_VALUES = {}
+    AVG_AGE = {}
+    SQUAD_SIZE = {}
     
     # Diccionario maestro de mapeo: Español (UI/matches.js) -> Inglés (results.csv)
     SPANISH_TO_ENGLISH = {
@@ -639,8 +663,10 @@ if __name__ == '__main__':
             }
             for row in df_mv.itertuples():
                 t_name = alias_map.get(row.team, row.team)
-                MARKET_VALUES[t_name] = row.market_value_num
-            print(f"[INFO] Cargados valores de mercado para {len(MARKET_VALUES)} selecciones.")
+                MARKET_VALUES[t_name] = getattr(row, 'market_value_num', 0.0)
+                AVG_AGE[t_name] = getattr(row, 'avg_age', 27.0)
+                SQUAD_SIZE[t_name] = getattr(row, 'squad_size', 23.0)
+            print(f"[INFO] Cargados valores scrapeados para {len(MARKET_VALUES)} selecciones.")
         except Exception as e:
             print(f"[WARNING] No se pudo leer market_values.csv: {e}")
     else:
@@ -819,6 +845,7 @@ if __name__ == '__main__':
     
     # 6. Bucle de predicción para los 32 partidos del Mundial
     print(f"\n[INFO] Generando gráficas de predicción para los {len(matches)} partidos...")
+    match_predictions = {}
     for idx, match in enumerate(matches):
         h = match['home']
         a = match['away']
@@ -847,6 +874,14 @@ if __name__ == '__main__':
                                           form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)
         
         M_ens = (M_mc + M_xgb + M_mlp + M_cb) / 4
+        
+        # Calcular probabilidades 1X2 para JSON
+        p_1x2 = matrix_to_1x2(M_ens)
+        match_predictions[m_id] = {
+            'home': float(p_1x2[0]),
+            'draw': float(p_1x2[1]),
+            'away': float(p_1x2[2])
+        }
         
         # Dataframes ordenados para top 10
         top_mc = build_top_df(M_mc, h, a)
@@ -889,6 +924,14 @@ if __name__ == '__main__':
         
     print(f"\n[OK] Finalizado exitosamente en {time.time() - t_start:.1f} segundos!")
     print("[INFO] Todos los gráficos de predicción han sido actualizados en public/graphs/")
+    
+    # Exportar JSON con las predicciones para el Frontend
+    import json
+    predictions_path = os.path.join(script_dir, 'public', 'data', 'predictions.json')
+    os.makedirs(os.path.dirname(predictions_path), exist_ok=True)
+    with open(predictions_path, 'w', encoding='utf-8') as f:
+        json.dump(match_predictions, f, indent=4)
+    print(f"[INFO] Exportadas las probabilidades a {predictions_path}")
     
     # Forzar la salida del proceso para evitar que PyMC / PyTensor mantengan hilos activos que congelen la consola en Windows
     os._exit(0)

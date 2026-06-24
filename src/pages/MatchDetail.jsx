@@ -1,10 +1,62 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getMatchById, flagUrl, DAYS } from '../config/matches';
 
 function GraphImage({ src, alt }) {
   if (!src) return (<div className="graph-placeholder">Gráfica pendiente — coloca el PNG en <code>public/graphs/</code> y actualiza <code>matches.js</code></div>);
   return <img src={src} alt={alt} style={{width:'100%',borderRadius:'var(--radius-md)'}} />;
+}
+
+function SafeBetBanner({ matchId, home, away }) {
+  const [prediction, setPrediction] = useState(null);
+
+  useEffect(() => {
+    fetch('/data/predictions.json')
+      .then(res => res.json())
+      .then(data => {
+        if (data[matchId]) {
+          setPrediction(data[matchId]);
+        }
+      })
+      .catch(e => console.error("Error loading predictions", e));
+  }, [matchId]);
+
+  if (!prediction) return null;
+
+  const { home: pH, draw: pD, away: pA } = prediction;
+  let suggestion = null;
+  let prob = 0;
+
+  if (pH > 0.65) { suggestion = `Gana ${home}`; prob = pH; }
+  else if (pA > 0.65) { suggestion = `Gana ${away}`; prob = pA; }
+  else if (pH + pD > 0.85) { suggestion = `Doble Oportunidad: ${home} o Empate`; prob = pH + pD; }
+  else if (pA + pD > 0.85) { suggestion = `Doble Oportunidad: ${away} o Empate`; prob = pA + pD; }
+
+  if (!suggestion) return null;
+
+  return (
+    <div style={{
+      background: 'linear-gradient(90deg, rgba(46, 204, 113, 0.15) 0%, rgba(39, 174, 96, 0.05) 100%)',
+      border: '1px solid #2ecc71',
+      borderRadius: '8px',
+      padding: '1.5rem',
+      marginBottom: '1.5rem',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '1.2rem'
+    }}>
+      <div style={{ fontSize: '2.5rem' }}>💎</div>
+      <div>
+        <div style={{ color: '#2ecc71', fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          Sugerencia de Apuesta de Valor (IA)
+        </div>
+        <div style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.4' }}>
+          El modelo Ensemble detecta una ventaja matemática significativa: 
+          <strong style={{ color: '#fff', marginLeft: '0.4rem', fontSize: '1.05rem' }}>{suggestion} ({(prob * 100).toFixed(1)}%)</strong>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function MatchDetail() {
@@ -25,6 +77,8 @@ export default function MatchDetail() {
       </div>
       <div className="detail-row"><span>{day?.full}</span><span>{match.time}</span><span>{match.venue}</span><span>{match.group}</span></div>
     </div>
+    
+    <SafeBetBanner matchId={match.id} home={match.home} away={match.away} />
     
     <div className="match-disclaimer"><strong>Aviso:</strong> Las predicciones son estimaciones generadas por modelos estadísticos con fines exclusivamente académicos y de entretenimiento. La precisión es limitada (~55-65% para el resultado) debido a la aleatoriedad del fútbol. No utilizar para decisiones de riesgo.</div>
     <div className="data-note"><strong>Nota:</strong> Los datos se calculan dinámicamente con cortes temporales para simular precisión fuera de muestra.</div>
