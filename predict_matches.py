@@ -106,17 +106,17 @@ def parse_matches(js_path):
         # Limpiar saltos de línea para facilitar regex
         obj_str = obj_str.replace('\n', ' ').replace('\r', ' ')
         
-        match_id = re.search(r"id\s*:\s*'([^']*)'", obj_str)
-        day = re.search(r"day\s*:\s*'([^']*)'", obj_str)
-        home = re.search(r"home\s*:\s*'([^']*)'", obj_str)
-        away = re.search(r"away\s*:\s*'([^']*)'", obj_str)
-        home_code = re.search(r"homeCode\s*:\s*'([^']*)'", obj_str)
-        away_code = re.search(r"awayCode\s*:\s*'([^']*)'", obj_str)
+        match_id = re.search(r"id\s*:\s*['\"]([^'\"]*)['\"]", obj_str)
+        day = re.search(r"day\s*:\s*['\"]([^'\"]*)['\"]", obj_str)
+        home = re.search(r"home\s*:\s*['\"]([^'\"]*)['\"]", obj_str)
+        away = re.search(r"away\s*:\s*['\"]([^'\"]*)['\"]", obj_str)
+        home_code = re.search(r"homeCode\s*:\s*['\"]([^'\"]*)['\"]", obj_str)
+        away_code = re.search(r"awayCode\s*:\s*['\"]([^'\"]*)['\"]", obj_str)
         
-        mcmc_path = re.search(r"mcmc\s*:\s*'([^']*)'", obj_str)
-        xgb_path = re.search(r"xgboost\s*:\s*'([^']*)'", obj_str)
-        acc_path = re.search(r"accuracy\s*:\s*'([^']*)'", obj_str)
-        res_path = re.search(r"Resumen\s*:\s*'([^']*)'", obj_str)
+        mcmc_path = re.search(r"mcmc\s*:\s*['\"]([^'\"]*)['\"]", obj_str)
+        xgb_path = re.search(r"xgboost\s*:\s*['\"]([^'\"]*)['\"]", obj_str)
+        acc_path = re.search(r"accuracy\s*:\s*['\"]([^'\"]*)['\"]", obj_str)
+        res_path = re.search(r"Resumen\s*:\s*['\"]([^'\"]*)['\"]", obj_str)
         
         if match_id and day and home and away:
             matches.append({
