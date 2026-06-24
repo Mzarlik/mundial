@@ -1,3 +1,16 @@
+# =====================================================================
+# 📊 PREDICCIÓN DE PARTIDOS DEL MUNDIAL 2026 - MÓDULO MACHINE LEARNING
+# =====================================================================
+# Este script realiza la predicción de resultados de fútbol utilizando:
+# 1. Dixon-Coles (Modelo probabilístico de Poisson con ajuste de correlación de empates y decaimiento temporal).
+# 2. MCMC Bayesiano (Simulación estocástica implementada con PyMC para distribuciones de goles).
+# 3. XGBoost Regressor (Modelo de Gradient Boosting basado en ELO, Pi-Ratings, valor de mercado y rachas).
+# 4. MLP Regressor (Red Neuronal Multicapa para aproximar la media de goles).
+# 5. CatBoost Regressor (Modelo de boosting optimizado para variables categóricas).
+# 6. Ensemble (Ponderación óptima de todos los modelos anteriores para máxima precisión).
+#
+# Adicionalmente, genera gráficos estadísticos explicativos para la visualización del frontend.
+
 import os
 import re
 import bisect
@@ -6,6 +19,7 @@ import time
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches   # modificado para importar patches de forma explícita
 import matplotlib.patches as mpatches
 import seaborn as sns
 from scipy.optimize import minimize
@@ -20,13 +34,13 @@ from sklearn.model_selection import train_test_split
 warnings.filterwarnings('ignore')
 sns.set_style('whitegrid')
 
-# Configuración global
-DESDE = pd.Timestamp('2018-01-01')       # ventana Dixon-Coles / XGBoost
-DESDE_BAYES = pd.Timestamp('2018-01-01') # Ampliado para capturar el ciclo mundialista anterior y evitar fallbacks
-VAL_CUTOFF = pd.Timestamp('2025-09-01')  # corte de validación
-MATCH_DATE = pd.Timestamp('2026-06-22')  # fecha base de predicción
-HALF_LIFE = 365                          # 1 año de vida media para decaimiento exponencial más rápido (Dixon-Coles)
-MIN_PARTIDOS_BAYES = 15                  # Aumentado a 15 porque la ventana de tiempo ahora es más amplia
+# Configuración global de los modelos
+DESDE = pd.Timestamp('2018-01-01')       # Ventana de datos históricos para Dixon-Coles, XGBoost, MLP y CatBoost
+DESDE_BAYES = pd.Timestamp('2018-01-01') # Ventana para MCMC Bayesiano (Ciclos mundialistas completos)
+VAL_CUTOFF = pd.Timestamp('2025-09-01')  # Fecha límite para separar el conjunto de entrenamiento y validación
+MATCH_DATE = pd.Timestamp('2026-06-22')  # Fecha base de las predicciones del Mundial
+HALF_LIFE = 365                          # Decaimiento temporal (1 año de vida media) para ponderar más los partidos recientes
+MIN_PARTIDOS_BAYES = 15                  # Filtro mínimo de partidos para entrenar variables en MCMC
 MAXG = 7
 
 # Colores premium consistentes
@@ -121,6 +135,16 @@ def parse_matches(js_path):
 
 # --- CÁLCULO ELO DINÁMICO ---
 def compute_elo_ratings(df):
+    """
+    Calcula los ratings ELO históricos para todas las selecciones.
+    El ELO inicial es 1500. Se actualiza después de cada partido según:
+      new_elo = old_elo + K * (Resultado_Real - Probabilidad_Esperada)
+    Donde:
+      - K = 60 para partidos de Mundial.
+      - K = 40 para torneos continentales / oficiales.
+      - K = 20 para amistosos.
+      - Se añade ventaja de localía (+100 puntos en rating) si el partido no es neutral.
+    """
     print("[INFO] Calculando ratings ELO históricos...")
     df = df.sort_values('date').reset_index(drop=True)
     elos = {}
@@ -197,6 +221,13 @@ def get_elo_at_date(team, date, elo_by_team, final_elos):
 
 # --- CÁLCULO PI-RATINGS ---
 def compute_pi_ratings(df):
+    """
+    Calcula los Pi-Ratings históricos (ratings basados en la diferencia de goles esperada).
+    A diferencia de ELO, Pi-Ratings se enfoca en medir la superioridad ofensiva/defensiva
+    directamente relacionada con el marcador final del partido.
+      - Tasa de aprendizaje (lambda) = 0.05.
+      - Ventaja de localía = +0.5 goles esperados si no es neutral.
+    """
     print("[INFO] Calculando Pi-Ratings históricos...")
     df = df.sort_values('date').reset_index(drop=True)
     pis = {}
@@ -264,6 +295,12 @@ def get_pi_at_date(team, date, pi_by_team, final_pis):
 
 # --- MODELO DIXON-COLES ---
 def fit_dixon_coles(train, cutoff, half_life=HALF_LIFE):
+    """
+    Ajusta el modelo probabilístico de Dixon-Coles.
+    Calcula los parámetros de ataque (att) y defensa (dfn) de cada equipo, la ventaja
+    de localía (home), y el parámetro de ajuste de empates de pocos goles (rho), utilizando
+    una regresión de Poisson ponderada por tiempo (decaimiento exponencial).
+    """
     train = train.copy()
     train['w'] = 0.5 ** ((cutoff - train['date']).dt.days / half_life)
     teams = sorted(set(train['home_team']) | set(train['away_team']))
@@ -309,6 +346,11 @@ def matrix_to_1x2(M):
 
 # --- MODELO MCMC BAYESIANO ---
 def fit_mcmc(train, draws=1000, tune=1000, seed=1):
+    """
+    Ajusta un modelo predictivo bayesiano jerárquico de Poisson.
+    Utiliza PyMC para estimar la distribución posterior de las habilidades de ataque
+    y defensa a través de muestreo por cadenas de Montecarlo (MCMC NUTS).
+    """
     cnt = pd.concat([train.home_team, train.away_team]).value_counts()
     keep = set(cnt[cnt >= MIN_PARTIDOS_BAYES].index)
     tb = train[train.home_team.isin(keep) & train.away_team.isin(keep)]

@@ -3,10 +3,10 @@ import pandas as pd
 import numpy as np
 
 # =====================================================================
-# ⚙️ CONFIGURACIÓN Y MAPEOS
+# ⚙️ CONFIGURACIÓN Y MAPEOS DEL SISTEMA
 # =====================================================================
 
-# Nombres en el CSV -> Nombres oficiales en results.csv (Inglés)
+# Mapeo de nombres en el CSV de simulación -> Nombres oficiales en results.csv (Inglés)
 CSV_TO_RESULTS = {
     'Czechia': 'Czech Republic',
     'Bosnia': 'Bosnia and Herzegovina',
@@ -14,7 +14,7 @@ CSV_TO_RESULTS = {
     'Turkiye': 'Turkey'
 }
 
-# Nombres en el CSV -> Nombres en Español para la UI
+# Mapeo de nombres en el CSV de simulación (Inglés) -> Nombres en Español para la Interfaz de Usuario
 ENGLISH_TO_SPANISH = {
     'Mexico': 'México', 'South Africa': 'Sudáfrica', 'South Korea': 'Corea del Sur',
     'Czechia': 'Chequia', 'Canada': 'Canadá', 'Bosnia': 'Bosnia y Herzegovina',
@@ -33,7 +33,7 @@ ENGLISH_TO_SPANISH = {
     'Ghana': 'Ghana', 'Panama': 'Panamá'
 }
 
-# Nombres en Español -> Códigos de bandera (FlagCDN)
+# Códigos de banderas (FlagCDN) correspondientes a los nombres de equipos en Español
 TEAM_TO_FLAG = {
     'Argentina': 'ar', 'Austria': 'at', 'Francia': 'fr', 'Irak': 'iq',
     'Noruega': 'no', 'Senegal': 'sn', 'Jordania': 'jo', 'Argelia': 'dz',
@@ -49,7 +49,7 @@ TEAM_TO_FLAG = {
     'Egipto': 'eg', 'Irán': 'ir', 'Nueva Zelanda': 'nz', 'Bélgica': 'be'
 }
 
-# Nombre del equipo -> Abreviación de 3 letras para el ID del partido
+# Mapeo de nombres en Inglés -> Abreviaciones de 3 letras usadas para los IDs de partidos y archivos gráficos
 TEAM_TO_ID_ABBR = {
     'Mexico': 'mex', 'South Africa': 'rsa', 'South Korea': 'kor', 'Czechia': 'cze',
     'Canada': 'can', 'Bosnia': 'bih', 'Qatar': 'qat', 'Switzerland': 'sui',
@@ -62,6 +62,7 @@ TEAM_TO_ID_ABBR = {
     'Uzbekistan': 'uzb', 'Colombia': 'col', 'England': 'eng', 'Croatia': 'cro', 'Ghana': 'gha', 'Panama': 'pan'
 }
 
+# Lista de sedes del Mundial 2026 para rotar en los partidos generados
 VENUES = [
     'MetLife Stadium, East Rutherford', 'SoFi Stadium, Inglewood', 'AT&T Stadium, Arlington',
     'Mercedes-Benz Stadium, Atlanta', 'NRG Stadium, Houston', 'Lincoln Financial Field, Filadelfia',
@@ -71,9 +72,17 @@ VENUES = [
     'Estadio Akron, Zapopan'
 ]
 
+# Horarios de transmisión para rotar en los partidos generados
 TIMES = ['1:00 PM ET', '4:00 PM ET', '7:00 PM ET', '10:00 PM ET']
 
 def main():
+    """
+    Función principal encargada de:
+    1. Cargar el archivo de simulación de partidos (partidos_simulados.csv).
+    2. Sincronizar los marcadores jugados en results.csv (historial global).
+    3. Reconstruir dinámicamente el archivo frontend src/config/matches.js con los partidos
+       actualizados, sus grupos, jornadas, sedes, horarios y rutas a las gráficas generadas.
+    """
     script_dir = os.path.dirname(os.path.abspath(__file__))
     
     csv_sim_path = os.path.join(script_dir, 'partidos_simulados.csv')
@@ -84,11 +93,11 @@ def main():
         print(f"[ERROR] No se encontró {csv_sim_path}")
         return
     
-    # 1. Cargar partidos simulados
+    # 1. Cargar partidos simulados desde el CSV
     df_sim = pd.read_csv(csv_sim_path)
     print(f"[INFO] Cargados {len(df_sim)} partidos desde partidos_simulados.csv")
     
-    # 2. Cargar results.csv para sincronizar marcadores jugados
+    # 2. Cargar results.csv para sincronizar marcadores de partidos que ya ocurrieron
     if os.path.exists(csv_results_path):
         df_results = pd.read_csv(csv_results_path)
         print(f"[INFO] Historial results.csv cargado ({len(df_results)} registros)")
@@ -98,33 +107,33 @@ def main():
             g_home = row['Goles Local']
             g_away = row['Goles Visitante']
             
-            # Solo actualizar si el partido ya se jugó (goles no nulos/vacíos)
+            # Solo actualizar si el partido ya se jugó (goles no nulos o vacíos en el archivo)
             if pd.notna(g_home) and pd.notna(g_away) and str(g_home).strip() != '' and str(g_away).strip() != '':
                 hs = int(g_home)
                 as_ = int(g_away)
                 
-                # Normalizar nombres para results.csv
+                # Normalizar nombres para que coincidan con results.csv
                 team_h = CSV_TO_RESULTS.get(row['Local'], row['Local'])
                 team_a = CSV_TO_RESULTS.get(row['Visitante'], row['Visitante'])
                 
-                # Buscar fila en results.csv para 2026-06
+                # Buscar si el partido de junio de 2026 ya está listado en results.csv
                 mask = df_results['date'].astype(str).str.startswith('2026-06') & (df_results['home_team'] == team_h) & (df_results['away_team'] == team_a)
                 if mask.sum() > 0:
                     df_results.loc[mask, 'home_score'] = hs
                     df_results.loc[mask, 'away_score'] = as_
                     updated_count += 1
                 else:
-                    # Probar al revés por si acaso
+                    # Intentar buscar con localía invertida
                     mask_rev = df_results['date'].astype(str).str.startswith('2026-06') & (df_results['home_team'] == team_a) & (df_results['away_team'] == team_h)
                     if mask_rev.sum() > 0:
                         df_results.loc[mask_rev, 'home_score'] = as_
                         df_results.loc[mask_rev, 'away_score'] = hs
                         updated_count += 1
                     else:
-                        # Si no existe, lo insertamos como fila nueva para asegurar que entre al set de entrenamiento
+                        # Si no existe en el historial, insertamos una nueva fila para alimentar los modelos predictivos
                         print(f"[WARNING] Partido no encontrado en results.csv, insertando nuevo: {team_h} vs {team_a}")
                         new_row = {
-                            'date': '2026-06-15', # Fecha genérica
+                            'date': '2026-06-15', # Fecha ficticia en junio del 2026
                             'home_team': team_h,
                             'away_team': team_a,
                             'home_score': hs,
@@ -142,7 +151,7 @@ def main():
     else:
         print(f"[WARNING] No se encontró {csv_results_path}, omitiendo sincronización de resultados.")
         
-    # 3. Generar archivo matches.js con los 72 partidos organizados por Jornadas
+    # 3. Generar archivo de configuración JavaScript matches.js con los partidos estructurados
     print("[INFO] Reconstruyendo src/config/matches.js...")
     
     js_content = """/* ARCHIVO AUTO-GENERADO POR sync_and_generate.py: edita equipos, jornadas y graficas desde partidos_simulados.csv */
@@ -161,33 +170,33 @@ export const MATCHES = [
         loc = row['Local']
         vis = row['Visitante']
         
-        # Mapear a Español
+        # Mapear a Español para visualización frontend
         loc_esp = ENGLISH_TO_SPANISH.get(loc, loc)
         vis_esp = ENGLISH_TO_SPANISH.get(vis, vis)
         
-        # Mapear códigos de banderas
+        # Mapear códigos de banderas de países
         flag_h = TEAM_TO_FLAG.get(loc_esp, 'default')
         flag_a = TEAM_TO_FLAG.get(vis_esp, 'default')
         
-        # Mapear abreviaciones para ID
+        # Mapear abreviaciones para el identificador único del partido (ID)
         abbr_h = TEAM_TO_ID_ABBR.get(loc, loc[:3].lower())
         abbr_a = TEAM_TO_ID_ABBR.get(vis, vis[:3].lower())
         match_id = f"{abbr_h}-{abbr_a}"
         
-        # Calcular Grupo
+        # Calcular el grupo correspondiente (son 12 grupos de 4 equipos en el formato 2026, 6 partidos por grupo en total)
         grp_idx = idx // 6
         grp_letter = chr(ord('A') + grp_idx)
         group_name = f"Grupo {grp_letter}"
         
-        # Calcular Jornada (day)
+        # Calcular la Jornada (Day)
         jornada_idx = (idx % 6) // 2 + 1
         day_id = f"jornada{jornada_idx}"
         
-        # Rotar Estadios e Instantes
+        # Asignación rotatoria de estadios y horarios
         venue = VENUES[idx % len(VENUES)]
         time = TIMES[idx % len(TIMES)]
         
-        # Estructurar objetos gráficos usando comillas dobles para evitar conflictos de comillas simples
+        # Estructurar las rutas locales de gráficos generados por los modelos de Machine Learning
         graphs_str = (
             f'graphs:{{mcmc:"/graphs/{day_id}/{match_id}_mcmc.png", '
             f'xgboost:"/graphs/{day_id}/{match_id}_xgboost.png", '
@@ -201,6 +210,7 @@ export const MATCHES = [
         
         colab = "https://github.com/Malpi/mundial"
         
+        # Escribir la línea formateada en JS
         js_content += f'  {{id:"{match_id}",day:"{day_id}",homeCode:"{flag_h}",awayCode:"{flag_a}",home:"{loc_esp}",away:"{vis_esp}",group:"{group_name}",time:"{time}",venue:"{venue}",\n   {graphs_str},colabLink:"{colab}"}},\n'
         
     js_content += """];
@@ -214,7 +224,7 @@ export function getMatchById(matchId) { return MATCHES.find(m => m.id === matchI
         f.write(js_content)
         
     print(f"[OK] matches.js reescrito exitosamente en: {js_matches_path}")
-    print(f"[INFO] Ahora puedes ejecutar predict_matches.py para re-entrenar y predecir los 72 partidos de forma nativa!")
+    print(f"[INFO] Ahora puedes ejecutar predict_matches.py para entrenar y predecir los 72 partidos de forma nativa!")
 
 if __name__ == '__main__':
     main()

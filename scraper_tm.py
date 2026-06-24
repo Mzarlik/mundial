@@ -2,9 +2,10 @@ import os
 import time
 import random
 import requests
-from bs4 import BeautifulSoup
 import pandas as pd
+from bs4 import BeautifulSoup
 
+# Lista de User-Agents simulados para rotar en cada petición y evitar bloqueos por parte de Transfermarkt
 USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
@@ -12,6 +13,10 @@ USER_AGENTS = [
 ]
 
 def get_soup(url):
+    """
+    Realiza una petición HTTP GET a la URL especificada utilizando un User-Agent aleatorio.
+    Retorna un objeto BeautifulSoup si la petición fue exitosa (código 200), de lo contrario None.
+    """
     headers = {
         'User-Agent': random.choice(USER_AGENTS),
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -28,8 +33,11 @@ def get_soup(url):
 
 def parse_market_value(val_str):
     """
-    Convierte '€1.04bn' -> 1040000000.0
-    Convierte '€850m' -> 850000000.0
+    Convierte cadenas de valor de mercado en números de coma flotante.
+    Ejemplos:
+      '€1.04bn' -> 1040000000.0
+      '€850m'   -> 850000000.0
+      '€450k'   -> 450000.0
     """
     val_str = val_str.lower().replace('€', '').strip()
     if not val_str or val_str == '-': return 0.0
@@ -51,16 +59,20 @@ def parse_market_value(val_str):
         return 0.0
 
 def scrape_top_national_teams():
-    # URL de los equipos nacionales más valiosos (página 1 de 4, usualmente trae 25 por página, así que buscaremos varias)
+    """
+    Scrapea las primeras 4 páginas de Transfermarkt para obtener información sobre
+    las 100 selecciones nacionales más valiosas.
+    Retorna una lista de diccionarios con el nombre, tamaño de plantilla, edad media y valor de mercado.
+    """
     base_url = "https://www.transfermarkt.com/vereins-statistik/wertvollstenationalmannschaften/marktwertetop"
-    
     teams_data = []
     
-    for page in range(1, 5):  # 100 selecciones
+    for page in range(1, 5):  # 4 páginas obteniendo ~25 equipos por página para un total de 100 selecciones
         url = f"{base_url}?page={page}"
         soup = get_soup(url)
         if not soup: break
         
+        # Localizar la tabla principal con clase 'items'
         table = soup.find('table', class_='items')
         if not table:
             print("[ERROR] No se encontró la tabla de equipos en la página.")
@@ -73,9 +85,7 @@ def scrape_top_national_teams():
             cols = row.find_all('td')
             if len(cols) < 5: continue
             
-            # Buscar el nombre del equipo en el tag <a>
-            # Usualmente en cols[1] o cols[2] dependiendo del DOM exacto
-            # Iteramos en las columnas buscando el link de la bandera
+            # Buscar el nombre de la selección nacional dentro del atributo 'title' de los enlaces
             team_name = ""
             for a_tag in row.find_all('a'):
                 if a_tag.get('title') and 'National Team' not in a_tag.get('title'):
@@ -88,10 +98,11 @@ def scrape_top_national_teams():
             try:
                 squad_size = cols[3].text.strip()
                 avg_age = cols[4].text.strip()
-                market_val_str = cols[-1].text.strip() # Última columna
+                market_val_str = cols[-1].text.strip() # El valor de mercado está en la última columna
             except IndexError:
                 continue
             
+            # Parsear el valor de mercado a número
             market_val_num = parse_market_value(market_val_str)
             
             teams_data.append({
@@ -102,7 +113,8 @@ def scrape_top_national_teams():
                 'market_value_num': market_val_num
             })
             
-        time.sleep(random.uniform(1.5, 3.0)) # Retraso para no ser bloqueado
+        # Retraso aleatorio respetuoso para evitar sobrecargar los servidores de Transfermarkt y ser baneados
+        time.sleep(random.uniform(1.5, 3.0))
         
     return teams_data
 
@@ -111,6 +123,7 @@ if __name__ == "__main__":
     data = scrape_top_national_teams()
     
     if data:
+        # Guardar resultados en un archivo CSV en el directorio público del frontend
         df = pd.DataFrame(data)
         out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'public', 'data')
         os.makedirs(out_dir, exist_ok=True)
