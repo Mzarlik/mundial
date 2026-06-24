@@ -97,6 +97,7 @@ def main():
     df_sim = pd.read_csv(csv_sim_path)
     print(f"[INFO] Cargados {len(df_sim)} partidos desde partidos_simulados.csv")
     
+    df_results = None
     # 2. Cargar results.csv para sincronizar marcadores de partidos que ya ocurrieron
     if os.path.exists(csv_results_path):
         df_results = pd.read_csv(csv_results_path)
@@ -192,7 +193,20 @@ export const MATCHES = [
         jornada_idx = (idx % 6) // 2 + 1
         day_id = f"jornada{jornada_idx}"
         
-        # Asignación rotatoria de estadios y horarios
+        # Buscar fecha real del partido en results.csv
+        match_date = "2026-06-15"
+        if df_results is not None:
+            team_h_res = CSV_TO_RESULTS.get(loc, loc)
+            team_a_res = CSV_TO_RESULTS.get(vis, vis)
+            mask_date = df_results['date'].astype(str).str.startswith('2026-06') & (df_results['home_team'] == team_h_res) & (df_results['away_team'] == team_a_res)
+            if mask_date.sum() > 0:
+                match_date = df_results[mask_date]['date'].values[0]
+            else:
+                mask_date_rev = df_results['date'].astype(str).str.startswith('2026-06') & (df_results['home_team'] == team_a_res) & (df_results['away_team'] == team_h_res)
+                if mask_date_rev.sum() > 0:
+                    match_date = df_results[mask_date_rev]['date'].values[0]
+
+        # Rotar Estadios e Instantes
         venue = VENUES[idx % len(VENUES)]
         time = TIMES[idx % len(TIMES)]
         
@@ -210,8 +224,8 @@ export const MATCHES = [
         
         colab = "https://github.com/Malpi/mundial"
         
-        # Escribir la línea formateada en JS
-        js_content += f'  {{id:"{match_id}",day:"{day_id}",homeCode:"{flag_h}",awayCode:"{flag_a}",home:"{loc_esp}",away:"{vis_esp}",group:"{group_name}",time:"{time}",venue:"{venue}",\n   {graphs_str},colabLink:"{colab}"}},\n'
+        # Escribir la línea formateada en JS (incluyendo la fecha)
+        js_content += f'  {{id:"{match_id}",day:"{day_id}",date:"{match_date}",homeCode:"{flag_h}",awayCode:"{flag_a}",home:"{loc_esp}",away:"{vis_esp}",group:"{group_name}",time:"time",venue:"{venue}",\n   {graphs_str},colabLink:"{colab}"}},\n'
         
     js_content += """];
 

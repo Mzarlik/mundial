@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 export default function Parlays() {
   const [predictions, setPredictions] = useState(null);
   const [activeTab, setActiveTab] = useState(DAYS[0]?.id || 'all');
+  const [activeDate, setActiveDate] = useState('all');
 
   useEffect(() => {
     fetch('/data/predictions.json')
@@ -66,17 +67,20 @@ export default function Parlays() {
     }
   });
 
-  // Group matches and picks by Day
-  const getDailyParlay = (dayId) => {
-    const dayPicks = allSafePicks.filter(pick => pick.day === dayId);
+  // Group matches and picks by Day & Date
+  const getDailyParlay = (dayId, selectedDate) => {
+    let dayPicks = allSafePicks.filter(pick => pick.day === dayId);
+    if (selectedDate && selectedDate !== 'all') {
+      dayPicks = dayPicks.filter(pick => pick.date === selectedDate);
+    }
     
     // Sort by confidence
     dayPicks.sort((a, b) => b.prob - a.prob);
 
     // Build parlay with top 3 safest picks of the day (limit to 3 for stability)
     const parlayPicks = dayPicks.slice(0, 3);
-    const combinedProb = parlayPicks.reduce((acc, pick) => acc * pick.prob, 1);
-    const impliedOdds = (1 / (combinedProb || 1)).toFixed(2);
+    const combinedProb = parlayPicks.length > 0 ? parlayPicks.reduce((acc, pick) => acc * pick.prob, 1) : 0;
+    const impliedOdds = parlayPicks.length > 0 ? (1 / (combinedProb || 1)).toFixed(2) : '1.00';
 
     return {
       picks: parlayPicks,
@@ -87,7 +91,11 @@ export default function Parlays() {
   };
 
   const currentDayInfo = DAYS.find(d => d.id === activeTab);
-  const dailyParlay = activeTab !== 'all' ? getDailyParlay(activeTab) : null;
+  const dailyParlay = activeTab !== 'all' ? getDailyParlay(activeTab, activeDate) : null;
+
+  // Get unique dates for the active Jornada
+  const matchesInJornada = MATCHES.filter(m => m.day === activeTab);
+  const datesInJornada = [...new Set(matchesInJornada.map(m => m.date))].sort();
 
   return (
     <div style={{ paddingBottom: '3rem' }}>
@@ -113,13 +121,13 @@ export default function Parlays() {
         background: 'rgba(255, 255, 255, 0.03)',
         borderRadius: '10px',
         border: '1px solid rgba(255, 255, 255, 0.05)',
-        marginBottom: '2rem',
+        marginBottom: '1rem',
         scrollbarWidth: 'none'
       }}>
         {DAYS.map(day => (
           <button
             key={day.id}
-            onClick={() => setActiveTab(day.id)}
+            onClick={() => { setActiveTab(day.id); setActiveDate('all'); }}
             style={{
               padding: '0.7rem 1.2rem',
               borderRadius: '8px',
@@ -141,7 +149,7 @@ export default function Parlays() {
           </button>
         ))}
         <button
-          onClick={() => setActiveTab('all')}
+          onClick={() => { setActiveTab('all'); setActiveDate('all'); }}
           style={{
             padding: '0.7rem 1.2rem',
             borderRadius: '8px',
@@ -161,6 +169,61 @@ export default function Parlays() {
           🔍 Ver Todos los Safe Bets
         </button>
       </div>
+
+      {/* Sub-tabs for Dates in selected Jornada */}
+      {activeTab !== 'all' && datesInJornada.length > 0 && (
+        <div style={{
+          display: 'flex',
+          gap: '0.4rem',
+          overflowX: 'auto',
+          padding: '0.3rem',
+          background: 'rgba(255, 255, 255, 0.015)',
+          borderRadius: '8px',
+          border: '1px solid rgba(255, 255, 255, 0.03)',
+          marginBottom: '2rem',
+          scrollbarWidth: 'none'
+        }}>
+          <button
+            onClick={() => setActiveDate('all')}
+            style={{
+              padding: '0.5rem 1rem',
+              borderRadius: '6px',
+              background: activeDate === 'all' ? 'rgba(245, 158, 11, 0.2)' : 'transparent',
+              border: activeDate === 'all' ? '1px solid #f59e0b' : '1px solid transparent',
+              color: activeDate === 'all' ? '#f59e0b' : 'rgba(255, 255, 255, 0.6)',
+              fontWeight: '600',
+              cursor: 'pointer',
+              fontSize: '0.8rem',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            Toda la Jornada
+          </button>
+          {datesInJornada.map(d => {
+            const parts = d.split('-');
+            const displayDate = parts.length === 3 ? `${parts[2]}/${parts[1]}` : d;
+            return (
+              <button
+                key={d}
+                onClick={() => setActiveDate(d)}
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '6px',
+                  background: activeDate === d ? 'rgba(245, 158, 11, 0.2)' : 'transparent',
+                  border: activeDate === d ? '1px solid #f59e0b' : '1px solid transparent',
+                  color: activeDate === d ? '#f59e0b' : 'rgba(255, 255, 255, 0.6)',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                📅 {displayDate}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Main Content Area */}
       {activeTab !== 'all' ? (
@@ -287,10 +350,10 @@ export default function Parlays() {
           {/* List of matches for the selected day */}
           <div>
             <h2 style={{ fontSize: '1.3rem', marginBottom: '1.2rem', fontFamily: 'var(--font-display)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-              Análisis y Apuestas Seguras del Día ({currentDayInfo?.label})
+              Análisis y Apuestas Seguras del Día ({activeDate === 'all' ? currentDayInfo?.label : activeDate.split('-').reverse().slice(0, 2).join('/')})
             </h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
-              {MATCHES.filter(m => m.day === activeTab).map(match => {
+              {MATCHES.filter(m => m.day === activeTab && (activeDate === 'all' || m.date === activeDate)).map(match => {
                 const safest = getSafestPick(match);
                 return (
                   <Link to={`/partido/${match.id}`} key={match.id} style={{ textDecoration: 'none' }}>
