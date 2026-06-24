@@ -8,7 +8,7 @@ export default function Home() {
         <h1>Fase de grupos <span>Interactiva</span></h1>
         <p>Predicciones generadas con Inteligencia Artificial. Un ejercicio académico de frontera para explorar cómo el Machine Learning y la Inferencia Bayesiana descifran el deporte más complejo del mundo.</p>
         <div style={{marginTop:'2.5rem',display:'flex',gap:'1rem',justifyContent:'center',flexWrap:'wrap'}}>
-          <Link to="/resultados/jun22" className="btn btn-accent">Ver Predicciones</Link>
+          <Link to="/resultados/jornada1" className="btn btn-accent">Ver Predicciones</Link>
           <Link to="/como-probar" className="btn btn-outline">Probar el Código Python</Link>
         </div>
       </div>

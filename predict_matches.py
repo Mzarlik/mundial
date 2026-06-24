@@ -34,6 +34,27 @@ C_HOME = '#1d4ed8'  # Azul rey
 C_DRAW = '#94a3b8'  # Gris pizarra
 C_AWAY = '#b91c1c'  # Rojo oscuro
 
+# Diccionario maestro de mapeo: Español (UI/matches.js) -> Inglés (results.csv)
+SPANISH_TO_ENGLISH = {
+    'Alemania': 'Germany', 'Arabia Saudita': 'Saudi Arabia', 'Argelia': 'Algeria',
+    'Argentina': 'Argentina', 'Australia': 'Australia', 'Austria': 'Austria',
+    'Bosnia y Herzegovina': 'Bosnia and Herzegovina', 'Brasil': 'Brazil',
+    'Bélgica': 'Belgium', 'Cabo Verde': 'Cape Verde', 'Canadá': 'Canada',
+    'Catar': 'Qatar', 'Chequia': 'Czech Republic', 'Colombia': 'Colombia',
+    'Corea del Sur': 'South Korea', 'Costa de Marfil': 'Ivory Coast',
+    'Croacia': 'Croatia', 'Curazao': 'Curaçao', 'Ecuador': 'Ecuador',
+    'Egipto': 'Egypt', 'Escocia': 'Scotland', 'España': 'Spain',
+    'Estados Unidos': 'United States', 'Francia': 'France', 'Ghana': 'Ghana',
+    'Haití': 'Haiti', 'Inglaterra': 'England', 'Irak': 'Iraq', 'Irán': 'Iran',
+    'Japón': 'Japan', 'Jordania': 'Jordan', 'Marruecos': 'Morocco',
+    'México': 'Mexico', 'Noruega': 'Norway', 'Nueva Zelanda': 'New Zealand',
+    'Panamá': 'Panama', 'Paraguay': 'Paraguay', 'Países Bajos': 'Netherlands',
+    'Portugal': 'Portugal', 'RD Congo': 'DR Congo', 'Senegal': 'Senegal',
+    'Sudáfrica': 'South Africa', 'Suecia': 'Sweden', 'Suiza': 'Switzerland',
+    'Turquía': 'Turkey', 'Túnez': 'Tunisia', 'Uruguay': 'Uruguay',
+    'Uzbekistán': 'Uzbekistan'
+}
+
 def resultado_real(hs, as_):
     return 0 if hs > as_ else (1 if hs == as_ else 2)
 
@@ -457,10 +478,24 @@ def train_xgb_goals(X, yh, ya):
     print(f"[INFO] XGBoost Home detenido en {model_h.best_iteration} iteraciones. Away en {model_a.best_iteration}.")
     return model_h, model_a
 
+def clip_lambda(val):
+    # Acota los goles esperados de media a un rango razonable [0.35, 3.2] para evitar que distribuciones extremas arruinen el RPS
+    return max(0.35, min(3.2, val))
+
 def train_mlp_goals(X, yh, ya):
     scaler = StandardScaler().fit(X)
     X_s = scaler.transform(X)
-    params = dict(hidden_layer_sizes=(64, 32), activation='relu', max_iter=500, alpha=0.05, random_state=42)
+    # Aumentamos regularización L2 alpha a 1.0, habilitamos early stopping con 15% de validación y simplificamos capas
+    params = dict(
+        hidden_layer_sizes=(48, 24),
+        activation='relu',
+        max_iter=400,
+        alpha=1.0,
+        early_stopping=True,
+        validation_fraction=0.15,
+        n_iter_no_change=15,
+        random_state=42
+    )
     return scaler, MLPRegressor(**params).fit(X_s, yh), MLPRegressor(**params).fit(X_s, ya)
 
 def train_catboost_goals(X, yh, ya, teams_h, teams_a):
@@ -486,8 +521,10 @@ def mlp_matrix(scaler, rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team,
         return M / M.sum(), 1.2, 1.2
     
     f_arr = scaler.transform(np.array(f).reshape(1, -1))
-    lh = float(max(0.01, rh.predict(f_arr)[0]))
-    la = float(max(0.01, ra.predict(f_arr)[0]))
+    lh = float(rh.predict(f_arr)[0])
+    la = float(ra.predict(f_arr)[0])
+    lh = clip_lambda(lh)
+    la = clip_lambda(la)
     M = np.outer(poisson.pmf(range(MAXG), lh), poisson.pmf(range(MAXG), la))
     return M / M.sum(), lh, la
 
@@ -519,8 +556,8 @@ def catboost_matrix(cb_h, cb_a, dcm, h, a, host, date, form_by_team, elo_by_team
     M = np.outer(poisson.pmf(range(MAXG), lh), poisson.pmf(range(MAXG), la))
     return M / M.sum(), lh, la
 
-def montecarlo_mfa_matrix(h, a, elo_h, elo_a, form_h, form_a):
-    """Integración del Motor Matemático del Repositorio MFA (Simulador 10k)"""
+def montecarlo_mfa_matrix(h, a, elo_h, elo_a, form_h, form_a, host=0.0):
+    """Integración del Motor Matemático del Repositorio MFA (Simulador 10k) optimizado y calibrado"""
     racha_h = form_h / 3.0 if form_h else 0.5
     racha_a = form_a / 3.0 if form_a else 0.5
     
@@ -534,14 +571,27 @@ def montecarlo_mfa_matrix(h, a, elo_h, elo_a, form_h, form_a):
     mod_h, inj_h = mfa_modifiers.get(h, (1.0, 1.0))
     mod_a, inj_a = mfa_modifiers.get(a, (1.0, 1.0))
     
-    fuerza_h = elo_h * (1 + (racha_h - 0.5) * 0.1) * mod_h * inj_h
-    fuerza_a = elo_a * (1 + (racha_a - 0.5) * 0.1) * mod_a * inj_a
+    fuerza_h = elo_h * (1 + (racha_h - 0.5) * 0.08) * mod_h * inj_h
+    fuerza_a = elo_a * (1 + (racha_a - 0.5) * 0.08) * mod_a * inj_a
     
-    diff_ajuste = (fuerza_h - fuerza_a) / 400.0
-    media_goles_base = 1.3
+    if host > 0:
+        fuerza_h *= 1.03  # Ventaja local sutil del 3% si juega de local/anfitrión
+        
+    # CALIBRACIÓN LOGÍSTICA / SIGMOIDE DE ELO
+    # Calculamos la expectativa de victoria de Elo clásica (We) acotada entre 0 y 1
+    dr = fuerza_h - fuerza_a
+    we_h = 1.0 / (10.0 ** (-dr / 400.0) + 1.0)
     
-    lh = max(0.4, media_goles_base + diff_ajuste)
-    la = max(0.4, media_goles_base - diff_ajuste)
+    # Mapeamos we_h a diferencia de goles de forma suave y acotada [-0.675, 0.675]
+    diff_ajuste = (we_h - 0.5) * 1.35
+    
+    media_goles_base = 1.25  # Reducido sutilmente alineado con los mundiales
+    
+    lh = max(0.35, media_goles_base + diff_ajuste)
+    la = max(0.35, media_goles_base - diff_ajuste)
+    
+    lh = max(0.35, min(2.8, lh))
+    la = max(0.35, min(2.8, la))
     
     M = np.outer(poisson.pmf(range(MAXG), lh), poisson.pmf(range(MAXG), la))
     return M / M.sum(), lh, la
@@ -660,26 +710,7 @@ if __name__ == '__main__':
     AVG_AGE = {}
     SQUAD_SIZE = {}
     
-    # Diccionario maestro de mapeo: Español (UI/matches.js) -> Inglés (results.csv)
-    SPANISH_TO_ENGLISH = {
-        'Alemania': 'Germany', 'Arabia Saudita': 'Saudi Arabia', 'Argelia': 'Algeria',
-        'Argentina': 'Argentina', 'Australia': 'Australia', 'Austria': 'Austria',
-        'Bosnia y Herzegovina': 'Bosnia and Herzegovina', 'Brasil': 'Brazil',
-        'Bélgica': 'Belgium', 'Cabo Verde': 'Cape Verde', 'Canadá': 'Canada',
-        'Catar': 'Qatar', 'Chequia': 'Czech Republic', 'Colombia': 'Colombia',
-        'Corea del Sur': 'South Korea', 'Costa de Marfil': 'Ivory Coast',
-        'Croacia': 'Croatia', 'Curazao': 'Curaçao', 'Ecuador': 'Ecuador',
-        'Egipto': 'Egypt', 'Escocia': 'Scotland', 'España': 'Spain',
-        'Estados Unidos': 'United States', 'Francia': 'France', 'Ghana': 'Ghana',
-        'Haití': 'Haiti', 'Inglaterra': 'England', 'Irak': 'Iraq', 'Irán': 'Iran',
-        'Japón': 'Japan', 'Jordania': 'Jordan', 'Marruecos': 'Morocco',
-        'México': 'Mexico', 'Noruega': 'Norway', 'Nueva Zelanda': 'New Zealand',
-        'Panamá': 'Panama', 'Paraguay': 'Paraguay', 'Países Bajos': 'Netherlands',
-        'Portugal': 'Portugal', 'RD Congo': 'DR Congo', 'Senegal': 'Senegal',
-        'Sudáfrica': 'South Africa', 'Suecia': 'Sweden', 'Suiza': 'Switzerland',
-        'Turquía': 'Turkey', 'Túnez': 'Tunisia', 'Uruguay': 'Uruguay',
-        'Uzbekistán': 'Uzbekistan'
-    }
+
 
     mv_path = os.path.join(script_dir, 'public', 'data', 'market_values.csv')
     if os.path.exists(mv_path):
@@ -930,7 +961,7 @@ if __name__ == '__main__':
         form_h_val = fh[2] if fh else 0.5
         form_a_val = fa[2] if fa else 0.5
         
-        M_mfa, lh_mfa, la_mfa = montecarlo_mfa_matrix(h_eng, a_eng, elo_h, elo_a, form_h_val, form_a_val)
+        M_mfa, lh_mfa, la_mfa = montecarlo_mfa_matrix(h_eng, a_eng, elo_h, elo_a, form_h_val, form_a_val, host)
         
         # Ensemble 5 IAs
         M_ens = (M_mc + M_xgb + M_mlp + M_cb + M_mfa) / 5
