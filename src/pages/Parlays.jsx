@@ -30,29 +30,54 @@ export default function Parlays() {
     if (!pred) return null;
 
     const { home: pH, draw: pD, away: pA } = pred;
-    
+    const candidates = [];
+
     // Victoria simple (umbral > 55%)
     if (pH > 0.55) {
-      return { pick: `Gana ${match.home}`, prob: pH, type: 'Victoria Simple', shortType: '1', color: '#60a5fa', bg: 'rgba(59, 130, 246, 0.15)' };
+      candidates.push({ pick: `Gana ${match.home}`, prob: pH, type: 'Victoria Simple', shortType: '1', color: '#60a5fa', bg: 'rgba(59, 130, 246, 0.15)' });
     }
     if (pA > 0.55) {
-      return { pick: `Gana ${match.away}`, prob: pA, type: 'Victoria Simple', shortType: '2', color: '#f87171', bg: 'rgba(239, 68, 68, 0.15)' };
+      candidates.push({ pick: `Gana ${match.away}`, prob: pA, type: 'Victoria Simple', shortType: '2', color: '#f87171', bg: 'rgba(239, 68, 68, 0.15)' });
     }
     
     // Doble oportunidad (umbral > 75%)
     if (pH + pD > 0.75) {
-      return { pick: `Doble Oportunidad: ${match.home} o Empate`, prob: pH + pD, type: 'Doble Oportunidad', shortType: '1X', color: '#34d399', bg: 'rgba(52, 211, 153, 0.15)' };
+      candidates.push({ pick: `Doble Oportunidad: ${match.home} o Empate`, prob: pH + pD, type: 'Doble Oportunidad', shortType: '1X', color: '#34d399', bg: 'rgba(52, 211, 153, 0.15)' });
     }
     if (pA + pD > 0.75) {
-      return { pick: `Doble Oportunidad: ${match.away} o Empate`, prob: pA + pD, type: 'Doble Oportunidad', shortType: 'X2', color: '#fb7185', bg: 'rgba(251, 113, 133, 0.15)' };
+      candidates.push({ pick: `Doble Oportunidad: ${match.away} o Empate`, prob: pA + pD, type: 'Doble Oportunidad', shortType: 'X2', color: '#fb7185', bg: 'rgba(251, 113, 133, 0.15)' });
     }
 
     // Doble oportunidad Local o Visitante (umbral > 80%)
     if (pH + pA > 0.80) {
-      return { pick: `Doble Oportunidad: ${match.home} o ${match.away}`, prob: pH + pA, type: 'Doble Oportunidad', shortType: '12', color: '#a78bfa', bg: 'rgba(167, 139, 250, 0.15)' };
+      candidates.push({ pick: `Doble Oportunidad: ${match.home} o ${match.away}`, prob: pH + pA, type: 'Doble Oportunidad', shortType: '12', color: '#a78bfa', bg: 'rgba(167, 139, 250, 0.15)' });
     }
 
-    return null;
+    // Over / Under Goles (evaluado de forma conjunta de las 5 IAs)
+    if (pred.over15 !== undefined && pred.over15 > 0.75) {
+      candidates.push({ pick: 'Más de 1.5 Goles', prob: pred.over15, type: 'Total Goles', shortType: '+1.5 G', color: '#60a5fa', bg: 'rgba(96, 165, 250, 0.15)' });
+    }
+    if (pred.under15 !== undefined && pred.under15 > 0.65) {
+      candidates.push({ pick: 'Menos de 1.5 Goles', prob: pred.under15, type: 'Total Goles', shortType: '-1.5 G', color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.15)' });
+    }
+    if (pred.over25 !== undefined && pred.over25 > 0.62) {
+      candidates.push({ pick: 'Más de 2.5 Goles', prob: pred.over25, type: 'Total Goles', shortType: '+2.5 G', color: '#fbbf24', bg: 'rgba(251, 191, 36, 0.15)' });
+    }
+    if (pred.under25 !== undefined && pred.under25 > 0.62) {
+      candidates.push({ pick: 'Menos de 2.5 Goles', prob: pred.under25, type: 'Total Goles', shortType: '-2.5 G', color: '#34d399', bg: 'rgba(52, 211, 153, 0.15)' });
+    }
+    if (pred.over35 !== undefined && pred.over35 > 0.58) {
+      candidates.push({ pick: 'Más de 3.5 Goles', prob: pred.over35, type: 'Total Goles', shortType: '+3.5 G', color: '#f87171', bg: 'rgba(248, 113, 113, 0.15)' });
+    }
+    if (pred.under35 !== undefined && pred.under35 > 0.75) {
+      candidates.push({ pick: 'Menos de 3.5 Goles', prob: pred.under35, type: 'Total Goles', shortType: '-3.5 G', color: '#10b981', bg: 'rgba(16, 185, 129, 0.15)' });
+    }
+
+    if (candidates.length === 0) return null;
+
+    // Seleccionamos el pick con mayor probabilidad absoluta
+    candidates.sort((a, b) => b.prob - a.prob);
+    return candidates[0];
   };
 
   // Build list of safest picks for ALL matches
@@ -274,7 +299,14 @@ export default function Parlays() {
                   }}>
                     <span style={{ position: 'absolute', left: 0, top: '25%', height: '50%', width: '3px', background: pick.color }}></span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', width: '70px', justifyContent: 'center' }}>
-                      <img src={flagUrl(pick.pick.includes(pick.home) ? pick.homeCode : pick.awayCode)} style={{ width: '28px', height: '18px', borderRadius: '2px', objectFit: 'cover', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }} alt="" />
+                      {pick.type === 'Total Goles' ? (
+                        <div style={{ display: 'flex', alignItems: 'center', position: 'relative', width: '38px', height: '18px' }}>
+                          <img src={flagUrl(pick.homeCode)} style={{ width: '22px', height: '14px', borderRadius: '2px', objectFit: 'cover', position: 'absolute', left: 0, zIndex: 2, border: '1px solid rgba(0,0,0,0.2)' }} alt="" />
+                          <img src={flagUrl(pick.awayCode)} style={{ width: '22px', height: '14px', borderRadius: '2px', objectFit: 'cover', position: 'absolute', right: 0, zIndex: 1, border: '1px solid rgba(0,0,0,0.2)' }} alt="" />
+                        </div>
+                      ) : (
+                        <img src={flagUrl(pick.pick.includes(pick.home) ? pick.homeCode : pick.awayCode)} style={{ width: '28px', height: '18px', borderRadius: '2px', objectFit: 'cover', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }} alt="" />
+                      )}
                       <span style={{ fontSize: '0.72rem', fontWeight: 'bold', background: pick.bg, color: pick.color, padding: '0.15rem 0.4rem', borderRadius: '4px', border: `1px solid rgba(255,255,255,0.03)` }}>
                         {pick.shortType}
                       </span>

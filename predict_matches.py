@@ -34,12 +34,35 @@ from sklearn.model_selection import train_test_split
 warnings.filterwarnings('ignore')
 sns.set_style('whitegrid')
 
+# Cargar datos financieros y scrapeados (Market Value, Edad, Plantilla) a nivel de módulo
+MARKET_VALUES = {}
+AVG_AGE = {}
+SQUAD_SIZE = {}
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
+mv_path = os.path.join(script_dir, 'public', 'data', 'market_values.csv')
+if os.path.exists(mv_path):
+    try:
+        df_mv = pd.read_csv(mv_path)
+        alias_map = {
+            'United States': 'USA', 'South Korea': 'South Korea',
+            'Ivory Coast': 'Ivory Coast', 'DR Congo': 'DR Congo',
+            'Republic of Ireland': 'Republic of Ireland'
+        }
+        for row in df_mv.itertuples():
+            t_name = alias_map.get(row.team, row.team)
+            MARKET_VALUES[t_name] = getattr(row, 'market_value_num', 0.0)
+            AVG_AGE[t_name] = getattr(row, 'avg_age', 27.0)
+            SQUAD_SIZE[t_name] = getattr(row, 'squad_size', 23.0)
+    except Exception as e:
+        pass
+
 # Configuración global de los modelos
 DESDE = pd.Timestamp('2018-01-01')       # Ventana de datos históricos para Dixon-Coles, XGBoost, MLP y CatBoost
 DESDE_BAYES = pd.Timestamp('2018-01-01') # Ventana para MCMC Bayesiano (Ciclos mundialistas completos)
 VAL_CUTOFF = pd.Timestamp('2025-09-01')  # Fecha límite para separar el conjunto de entrenamiento y validación
 MATCH_DATE = pd.Timestamp('2026-06-22')  # Fecha base de las predicciones del Mundial
-HALF_LIFE = 365                          # Decaimiento temporal (1 año de vida media) para ponderar más los partidos recientes
+HALF_LIFE = 1200                          # Decaimiento temporal (3.3 años de vida media) para ponderar más los partidos recientes
 MIN_PARTIDOS_BAYES = 15                  # Filtro mínimo de partidos para entrenar variables en MCMC
 MAXG = 7
 
@@ -460,7 +483,7 @@ def make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, 
     
     h2h_gd = get_h2h_at_date(h, a, date, h2h_dict)
     
-    # Market Values & Scraped Features
+    # Market Values & Scraped Features (valores en escala real, óptimos para XGBoost y CatBoost)
     mv_h = MARKET_VALUES.get(h, 0.0) if 'MARKET_VALUES' in globals() else 0.0
     mv_a = MARKET_VALUES.get(a, 0.0) if 'MARKET_VALUES' in globals() else 0.0
     mv_diff = mv_h - mv_a
@@ -473,11 +496,12 @@ def make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, 
     sq_a = SQUAD_SIZE.get(a, 23.0) if 'SQUAD_SIZE' in globals() else 23.0
     sq_diff = sq_h - sq_a
     
-    # Devolvemos un vector purgado de ruido (sin variables scrapeadas vacías)
+    # Devolvemos un vector purgado de ruido (sin edad/plantilla vacíos, pero incluyendo el market value poblado)
     return [
         lam, mu, att[idx[h]] - att[idx[a]], dfn[idx[h]] - dfn[idx[a]], float(host),
         fh[0], fh[1], fh[2], fa[0], fa[1], fa[2],
-        elo_h, elo_a, elo_diff, pi_h, pi_a, h2h_gd, float(is_comp)
+        elo_h, elo_a, elo_diff, pi_h, pi_a, h2h_gd, float(is_comp),
+        mv_h, mv_a, mv_diff
     ]
 
 def build_dataset(dcm, fecha_max, df_all, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis):
@@ -525,8 +549,10 @@ def clip_lambda(val):
     return max(0.35, min(3.2, val))
 
 def train_mlp_goals(X, yh, ya):
-    scaler = StandardScaler().fit(X)
-    X_s = scaler.transform(X)
+    # La Red Neuronal funciona mejor sin la dispersión de valores de mercado (se acota a las primeras 18 características)
+    X_mlp = X[:, :18]
+    scaler = StandardScaler().fit(X_mlp)
+    X_s = scaler.transform(X_mlp)
     # Aumentamos regularización L2 alpha a 1.0, habilitamos early stopping con 15% de validación y simplificamos capas
     params = dict(
         hidden_layer_sizes=(48, 24),
@@ -562,7 +588,9 @@ def mlp_matrix(scaler, rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team,
         M = np.outer(poisson.pmf(range(MAXG), 1.2), poisson.pmf(range(MAXG), 1.2))
         return M / M.sum(), 1.2, 1.2
     
-    f_arr = scaler.transform(np.array(f).reshape(1, -1))
+    # Acotamos el vector a las 18 primeras características para la red neuronal
+    f_mlp = f[:18]
+    f_arr = scaler.transform(np.array(f_mlp).reshape(1, -1))
     lh = float(rh.predict(f_arr)[0])
     la = float(ra.predict(f_arr)[0])
     lh = clip_lambda(lh)
@@ -613,8 +641,8 @@ def montecarlo_mfa_matrix(h, a, elo_h, elo_a, form_h, form_a, host=0.0):
     mod_h, inj_h = mfa_modifiers.get(h, (1.0, 1.0))
     mod_a, inj_a = mfa_modifiers.get(a, (1.0, 1.0))
     
-    fuerza_h = elo_h * (1 + (racha_h - 0.5) * 0.08) * mod_h * inj_h
-    fuerza_a = elo_a * (1 + (racha_a - 0.5) * 0.08) * mod_a * inj_a
+    fuerza_h = elo_h * (1 + (racha_h - 0.5) * 0.04) * mod_h * inj_h
+    fuerza_a = elo_a * (1 + (racha_a - 0.5) * 0.04) * mod_a * inj_a
     
     if host > 0:
         fuerza_h *= 1.03  # Ventaja local sutil del 3% si juega de local/anfitrión
@@ -747,33 +775,7 @@ if __name__ == '__main__':
     print(f"[INFO] Se cargaron {len(matches)} partidos de config/matches.js")
     
     # 1.5 Cargar datos financieros y scrapeados (Market Value, Edad, Plantilla)
-    global MARKET_VALUES, AVG_AGE, SQUAD_SIZE
-    MARKET_VALUES = {}
-    AVG_AGE = {}
-    SQUAD_SIZE = {}
-    
-
-
-    mv_path = os.path.join(script_dir, 'public', 'data', 'market_values.csv')
-    if os.path.exists(mv_path):
-        try:
-            df_mv = pd.read_csv(mv_path)
-            # Normalización rápida de nombres
-            alias_map = {
-                'United States': 'USA', 'South Korea': 'South Korea',
-                'Ivory Coast': 'Ivory Coast', 'DR Congo': 'DR Congo',
-                'Republic of Ireland': 'Republic of Ireland'
-            }
-            for row in df_mv.itertuples():
-                t_name = alias_map.get(row.team, row.team)
-                MARKET_VALUES[t_name] = getattr(row, 'market_value_num', 0.0)
-                AVG_AGE[t_name] = getattr(row, 'avg_age', 27.0)
-                SQUAD_SIZE[t_name] = getattr(row, 'squad_size', 23.0)
-            print(f"[INFO] Cargados valores scrapeados para {len(MARKET_VALUES)} selecciones.")
-        except Exception as e:
-            print(f"[WARNING] No se pudo leer market_values.csv: {e}")
-    else:
-        print("[WARNING] No se encontró market_values.csv. Se asumirá 0 para todos.")
+    print(f"[INFO] Cargados valores scrapeados para {len(MARKET_VALUES)} selecciones (a nivel de módulo).")
     
     # 2. Cargar datos locales CSV
     csv_path = os.path.join(script_dir, 'international_results-master', 'international_results-master', 'results.csv')
@@ -909,8 +911,8 @@ if __name__ == '__main__':
         elo_a = get_elo_at_date(r.away_team, r.date, elo_by_team, final_elos)
         fh = get_form_at_date(r.home_team, r.date, form_by_team)
         fa = get_form_at_date(r.away_team, r.date, form_by_team)
-        form_h_val = fh[2] if fh else 0.5
-        form_a_val = fa[2] if fa else 0.5
+        form_h_val = fh[0] if fh else 0.5
+        form_a_val = fa[0] if fa else 0.5
         M_mfa_v = montecarlo_mfa_matrix(r.home_team, r.away_team, elo_h, elo_a, form_h_val, form_a_val)[0]
         p_mfa = matrix_to_1x2(M_mfa_v)
         res['MFA Montecarlo'][0] += int(np.argmax(p_mfa) == o)
@@ -1000,8 +1002,8 @@ if __name__ == '__main__':
         elo_a = get_elo_at_date(a_eng, MATCH_DATE, elo_by_team, final_elos)
         fh = get_form_at_date(h_eng, MATCH_DATE, form_by_team)
         fa = get_form_at_date(a_eng, MATCH_DATE, form_by_team)
-        form_h_val = fh[2] if fh else 0.5
-        form_a_val = fa[2] if fa else 0.5
+        form_h_val = fh[0] if fh else 0.5
+        form_a_val = fa[0] if fa else 0.5
         
         M_mfa, lh_mfa, la_mfa = montecarlo_mfa_matrix(h_eng, a_eng, elo_h, elo_a, form_h_val, form_a_val, host)
         
@@ -1028,11 +1030,37 @@ if __name__ == '__main__':
                 'prob': float(row_top['Prob (%)'])
             })
 
+        # Calcular probabilidades de total de goles (Over/Under)
+        # M_ens es la matriz de probabilidad conjunta promedio (7x7) de las 5 IAs
+        prob_under15 = 0.0
+        prob_under25 = 0.0
+        prob_under35 = 0.0
+        for h_g in range(MAXG):
+            for a_g in range(MAXG):
+                total_goals = h_g + a_g
+                p_cell = float(M_ens[h_g, a_g])
+                if total_goals < 1.5:
+                    prob_under15 += p_cell
+                if total_goals < 2.5:
+                    prob_under25 += p_cell
+                if total_goals < 3.5:
+                    prob_under35 += p_cell
+                    
+        prob_over15 = 1.0 - prob_under15
+        prob_over25 = 1.0 - prob_under25
+        prob_over35 = 1.0 - prob_under35
+
         match_predictions[m_id] = {
             'home': float(p_1x2[0]),
             'draw': float(p_1x2[1]),
             'away': float(p_1x2[2]),
-            'top3_scores': top3_list
+            'top3_scores': top3_list,
+            'under15': prob_under15,
+            'over15': prob_over15,
+            'under25': prob_under25,
+            'over25': prob_over25,
+            'under35': prob_under35,
+            'over35': prob_over35
         }
         
         # Definir rutas de salida físicas
