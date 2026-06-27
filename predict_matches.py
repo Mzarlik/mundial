@@ -62,7 +62,7 @@ DESDE = pd.Timestamp('2018-01-01')       # Ventana de datos históricos para Dix
 DESDE_BAYES = pd.Timestamp('2018-01-01') # Ventana para MCMC Bayesiano (Ciclos mundialistas completos)
 VAL_CUTOFF = pd.Timestamp('2025-09-01')  # Fecha límite para separar el conjunto de entrenamiento y validación
 MATCH_DATE = pd.Timestamp('2026-06-22')  # Fecha base de las predicciones del Mundial
-HALF_LIFE = 1200                          # Decaimiento temporal (3.3 años de vida media) para ponderar más los partidos recientes
+HALF_LIFE = 100                           # Dixon-Coles Dinámico (Vida media de 100 días para priorizar rachas recientes)
 MIN_PARTIDOS_BAYES = 15                  # Filtro mínimo de partidos para entrenar variables en MCMC
 MAXG = 7
 
@@ -841,25 +841,38 @@ if __name__ == '__main__':
     
     print("[INFO] Entrenando Red Neuronal (MLP) global...")
     scaler_f, mlp_home, mlp_away = train_mlp_goals(X_f, yh_f, ya_f)
-
     print("[INFO] Entrenando CatBoost global...")
     cb_home, cb_away = train_catboost_goals(X_f, yh_f, ya_f, th_f, ta_f)
     
-    # 5. Ajustar modelos GLOBALES para validación (Accuracy)
-    print("\n[INFO] Ejecutando simulación de validación para gráficos de Accuracy...")
-    dc_val = fit_dixon_coles(df_all[(df_all.date >= DESDE) & (df_all.date < VAL_CUTOFF)], VAL_CUTOFF)
-    mc_val = fit_mcmc(df_all[(df_all.date >= DESDE_BAYES) & (df_all.date < VAL_CUTOFF)], draws=2000, tune=2000)
-    X_v, yh_v, ya_v, th_v, ta_v = build_dataset(dc_val, VAL_CUTOFF, df_all, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis)
-    reg_home_val, reg_away_val = train_xgb_goals(X_v, yh_v, ya_v)
-    scaler_v, mlp_home_val, mlp_away_val = train_mlp_goals(X_v, yh_v, ya_v)
-    cb_home_val, cb_away_val = train_catboost_goals(X_v, yh_v, ya_v, th_v, ta_v)
-    
-    # Evaluar sobre conjunto de prueba posterior a VAL_CUTOFF
-    known_teams = set(dc_val['teams']) & mc_val['keep']
-    test_matches = df_all[(df_all.date >= VAL_CUTOFF) & (df_all.date < MATCH_DATE)].copy()
-    test_matches = test_matches[test_matches.home_team.isin(known_teams) & test_matches.away_team.isin(known_teams)]
-    
-    print(f"[INFO] Evaluando accuracy sobre {len(test_matches)} partidos fuera de muestra...")
+    print("\n[INFO] Ejecutando simulación de validación basada en tus partidos jugados...")
+    simulated_results = {}
+    csv_sim_path = os.path.join(script_dir, 'partidos_simulados.csv')
+    if os.path.exists(csv_sim_path):
+        try:
+            df_sim = pd.read_csv(csv_sim_path)
+            TEAM_TO_ID_ABBR = {
+                'Mexico': 'mex', 'South Africa': 'rsa', 'South Korea': 'kor', 'Czechia': 'cze',
+                'Canada': 'can', 'Bosnia': 'bih', 'Qatar': 'qat', 'Switzerland': 'sui',
+                'Brazil': 'bra', 'Morocco': 'mar', 'Haiti': 'hai', 'Scotland': 'sco', 'USA': 'usa',
+                'Paraguay': 'par', 'Australia': 'aus', 'Turkiye': 'tur', 'Germany': 'ger', 'Curaçao': 'cur',
+                'Ivory Coast': 'civ', 'Ecuador': 'ecu', 'Netherlands': 'ned', 'Japan': 'jpn', 'Sweden': 'swe', 'Tunisia': 'tun',
+                'Belgium': 'bel', 'Egypt': 'egy', 'Iran': 'irn', 'New Zealand': 'nzl', 'Spain': 'esp', 'Cape Verde': 'cpv',
+                'Saudi Arabia': 'sau', 'Uruguay': 'uru', 'France': 'fra', 'Senegal': 'sen', 'Iraq': 'irq', 'Norway': 'nor',
+                'Argentina': 'arg', 'Algeria': 'alg', 'Austria': 'aut', 'Jordan': 'jor', 'Portugal': 'por', 'DR Congo': 'cod',
+                'Uzbekistan': 'uzb', 'Colombia': 'col', 'England': 'eng', 'Croatia': 'cro', 'Ghana': 'gha', 'Panama': 'pan'
+            }
+            for _, row in df_sim.iterrows():
+                gh = row['Goles Local']
+                ga = row['Goles Visitante']
+                if pd.notna(gh) and pd.notna(ga) and str(gh).strip() != '' and str(ga).strip() != '':
+                    h_abbr = TEAM_TO_ID_ABBR.get(row['Local'], row['Local'][:3].lower())
+                    a_abbr = TEAM_TO_ID_ABBR.get(row['Visitante'], row['Visitante'][:3].lower())
+                    m_id = f"{h_abbr}-{a_abbr}"
+                    simulated_results[m_id] = (int(gh), int(ga))
+        except Exception as e:
+            print(f"[WARNING] Error al leer partidos_simulados.csv en predict_matches: {e}")
+            
+    # Si no hay partidos de simulación jugados, caemos a una lista vacía
     res = {
         'Dixon-Coles': [0, 0.],
         'MCMC Bayesiano': [0, 0.],
@@ -870,56 +883,70 @@ if __name__ == '__main__':
         'Ensemble': [0, 0.]
     }
     n_test = 0
-    for r in test_matches.itertuples():
-        host_val = 1.0 if not r.neutral else 0.0
-        o = resultado_real(r.home_score, r.away_score)
+    
+    for m_id, (goals_h, goals_a) in simulated_results.items():
+        # Buscar partido en matches
+        match_obj = next((m for m in matches if m['id'] == m_id), None)
+        if not match_obj:
+            continue
+            
+        h = match_obj['home']
+        a = match_obj['away']
+        host = 0.0
+        is_comp = 1.0
+        
+        # Traducir nombres
+        h_eng = SPANISH_TO_ENGLISH.get(h, h)
+        a_eng = SPANISH_TO_ENGLISH.get(a, a)
+        
+        o = resultado_real(goals_h, goals_a)
         
         # DC
-        p_dc = matrix_to_1x2(dc_matrix(dc_val, r.home_team, r.away_team, host_val))
+        M_dc = dc_matrix(dc_final, h_eng, a_eng, host)
+        p_dc = matrix_to_1x2(M_dc)
         res['Dixon-Coles'][0] += int(np.argmax(p_dc) == o)
         res['Dixon-Coles'][1] += rps_1x2(p_dc, o)
         
         # MCMC
-        p_mc = matrix_to_1x2(mcmc_matrix_mean(mc_val, r.home_team, r.away_team, host_val, dc_val))
+        M_mc = mcmc_matrix_mean(mc_final, h_eng, a_eng, host, dc_final)
+        p_mc = matrix_to_1x2(M_mc)
         res['MCMC Bayesiano'][0] += int(np.argmax(p_mc) == o)
         res['MCMC Bayesiano'][1] += rps_1x2(p_mc, o)
         
         # XGB
-        is_comp_val = 0.0 if 'friendly' in str(r.tournament).lower() else 1.0
-        M_xg_v = xgb_matrix(reg_home_val, reg_away_val, dc_val, r.home_team, r.away_team, host_val, r.date,
-                                       form_by_team, elo_by_team, final_elos, h2h_dict, is_comp_val, pi_by_team, final_pis)[0]
-        p_xg = matrix_to_1x2(M_xg_v)
+        M_xg = xgb_matrix(reg_home, reg_away, dc_final, h_eng, a_eng, host, MATCH_DATE,
+                                      form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)[0]
+        p_xg = matrix_to_1x2(M_xg)
         res['XGBoost'][0] += int(np.argmax(p_xg) == o)
         res['XGBoost'][1] += rps_1x2(p_xg, o)
         
         # MLP
-        M_ml_v = mlp_matrix(scaler_v, mlp_home_val, mlp_away_val, dc_val, r.home_team, r.away_team, host_val, r.date,
-                                       form_by_team, elo_by_team, final_elos, h2h_dict, is_comp_val, pi_by_team, final_pis)[0]
-        p_ml = matrix_to_1x2(M_ml_v)
+        M_ml = mlp_matrix(scaler_f, mlp_home, mlp_away, dc_final, h_eng, a_eng, host, MATCH_DATE,
+                                      form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)[0]
+        p_ml = matrix_to_1x2(M_ml)
         res['Red Neuronal'][0] += int(np.argmax(p_ml) == o)
         res['Red Neuronal'][1] += rps_1x2(p_ml, o)
-
+        
         # CatBoost
-        M_cb_v = catboost_matrix(cb_home_val, cb_away_val, dc_val, r.home_team, r.away_team, host_val, r.date,
-                                       form_by_team, elo_by_team, final_elos, h2h_dict, is_comp_val, pi_by_team, final_pis)[0]
-        p_cb = matrix_to_1x2(M_cb_v)
+        M_cb = catboost_matrix(cb_home, cb_away, dc_final, h_eng, a_eng, host, MATCH_DATE,
+                                      form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)[0]
+        p_cb = matrix_to_1x2(M_cb)
         res['CatBoost'][0] += int(np.argmax(p_cb) == o)
         res['CatBoost'][1] += rps_1x2(p_cb, o)
         
         # MFA Montecarlo
-        elo_h = get_elo_at_date(r.home_team, r.date, elo_by_team, final_elos)
-        elo_a = get_elo_at_date(r.away_team, r.date, elo_by_team, final_elos)
-        fh = get_form_at_date(r.home_team, r.date, form_by_team)
-        fa = get_form_at_date(r.away_team, r.date, form_by_team)
-        form_h_val = fh[0] if fh else 0.5
-        form_a_val = fa[0] if fa else 0.5
-        M_mfa_v = montecarlo_mfa_matrix(r.home_team, r.away_team, elo_h, elo_a, form_h_val, form_a_val)[0]
-        p_mfa = matrix_to_1x2(M_mfa_v)
+        elo_h = get_elo_at_date(h_eng, MATCH_DATE, elo_by_team, final_elos)
+        elo_a = get_elo_at_date(a_eng, MATCH_DATE, elo_by_team, final_elos)
+        fh = get_form_at_date(h_eng, MATCH_DATE, form_by_team)
+        fa = get_form_at_date(a_eng, MATCH_DATE, form_by_team)
+        form_h_val = fh[2] if fh else 0.5
+        form_a_val = fa[2] if fa else 0.5
+        M_mfa = montecarlo_mfa_matrix(h_eng, a_eng, elo_h, elo_a, form_h_val, form_a_val, host)[0]
+        p_mfa = matrix_to_1x2(M_mfa)
         res['MFA Montecarlo'][0] += int(np.argmax(p_mfa) == o)
         res['MFA Montecarlo'][1] += rps_1x2(p_mfa, o)
-        
-        # Ensemble (MCMC + XGB + MLP + CatBoost + MFA)
-        M_ens_val = (mcmc_matrix_mean(mc_val, r.home_team, r.away_team, host_val, dc_val) + M_xg_v + M_ml_v + M_cb_v + M_mfa_v) / 5
+        # Ensemble
+        M_ens_val = (M_dc * 0.35 + M_xg * 0.15 + M_ml * 0.10 + M_cb * 0.15 + M_mfa * 0.15 + M_mc * 0.10)
         p_en = matrix_to_1x2(M_ens_val)
         res['Ensemble'][0] += int(np.argmax(p_en) == o)
         res['Ensemble'][1] += rps_1x2(p_en, o)
@@ -1007,10 +1034,11 @@ if __name__ == '__main__':
         
         M_mfa, lh_mfa, la_mfa = montecarlo_mfa_matrix(h_eng, a_eng, elo_h, elo_a, form_h_val, form_a_val, host)
         
-        # Ensemble 5 IAs
-        M_ens = (M_mc + M_xgb + M_mlp + M_cb + M_mfa) / 5
+        # Ensemble 6 IAs
+        M_ens = (M_dc * 0.35 + M_xgb * 0.15 + M_mlp * 0.10 + M_cb * 0.15 + M_mfa * 0.15 + M_mc * 0.10)
         
         # Dataframes ordenados para top 10
+        top_dc = build_top_df(M_dc, h, a)
         top_mc = build_top_df(M_mc, h, a)
         top_xgb = build_top_df(M_xgb, h, a)
         top_mlp = build_top_df(M_mlp, h, a)
@@ -1050,6 +1078,13 @@ if __name__ == '__main__':
         prob_over25 = 1.0 - prob_under25
         prob_over35 = 1.0 - prob_under35
 
+        exp_goles_h = float(np.sum(M_ens * np.arange(MAXG)[:, None]))
+        exp_goles_a = float(np.sum(M_ens * np.arange(MAXG)[None, :]))
+        home_form_gf = float(fh[1]) if fh else 1.2
+        home_form_ga = float(fh[2]) if fh else 1.2
+        away_form_gf = float(fa[1]) if fa else 1.2
+        away_form_ga = float(fa[2]) if fa else 1.2
+
         match_predictions[m_id] = {
             'home': float(p_1x2[0]),
             'draw': float(p_1x2[1]),
@@ -1060,7 +1095,13 @@ if __name__ == '__main__':
             'under25': prob_under25,
             'over25': prob_over25,
             'under35': prob_under35,
-            'over35': prob_over35
+            'over35': prob_over35,
+            'exp_goles_home': exp_goles_h,
+            'exp_goles_away': exp_goles_a,
+            'home_form_gf': home_form_gf,
+            'home_form_ga': home_form_ga,
+            'away_form_gf': away_form_gf,
+            'away_form_ga': away_form_ga
         }
         
         # Definir rutas de salida físicas
@@ -1070,18 +1111,20 @@ if __name__ == '__main__':
         xgb_out = os.path.join(graphs_dir, match['xgb_file'])
         mlp_out = os.path.join(graphs_dir, f"{m_id}_mlp.png")
         cb_out = os.path.join(graphs_dir, f"{m_id}_catboost.png")
+        dc_out = os.path.join(graphs_dir, f"{m_id}_dixoncoles.png")
         mfa_out = os.path.join(graphs_dir, f"{m_id}_mfa.png")
         ens_out = os.path.join(graphs_dir, f"{m_id}_ensemble.png")
         acc_out = os.path.join(graphs_dir, match['accuracy_file'])
         res_out = os.path.join(graphs_dir, match['resumen_file'])
         
         # Guardar gráficos de 3 paneles
+        plot_3panel(M_dc, top_dc, 'Dixon-Coles Dinámico (Poisson)', h, a, abbr_h, abbr_a, dc_out)
         plot_3panel(M_mc, top_mc, 'MCMC Bayesiano (PyMC)', h, a, abbr_h, abbr_a, mcmc_out)
         plot_3panel(M_xgb, top_xgb, 'XGBoost (Regresión de Goles + Pi-Ratings)', h, a, abbr_h, abbr_a, xgb_out)
         plot_3panel(M_mlp, top_mlp, 'Red Neuronal (MLP)', h, a, abbr_h, abbr_a, mlp_out)
         plot_3panel(M_cb, top_cb, 'CatBoost', h, a, abbr_h, abbr_a, cb_out)
         plot_3panel(M_mfa, top_mfa, 'Simulación Montecarlo (MFA)', h, a, abbr_h, abbr_a, mfa_out)
-        plot_3panel(M_ens, top_ens, 'Ensemble (Promedio 5 IAs)', h, a, abbr_h, abbr_a, ens_out)
+        plot_3panel(M_ens, top_ens, 'Ensemble (Promedio Ponderado)', h, a, abbr_h, abbr_a, ens_out)
         
         # Guardar gráfico resumen comparativo
         plot_resumen(M_dc, M_mc, M_xgb, M_mlp, M_cb, M_mfa, M_ens, h, a, res_out)

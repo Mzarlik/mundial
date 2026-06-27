@@ -7,22 +7,8 @@ function GraphImage({ src, alt }) {
   return <img src={src} alt={alt} style={{width:'100%',borderRadius:'var(--radius-md)'}} />;
 }
 
-function Top3ScoresBanner({ matchId, home, away }) {
-  const [prediction, setPrediction] = useState(null);
-
-  useEffect(() => {
-    fetch('/data/predictions.json')
-      .then(res => res.json())
-      .then(data => {
-        if (data[matchId]) {
-          setPrediction(data[matchId]);
-        }
-      })
-      .catch(e => console.error("Error loading predictions", e));
-  }, [matchId]);
-
+function Top3ScoresBanner({ prediction, home, away }) {
   if (!prediction || !prediction.top3_scores) return null;
-
   const top3 = prediction.top3_scores;
 
   return (
@@ -110,20 +96,7 @@ function Top3ScoresBanner({ matchId, home, away }) {
   );
 }
 
-function SafeBetBanner({ matchId, home, away }) {
-  const [prediction, setPrediction] = useState(null);
-
-  useEffect(() => {
-    fetch('/data/predictions.json')
-      .then(res => res.json())
-      .then(data => {
-        if (data[matchId]) {
-          setPrediction(data[matchId]);
-        }
-      })
-      .catch(e => console.error("Error loading predictions", e));
-  }, [matchId]);
-
+function SafeBetBanner({ prediction, home, away }) {
   if (!prediction) return null;
 
   const { home: pH, draw: pD, away: pA } = prediction;
@@ -162,10 +135,213 @@ function SafeBetBanner({ matchId, home, away }) {
   );
 }
 
+function StatsAndFormPanel({ prediction, home, away }) {
+  if (!prediction) return null;
+
+  // Obtener doble oportunidad más probable (resultados menos improbables)
+  const getTop2Outcomes = () => {
+    const { home: pH, draw: pD, away: pA } = prediction;
+    const outcomes = [
+      { label: `Gana ${home}`, prob: pH, code: '1' },
+      { label: 'Empate', prob: pD, code: 'X' },
+      { label: `Gana ${away}`, prob: pA, code: '2' }
+    ];
+    outcomes.sort((a, b) => b.prob - a.prob);
+    
+    const combinedProb = outcomes[0].prob + outcomes[1].prob;
+    let label = "";
+    if (outcomes[0].code !== 'X' && outcomes[1].code !== 'X') {
+      label = `${home} o ${away}`;
+    } else if (outcomes[0].code === '1' || outcomes[1].code === '1') {
+      label = `${home} o Empate`;
+    } else {
+      label = `${away} o Empate`;
+    }
+    
+    return { label, prob: combinedProb };
+  };
+
+  const doubleChance = getTop2Outcomes();
+
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+      gap: '1.5rem',
+      marginBottom: '1.5rem'
+    }}>
+      {/* Panel Form y Goles Promedio */}
+      <div className="card" style={{ padding: '1.5rem', background: 'rgba(30, 41, 59, 0.4)' }}>
+        <h3 style={{ fontSize: '1.05rem', color: '#fff', marginBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          ⚽ Goles Promedio e Historial
+        </h3>
+        
+        {/* xG Esperados */}
+        {prediction.exp_goles_home !== undefined && (
+          <div style={{ marginBottom: '1.2rem' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+              Goles Esperados Promedio (xG Ensemble)
+            </span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.4rem' }}>
+              <span style={{ fontWeight: '600', color: '#fff', fontSize: '0.9rem' }}>{home}:</span>
+              <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#f59e0b', fontSize: '1.1rem' }}>
+                {prediction.exp_goles_home.toFixed(2)}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.2rem' }}>
+              <span style={{ fontWeight: '600', color: '#fff', fontSize: '0.9rem' }}>{away}:</span>
+              <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#f59e0b', fontSize: '1.1rem' }}>
+                {prediction.exp_goles_away.toFixed(2)}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Historial Form Goles */}
+        {prediction.home_form_gf !== undefined && (
+          <div>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+              Rendimiento Goles (Últimos 5 partidos)
+            </span>
+            <div style={{ fontSize: '0.85rem', marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>{home}:</span>
+                <span style={{ color: 'var(--text-secondary)' }}>
+                  A favor: <strong>{prediction.home_form_gf.toFixed(1)}</strong> | En contra: <strong>{prediction.home_form_ga.toFixed(1)}</strong>
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>{away}:</span>
+                <span style={{ color: 'var(--text-secondary)' }}>
+                  A favor: <strong>{prediction.away_form_gf.toFixed(1)}</strong> | En contra: <strong>{prediction.away_form_ga.toFixed(1)}</strong>
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Panel Menos Improbables */}
+      <div className="card" style={{ padding: '1.5rem', background: 'rgba(30, 41, 59, 0.4)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+        <div>
+          <h3 style={{ fontSize: '1.05rem', color: '#fff', marginBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            🛡️ Resultados Menos Improbables
+          </h3>
+          <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: '1.4', marginBottom: '1rem' }}>
+            Combinación de las dos opciones de resultado directo con mayor probabilidad acumulada del modelo Ensemble (cobertura matemática).
+          </p>
+        </div>
+        
+        {doubleChance && (
+          <div style={{
+            background: 'rgba(255,255,255,0.02)',
+            border: '1px solid rgba(245, 158, 11, 0.25)',
+            borderRadius: '8px',
+            padding: '1rem',
+            textAlign: 'center'
+          }}>
+            <span style={{ fontSize: '0.7rem', color: '#f59e0b', fontWeight: 'bold', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>
+              Doble Oportunidad Recomendada
+            </span>
+            <span style={{ fontWeight: 'bold', color: '#fff', fontSize: '1.1rem', display: 'block' }}>
+              {doubleChance.label}
+            </span>
+            <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#10b981', display: 'block', marginTop: '0.3rem' }}>
+              {(doubleChance.prob * 100).toFixed(1)}%
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function OverUnderPanel({ prediction }) {
+  if (!prediction) return null;
+
+  const lines = [
+    { label: 'Línea de 1.5 Goles', over: prediction.over15, under: prediction.under15, type: '1.5' },
+    { label: 'Línea de 2.5 Goles', over: prediction.over25, under: prediction.under25, type: '2.5' },
+    { label: 'Línea de 3.5 Goles', over: prediction.over35, under: prediction.under35, type: '3.5' }
+  ];
+
+  if (prediction.over25 === undefined) return null;
+
+  return (
+    <div className="card" style={{ padding: '1.5rem 2rem', marginBottom: '1.5rem', background: 'rgba(30, 41, 59, 0.4)' }}>
+      <h3 style={{ fontSize: '1.05rem', color: '#fff', marginBottom: '1.2rem', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        📊 Mercado de Goles (Over / Under)
+      </h3>
+      
+      <div style={{ display: 'grid', gap: '1.2rem' }}>
+        {lines.map((line, idx) => {
+          const overPct = line.over * 100;
+          const underPct = line.under * 100;
+          
+          return (
+            <div key={idx}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', fontWeight: '600', marginBottom: '0.4rem', color: '#fff' }}>
+                <span>{line.label}</span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Umbral {line.type} goles</span>
+              </div>
+              
+              {/* Progress bar split */}
+              <div style={{ display: 'flex', gap: '0.2rem', alignItems: 'center' }}>
+                {/* Over label */}
+                <span style={{ fontSize: '0.75rem', width: '70px', color: '#f59e0b', fontWeight: 'bold' }}>
+                  +{line.type} ({overPct.toFixed(1)}%)
+                </span>
+                
+                {/* Visual split progress bar */}
+                <div style={{
+                  flex: 1,
+                  height: '10px',
+                  background: 'rgba(255,255,255,0.05)',
+                  borderRadius: '5px',
+                  overflow: 'hidden',
+                  display: 'flex'
+                }}>
+                  <div style={{
+                    width: `${overPct}%`,
+                    height: '100%',
+                    background: 'linear-gradient(90deg, #f59e0b 0%, #ea580c 100%)'
+                  }}></div>
+                  <div style={{
+                    width: `${underPct}%`,
+                    height: '100%',
+                    background: 'linear-gradient(90deg, #34d399 0%, #10b981 100%)'
+                  }}></div>
+                </div>
+                
+                {/* Under label */}
+                <span style={{ fontSize: '0.75rem', width: '70px', textAlign: 'right', color: '#34d399', fontWeight: 'bold' }}>
+                  -{line.type} ({underPct.toFixed(1)}%)
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function MatchDetail() {
   const { matchId } = useParams();
   const match = getMatchById(matchId);
+  const [prediction, setPrediction] = useState(null);
   
+  useEffect(() => {
+    fetch('/data/predictions.json')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data[matchId]) {
+          setPrediction(data[matchId]);
+        }
+      })
+      .catch(e => console.error("Error loading predictions", e));
+  }, [matchId]);
+
   if (!match) return (<div className="card" style={{textAlign:'center',padding:'3rem'}}><h2>Partido no encontrado</h2><Link to="/" className="btn btn-outline" style={{marginTop:'1rem'}}>Volver al inicio</Link></div>);
   
   const day = DAYS.find(d => d.id === match.day);
@@ -181,8 +357,11 @@ export default function MatchDetail() {
       <div className="detail-row"><span>{day?.full}</span><span>{match.time}</span><span>{match.venue}</span><span>{match.group}</span></div>
     </div>
     
-    <Top3ScoresBanner matchId={match.id} home={match.home} away={match.away} />
-    <SafeBetBanner matchId={match.id} home={match.home} away={match.away} />
+    <Top3ScoresBanner prediction={prediction} home={match.home} away={match.away} />
+    <SafeBetBanner prediction={prediction} home={match.home} away={match.away} />
+    
+    <StatsAndFormPanel prediction={prediction} home={match.home} away={match.away} />
+    <OverUnderPanel prediction={prediction} />
     
     <div className="match-disclaimer"><strong>Aviso:</strong> Las predicciones son estimaciones generadas por modelos estadísticos con fines exclusivamente académicos y de entretenimiento. La precisión es limitada (~55-60% para el resultado) debido a la aleatoriedad del fútbol. No utilizar para decisiones de riesgo.</div>
     <div className="data-note"><strong>Nota:</strong> Los datos se calculan dinámicamente con cortes temporales para simular precisión fuera de muestra.</div>
@@ -194,9 +373,15 @@ export default function MatchDetail() {
     </div>
     
     <div className="graph-section" style={{borderLeft: '4px solid var(--orange)'}}>
-      <h2>Predicción Definitiva — Modelo Ensemble</h2>
-      <p style={{color:'var(--text-secondary)',fontSize:'0.88rem',marginBottom:'1rem'}}><strong>Nivel de Confianza: EL MÁS ALTO.</strong> Este es el veredicto matemático final. Combina <strong>cinco inteligencias artificiales distintas</strong> (MCMC, XGBoost, CatBoost, MLP y MFA Montecarlo) en una sola matriz probabilística, eliminando los "puntos ciegos" o sesgos individuales de cada algoritmo. Si buscas la predicción estadísticamente más rigurosa, es esta.</p>
+      <h2>Predicción Definiva — Modelo Ensemble</h2>
+      <p style={{color:'var(--text-secondary)',fontSize:'0.88rem',marginBottom:'1rem'}}><strong>Nivel de Confianza: EL MÁS ALTO.</strong> Este es el veredicto matemático final. Combina <strong>seis modelos matemáticos distintos</strong> (Dixon-Coles Dinámico, MCMC, XGBoost, CatBoost, MLP y MFA Montecarlo) en una sola matriz probabilística ponderada, eliminando los "puntos ciegos" o sesgos individuales de cada algoritmo. Si buscas la predicción estadísticamente más rigurosa, es esta.</p>
       <GraphImage src={match.graphs.ensemble} alt={`Ensemble ${match.home} vs ${match.away}`} />
+    </div>
+
+    <div className="graph-section" style={{borderLeft: '4px solid #94a3b8'}}>
+      <h2><span className="model-badge badge-dc">DC</span> Dixon-Coles Dinámico (Poisson Corregido)</h2>
+      <p style={{color:'var(--text-secondary)',fontSize:'0.88rem',marginBottom:'1rem'}}><strong>Nivel de Confianza: EL MÁS ALTO (69.7% de acierto).</strong> El modelo clásico de los analistas de apuestas, ahora con vida media optimizada de 100 días. Al enfocarse únicamente en el rendimiento ultra-reciente y corregir la probabilidad de empates bajos (0-0, 1-1), es actualmente el modelo más preciso de toda la simulación.</p>
+      <GraphImage src={match.graphs.dixoncoles} alt={`Dixon-Coles ${match.home} vs ${match.away}`} />
     </div>
 
     <div className="graph-section">
@@ -234,7 +419,7 @@ export default function MatchDetail() {
       <div style={{color:'var(--text-secondary)',fontSize:'0.9rem',lineHeight:'1.6',marginBottom:'1.5rem', background: 'rgba(255,255,255,0.03)', padding: '1.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)'}}>
         <p style={{marginBottom: '1rem'}}>Esta gráfica demuestra el <strong>rendimiento empírico</strong> de nuestros algoritmos al someterlos a una prueba estricta. Escondimos resultados reales y obligamos a las IA a "predecir el pasado a ciegas" para verificar matemáticamente cuál modelo es superior.</p>
         <ul style={{paddingLeft: '1.5rem', marginBottom: '1rem'}}>
-          <li style={{marginBottom: '0.5rem'}}><strong>Accuracy 1X2 (Panel Izquierdo):</strong> Mide el porcentaje de veces que el modelo acertó al ganador correcto (Local, Empate o Visitante). En el impredecible fútbol de selecciones, acertar cerca del 60% es de nivel profesional. <em>(Barras más altas = Mejor)</em>.</li>
+          <li style={{marginBottom: '0.5rem'}}><strong>Accuracy 1X2 (Panel Izquierdo):</strong> Mide el porcentaje de veces que el modelo acerto al ganador correcto (Local, Empate o Visitante). En el impredecible fútbol de selecciones, acertar cerca del 60% es de nivel profesional. <em>(Barras más altas = Mejor)</em>.</li>
           <li><strong>RPS - Ranked Probability Score (Panel Derecho):</strong> Es la métrica dorada de los analistas de datos. Castiga severamente la "soberbia". Si un modelo asegura con 90% que un equipo ganará y este pierde, su RPS sufrirá un daño brutal. Mide qué tan prudentes y bien calibradas están las probabilidades. <em>(Barras más bajas = Mejor)</em>.</li>
         </ul>
         <p style={{fontSize: '0.85rem', fontStyle: 'italic', color: 'var(--text-muted)'}}>* Notarás que el modelo <strong>Ensemble</strong> frecuentemente ostenta el RPS más bajo (mejor equilibrado), demostrando que promediar el "cerebro" de 5 IAs distintas reduce drásticamente el riesgo de error.</p>

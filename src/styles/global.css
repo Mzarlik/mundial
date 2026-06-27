@@ -176,3 +176,99 @@ img { max-width: 100%; height: auto; border-radius: var(--radius-md); }
 .disclaimer-box h1 { margin-bottom: 1.5rem; font-size: 2rem; }
 .disclaimer-box p { margin-bottom: 1.5rem; color: var(--text-secondary); }
 @media(max-width:700px){ .disclaimer-box { padding: 2rem; margin: 1rem; } }
+
+/* Collapsible sidebar styles */
+.sidebar-day-group {
+  margin-bottom: 0.25rem;
+}
+.sidebar-day-header {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.sidebar-day-header a {
+  flex: 1;
+  padding: 0.6rem 0.5rem 0.6rem 2.5rem !important;
+  font-size: 0.88rem !important;
+}
+.sidebar-day-toggle {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.6rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  transition: all 0.2s;
+}
+.sidebar-day-toggle:hover {
+  color: #fff;
+}
+.sidebar-date-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.2rem 0 0.2rem 2.8rem;
+  background: rgba(0, 0, 0, 0.05);
+}
+.sidebar-date-group {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0.1rem;
+}
+.sidebar-date-header {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0.3rem 0;
+}
+.sidebar-date-label {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  flex: 1;
+}
+.sidebar-date-toggle {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.7rem;
+  transition: all 0.2s;
+}
+.sidebar-date-toggle:hover {
+  color: #fff;
+}
+.sidebar-match-sublist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.2rem 0 0.4rem 0.8rem;
+  border-left: 1px solid rgba(255, 255, 255, 0.03);
+}
+.sidebar-match-item {
+  font-size: 0.74rem !important;
+  color: var(--text-sidebar) !important;
+  text-decoration: none;
+  padding: 0.25rem 0.6rem !important;
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  transition: all 0.2s;
+  background: transparent !important;
+  border-right: none !important;
+}
+.sidebar-match-item:hover {
+  color: var(--text-primary) !important;
+  background: var(--bg-sidebar-hover) !important;
+}
+.sidebar-match-item.active {
+  color: var(--accent) !important;
+  background: rgba(245, 158, 11, 0.08) !important;
+  font-weight: 600;
+}
