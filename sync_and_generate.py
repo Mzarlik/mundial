@@ -160,6 +160,7 @@ export const DAYS = [
   { id: "jornada1", label: "Jornada 1", full: "Primera Jornada - Fase de Grupos" },
   { id: "jornada2", label: "Jornada 2", full: "Segunda Jornada - Fase de Grupos" },
   { id: "jornada3", label: "Jornada 3", full: "Tercera Jornada - Fase de Grupos" },
+  { id: "dieciseisavos", label: "16avos de Final", full: "Dieciseisavos de Final - Eliminatorias" },
 ];
 
 export function flagUrl(code) { return `https://flagcdn.com/w80/${code.toLowerCase()}.png`; }
@@ -184,27 +185,49 @@ export const MATCHES = [
         abbr_a = TEAM_TO_ID_ABBR.get(vis, vis[:3].lower())
         match_id = f"{abbr_h}-{abbr_a}"
         
-        # Calcular el grupo correspondiente (son 12 grupos de 4 equipos en el formato 2026, 6 partidos por grupo en total)
-        grp_idx = idx // 6
-        grp_letter = chr(ord('A') + grp_idx)
-        group_name = f"Grupo {grp_letter}"
-        
-        # Calcular la Jornada (Day)
-        jornada_idx = (idx % 6) // 2 + 1
-        day_id = f"jornada{jornada_idx}"
-        
-        # Buscar fecha real del partido en results.csv
-        match_date = "2026-06-15"
-        if df_results is not None:
-            team_h_res = CSV_TO_RESULTS.get(loc, loc)
-            team_a_res = CSV_TO_RESULTS.get(vis, vis)
-            mask_date = df_results['date'].astype(str).str.startswith('2026-06') & (df_results['home_team'] == team_h_res) & (df_results['away_team'] == team_a_res)
-            if mask_date.sum() > 0:
-                match_date = df_results[mask_date]['date'].values[0]
-            else:
-                mask_date_rev = df_results['date'].astype(str).str.startswith('2026-06') & (df_results['home_team'] == team_a_res) & (df_results['away_team'] == team_h_res)
-                if mask_date_rev.sum() > 0:
-                    match_date = df_results[mask_date_rev]['date'].values[0]
+        # Calcular el grupo, jornada y fecha correspondientes
+        if idx < 72:
+            grp_idx = idx // 6
+            grp_letter = chr(ord('A') + grp_idx)
+            group_name = f"Grupo {grp_letter}"
+            jornada_idx = (idx % 6) // 2 + 1
+            day_id = f"jornada{jornada_idx}"
+            
+            # Buscar fecha real del partido en results.csv
+            match_date = "2026-06-15"
+            if df_results is not None:
+                team_h_res = CSV_TO_RESULTS.get(loc, loc)
+                team_a_res = CSV_TO_RESULTS.get(vis, vis)
+                mask_date = df_results['date'].astype(str).str.startswith('2026-06') & (df_results['home_team'] == team_h_res) & (df_results['away_team'] == team_a_res)
+                if mask_date.sum() > 0:
+                    match_date = df_results[mask_date]['date'].values[0]
+                else:
+                    mask_date_rev = df_results['date'].astype(str).str.startswith('2026-06') & (df_results['home_team'] == team_a_res) & (df_results['away_team'] == team_h_res)
+                    if mask_date_rev.sum() > 0:
+                        match_date = df_results[mask_date_rev]['date'].values[0]
+        else:
+            group_name = "16avos de Final"
+            day_id = "dieciseisavos"
+            
+            knockout_dates = {
+                ('South Africa', 'Canada'): '2026-06-28',
+                ('Brazil', 'Japan'): '2026-06-29',
+                ('Germany', 'Paraguay'): '2026-06-29',
+                ('Netherlands', 'Morocco'): '2026-06-29',
+                ('Ivory Coast', 'Norway'): '2026-06-30',
+                ('France', 'Sweden'): '2026-06-30',
+                ('Mexico', 'Ecuador'): '2026-06-30',
+                ('England', 'DR Congo'): '2026-07-01',
+                ('Belgium', 'Senegal'): '2026-07-01',
+                ('USA', 'Bosnia'): '2026-07-01',
+                ('Portugal', 'Croatia'): '2026-07-02',
+                ('Spain', 'Austria'): '2026-07-02',
+                ('Switzerland', 'Algeria'): '2026-07-02',
+                ('Australia', 'Egypt'): '2026-07-03',
+                ('Argentina', 'Cape Verde'): '2026-07-03',
+                ('Colombia', 'Ghana'): '2026-07-03',
+            }
+            match_date = knockout_dates.get((loc, vis), '2026-06-28')
 
         # Rotar Estadios e Instantes
         venue = VENUES[idx % len(VENUES)]

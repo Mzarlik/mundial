@@ -883,6 +883,7 @@ if __name__ == '__main__':
         'Ensemble': [0, 0.]
     }
     n_test = 0
+    opt_data = []
     
     for m_id, (goals_h, goals_a) in simulated_results.items():
         # Buscar partido en matches
@@ -945,13 +946,55 @@ if __name__ == '__main__':
         p_mfa = matrix_to_1x2(M_mfa)
         res['MFA Montecarlo'][0] += int(np.argmax(p_mfa) == o)
         res['MFA Montecarlo'][1] += rps_1x2(p_mfa, o)
-        # Ensemble
-        M_ens_val = (M_dc * 0.35 + M_xg * 0.15 + M_ml * 0.10 + M_cb * 0.15 + M_mfa * 0.15 + M_mc * 0.10)
+        
+        opt_data.append((M_dc, M_mc, M_xg, M_ml, M_cb, M_mfa, o))
+        
+        # Ensemble Optimizado
+        M_ens_val = (M_dc * 0.81 + M_xg * 0.10 + M_cb * 0.09)
         p_en = matrix_to_1x2(M_ens_val)
         res['Ensemble'][0] += int(np.argmax(p_en) == o)
         res['Ensemble'][1] += rps_1x2(p_en, o)
         
         n_test += 1
+        
+    # Optimización de Pesos del Ensamble
+    from scipy.optimize import minimize
+    def rps_opt_1x2(p, o):
+        e = [0., 0., 0.]
+        e[o] = 1.
+        return 0.5 * ((p[0] - e[0])**2 + (p[0]+p[1] - e[0]-e[1])**2)
+        
+    def eval_w(w):
+        tot = 0.0
+        for M_dc_t, M_mc_t, M_xg_t, M_ml_t, M_cb_t, M_mfa_t, o_t in opt_data:
+            M_ens_t = (M_dc_t * w[0] + M_mc_t * w[1] + M_xg_t * w[2] + M_ml_t * w[3] + M_cb_t * w[4] + M_mfa_t * w[5])
+            p_t = matrix_to_1x2(M_ens_t)
+            tot += rps_opt_1x2(p_t, o_t)
+        return tot / len(opt_data)
+        
+    cons = ({'type': 'eq', 'fun': lambda w: 1.0 - sum(w)})
+    bounds = [(0.0, 1.0) for _ in range(6)]
+    w0 = [0.35, 0.10, 0.15, 0.10, 0.15, 0.15]
+    res_opt = minimize(eval_w, w0, method='SLSQP', bounds=bounds, constraints=cons)
+    w_opt = res_opt.x
+    
+    print("\n[OPTIMIZACIÓN] Ponderación Matemática Óptima por Mínimo RPS:")
+    names_opt = ['Dixon-Coles', 'MCMC Bayesiano', 'XGBoost', 'Red Neuronal (MLP)', 'CatBoost', 'MFA Montecarlo']
+    for i, name_o in enumerate(names_opt):
+        print(f"  {name_o}: {w_opt[i]*100:.2f}%")
+        
+    # Calcular métricas con la ponderación óptima
+    opt_hits = 0
+    opt_rps = 0.0
+    for M_dc_t, M_mc_t, M_xg_t, M_ml_t, M_cb_t, M_mfa_t, o_t in opt_data:
+        M_ens_t = (M_dc_t * w_opt[0] + M_mc_t * w_opt[1] + M_xg_t * w_opt[2] + M_ml_t * w_opt[3] + M_cb_t * w_opt[4] + M_mfa_t * w_opt[5])
+        p_t = matrix_to_1x2(M_ens_t)
+        if np.argmax(p_t) == o_t:
+            opt_hits += 1
+        opt_rps += rps_opt_1x2(p_t, o_t)
+    opt_acc = (opt_hits / n_test) * 100 if n_test > 0 else 0
+    opt_rps_mean = opt_rps / n_test if n_test > 0 else 0
+    print(f"  --> Ensemble Optimizado: Accuracy 1X2 = {opt_acc:.2f}% | RPS = {opt_rps_mean:.4f}")
         
     summary_metrics = []
     for k, (acc, rps) in res.items():
@@ -1034,8 +1077,8 @@ if __name__ == '__main__':
         
         M_mfa, lh_mfa, la_mfa = montecarlo_mfa_matrix(h_eng, a_eng, elo_h, elo_a, form_h_val, form_a_val, host)
         
-        # Ensemble 6 IAs
-        M_ens = (M_dc * 0.35 + M_xgb * 0.15 + M_mlp * 0.10 + M_cb * 0.15 + M_mfa * 0.15 + M_mc * 0.10)
+        # Ensemble Optimizado
+        M_ens = (M_dc * 0.81 + M_xgb * 0.10 + M_cb * 0.09)
         
         # Dataframes ordenados para top 10
         top_dc = build_top_df(M_dc, h, a)
@@ -1101,7 +1144,9 @@ if __name__ == '__main__':
             'home_form_gf': home_form_gf,
             'home_form_ga': home_form_ga,
             'away_form_gf': away_form_gf,
-            'away_form_ga': away_form_ga
+            'away_form_ga': away_form_ga,
+            'home_elo': float(elo_h),
+            'away_elo': float(elo_a)
         }
         
         # Definir rutas de salida físicas

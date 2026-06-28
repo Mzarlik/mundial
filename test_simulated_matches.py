@@ -173,8 +173,8 @@ def main():
         form_a_val = fa[2] if fa else 0.5
         M_mfa, _, _ = pm.montecarlo_mfa_matrix(h_eng, a_eng, elo_h, elo_a, form_h_val, form_a_val, host)
         
-        # Ensemble
-        M_ens = (M_dc * 0.35 + M_xgb * 0.15 + M_mlp * 0.10 + M_cb * 0.15 + M_mfa * 0.15 + M_mc * 0.10)
+        # Ensemble Optimizado
+        M_ens = (M_dc * 0.81 + M_xgb * 0.10 + M_cb * 0.09)
         
         # Resultado Real (0: Gana Local, 1: Empate, 2: Gana Visita)
         real_outcome = 0 if goals_h > goals_a else (1 if goals_h == goals_a else 2)

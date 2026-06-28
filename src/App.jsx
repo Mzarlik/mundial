@@ -7,6 +7,7 @@ import HowToTest from './pages/HowToTest';
 import DayResults from './pages/DayResults';
 import MatchDetail from './pages/MatchDetail';
 import Parlays from './pages/Parlays';
+import Bracket from './pages/Bracket';
 
 /**
  * Componente Principal (App) que define la estructura básica de la aplicación:
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/resultados/:dayId" element={<DayResults />} />
           <Route path="/partido/:matchId" element={<MatchDetail />} />
           <Route path="/parleys" element={<Parlays />} />
+          <Route path="/cuadro" element={<Bracket />} />
         </Routes>
       </main>
     </div>

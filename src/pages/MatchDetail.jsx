@@ -326,6 +326,51 @@ function OverUnderPanel({ prediction }) {
   );
 }
 
+function KnockoutAdvancePanel({ prediction, match, home, away }) {
+  if (!prediction || match.day !== 'dieciseisavos') return null;
+
+  const pH = prediction.home;
+  const pD = prediction.draw;
+  const pA = prediction.away;
+  const eloH = prediction.home_elo || 1500;
+  const eloA = prediction.away_elo || 1500;
+
+  // Calculate ELO win expectancy
+  const wHome = 1.0 / (1.0 + Math.pow(10, (eloA - eloH) / 400.0));
+  
+  // Calculate classification probability
+  const homeAdv = (pH + pD * wHome) * 100;
+  const awayAdv = (pA + pD * (1 - wHome)) * 100;
+
+  return (
+    <div className="card" style={{ marginBottom: '1.5rem', background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.05) 0%, rgba(251, 191, 36, 0.01) 100%)', border: '1px solid rgba(245, 158, 11, 0.15)' }}>
+      <h3 style={{ fontSize: '1rem', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+        🏆 Probabilidad de Clasificación (Eliminatoria Directa)
+      </h3>
+      <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: '1.4' }}>
+        En fase de eliminación directa no hay empates al final del día. En caso de igualar en los 90', la probabilidad de resolución en tiempo extra/penaltis se pondera mediante la diferencia de fuerza competitiva (Ratings ELO: {Math.round(eloH)} vs {Math.round(eloA)}).
+      </p>
+      
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', width: '100%' }}>
+        <span style={{ fontSize: '0.88rem', fontWeight: 'bold', width: '120px', textAlign: 'right', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {home}
+        </span>
+        <div style={{ flex: 1, height: '24px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', overflow: 'hidden', display: 'flex', position: 'relative' }}>
+          <div style={{ width: `${homeAdv}%`, height: '100%', background: 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)', display: 'flex', alignItems: 'center', paddingLeft: '0.75rem', boxSizing: 'border-box' }}>
+            <span style={{ fontSize: '0.78rem', color: '#fff', fontWeight: 'bold', zIndex: 2 }}>{homeAdv.toFixed(1)}%</span>
+          </div>
+          <div style={{ width: `${awayAdv}%`, height: '100%', background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: '0.75rem', boxSizing: 'border-box' }}>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 'bold', zIndex: 2 }}>{awayAdv.toFixed(1)}%</span>
+          </div>
+        </div>
+        <span style={{ fontSize: '0.88rem', fontWeight: 'bold', width: '120px', textAlign: 'left', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {away}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function MatchDetail() {
   const { matchId } = useParams();
   const match = getMatchById(matchId);
@@ -359,6 +404,7 @@ export default function MatchDetail() {
     
     <Top3ScoresBanner prediction={prediction} home={match.home} away={match.away} />
     <SafeBetBanner prediction={prediction} home={match.home} away={match.away} />
+    <KnockoutAdvancePanel prediction={prediction} match={match} home={match.home} away={match.away} />
     
     <StatsAndFormPanel prediction={prediction} home={match.home} away={match.away} />
     <OverUnderPanel prediction={prediction} />

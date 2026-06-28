@@ -7,7 +7,8 @@ export default function Sidebar({ open, onClose }) {
   const [expandedDays, setExpandedDays] = useState({
     jornada1: false,
     jornada2: false,
-    jornada3: false
+    jornada3: false,
+    dieciseisavos: false
   });
   const [expandedDates, setExpandedDates] = useState({});
 
@@ -35,6 +36,7 @@ export default function Sidebar({ open, onClose }) {
         <div className="sidebar-section-label">Principal</div>
         <NavLink to="/" end>Inicio</NavLink>
         <NavLink to="/parleys" style={{ color: '#f39c12', fontWeight: 'bold' }}>🎟️ Parleys Recomendados</NavLink>
+        <NavLink to="/cuadro" style={{ color: '#0ea5e9', fontWeight: 'bold' }}>🏆 Simulador de Llaves</NavLink>
         
         <div className="sidebar-section-label">Resultados por día</div>
         <button className="sidebar-toggle-btn" onClick={() => setDaysOpen(!daysOpen)}>
