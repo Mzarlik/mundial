@@ -73,7 +73,7 @@ DESDE = pd.Timestamp('2018-01-01')       # Ventana de datos históricos para Dix
 DESDE_BAYES = pd.Timestamp('2021-01-01') # Ventana para MCMC Bayesiano (Ciclos mundialistas completos)
 VAL_CUTOFF = pd.Timestamp('2025-09-01')  # Fecha límite para separar el conjunto de entrenamiento y validación
 MATCH_DATE = pd.Timestamp('2026-06-22')  # Fecha base de las predicciones del Mundial
-HALF_LIFE = 100                           # Dixon-Coles Dinámico (Vida media de 100 días para priorizar rachas recientes)
+HALF_LIFE = 400                           # Dixon-Coles Dinámico (Vida media de 400 días para mayor estabilidad en selecciones)
 MIN_PARTIDOS_BAYES = 10                  # Filtro mínimo de partidos para entrenar variables en MCMC
 MAXG = 7
 
@@ -680,7 +680,7 @@ def train_catboost_goals(X, yh, ya, teams_h, teams_a):
 def mlp_matrix(scaler, rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue=None):
     f = make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue)
     if f is None:
-        M = np.outer(poisson.pmf(range(MAXG), 1.2), poisson.pmf(range(MAXG), 1.2))
+        M = frank_copula_matrix(1.2, 1.2, theta=-0.25)
         return M / M.sum(), 1.2, 1.2
     
     # Utilizar las 24 características para la predicción de la red neuronal
@@ -690,25 +690,25 @@ def mlp_matrix(scaler, rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team,
     la = float(ra.predict(f_arr)[0])
     lh = clip_lambda(lh)
     la = clip_lambda(la)
-    M = np.outer(poisson.pmf(range(MAXG), lh), poisson.pmf(range(MAXG), la))
+    M = frank_copula_matrix(lh, la, theta=-0.25)
     return M / M.sum(), lh, la
 
 def xgb_matrix(rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue=None):
     f = make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue)
     if f is None:
-        M = np.outer(poisson.pmf(range(MAXG), 1.2), poisson.pmf(range(MAXG), 1.2))
+        M = frank_copula_matrix(1.2, 1.2, theta=-0.25)
         return M / M.sum(), 1.2, 1.2
     
     f_arr = np.array(f).reshape(1, -1)
     lh = float(rh.predict(f_arr)[0])
     la = float(ra.predict(f_arr)[0])
-    M = np.outer(poisson.pmf(range(MAXG), lh), poisson.pmf(range(MAXG), la))
+    M = frank_copula_matrix(lh, la, theta=-0.25)
     return M / M.sum(), lh, la
 
 def catboost_matrix(cb_h, cb_a, dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue=None):
     f = make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue)
     if f is None:
-        M = np.outer(poisson.pmf(range(MAXG), 1.2), poisson.pmf(range(MAXG), 1.2))
+        M = frank_copula_matrix(1.2, 1.2, theta=-0.25)
         return M / M.sum(), 1.2, 1.2
     
     import pandas as pd
@@ -718,7 +718,7 @@ def catboost_matrix(cb_h, cb_a, dcm, h, a, host, date, form_by_team, elo_by_team
     
     lh = float(cb_h.predict(df_x)[0])
     la = float(cb_a.predict(df_x)[0])
-    M = np.outer(poisson.pmf(range(MAXG), lh), poisson.pmf(range(MAXG), la))
+    M = frank_copula_matrix(lh, la, theta=-0.25)
     return M / M.sum(), lh, la
 
 def montecarlo_mfa_matrix(h, a, elo_h, elo_a, form_h, form_a, host=0.0):
@@ -747,8 +747,8 @@ def montecarlo_mfa_matrix(h, a, elo_h, elo_a, form_h, form_a, host=0.0):
     dr = fuerza_h - fuerza_a
     we_h = 1.0 / (10.0 ** (-dr / 400.0) + 1.0)
     
-    # Mapeamos we_h a diferencia de goles de forma suave y acotada [-0.675, 0.675]
-    diff_ajuste = (we_h - 0.5) * 1.35
+    # Mapeamos we_h a diferencia de goles usando una función sigmoide no lineal (tanh)
+    diff_ajuste = np.tanh((we_h - 0.5) * 2.0) * 0.90
     
     media_goles_base = 1.25  # Reducido sutilmente alineado con los mundiales
     
@@ -861,6 +861,48 @@ def build_top_df(M, home, away):
             rows.append({'Marcador': f'{i}-{j}', 'Prob (%)': round(M[i,j]*100, 2), 'Resultado': rs})
     return pd.DataFrame(rows).sort_values('Prob (%)', ascending=False).reset_index(drop=True)
 
+def frank_copula_matrix(lh, la, theta=-0.25, max_g=MAXG):
+    """
+    Acopla dos marginales de Poisson independientes usando una Cópula de Frank bivariada
+    para generar una matriz de probabilidad conjunta con covarianza táctica.
+    """
+    pmf_h = np.array([poisson.pmf(i, lh) for i in range(max_g)])
+    pmf_a = np.array([poisson.pmf(j, la) for j in range(max_g)])
+    
+    # Normalizar marginales
+    pmf_h = pmf_h / sum(pmf_h)
+    pmf_a = pmf_a / sum(pmf_a)
+    
+    cdf_h = np.cumsum(pmf_h)
+    cdf_a = np.cumsum(pmf_a)
+    
+    def C(u, v):
+        if theta == 0:
+            return u * v
+        num = (np.exp(-theta * u) - 1.0) * (np.exp(-theta * v) - 1.0)
+        den = np.exp(-theta) - 1.0
+        val = -1.0 / theta * np.log(1.0 + num / den)
+        return np.clip(val, 0.0, 1.0)
+        
+    F = np.zeros((max_g, max_g))
+    for x in range(max_g):
+        for y in range(max_g):
+            F[x, y] = C(cdf_h[x], cdf_a[y])
+            
+    M = np.zeros((max_g, max_g))
+    for x in range(max_g):
+        for y in range(max_g):
+            val = F[x, y]
+            if x > 0:
+                val -= F[x-1, y]
+            if y > 0:
+                val -= F[x, y-1]
+            if x > 0 and y > 0:
+                val += F[x-1, y-1]
+            M[x, y] = max(0.0, val)
+            
+    return M / M.sum()
+
 # --- SIMULACIÓN BETA-BINOMIAL DE PENALTIS ---
 def simulate_shootout_beta_binomial(elo_h, elo_a, simulations=10000):
     """
@@ -923,6 +965,90 @@ def simulate_shootout_beta_binomial(elo_h, elo_a, simulations=10000):
             
     prob_h = wins_h / simulations
     return prob_h, 1.0 - prob_h
+
+def simulate_knockout_resolution(elo_h, elo_a, exp_goles_h, exp_goles_a, simulations=10000):
+    """
+    Simula de forma combinada la prórroga (tiempo extra de 30 minutos) y, en caso de empate,
+    la tanda de penaltis Beta-Binomial. Retorna el desglose de probabilidades:
+    - Clasifica en prórroga (Home)
+    - Clasifica en prórroga (Away)
+    - Clasifica en penales (Home)
+    - Clasifica en penales (Away)
+    """
+    diff = elo_h - elo_a
+    mean_h = np.clip(0.75 + (diff / 400.0) * 0.04, 0.60, 0.90)
+    mean_a = np.clip(0.75 - (diff / 400.0) * 0.04, 0.60, 0.90)
+    S = 20.0
+    alpha_h, beta_h = mean_h * S, (1.0 - mean_h) * S
+    alpha_a, beta_a = mean_a * S, (1.0 - mean_a) * S
+    
+    rate_h = (exp_goles_h / 90.0) * 0.75
+    rate_a = (exp_goles_a / 90.0) * 0.75
+    
+    wins_et_h = 0
+    wins_et_a = 0
+    wins_pk_h = 0
+    wins_pk_a = 0
+    
+    for _ in range(simulations):
+        et_g_h = np.random.poisson(rate_h * 30.0)
+        et_g_a = np.random.poisson(rate_a * 30.0)
+        
+        if et_g_h > et_g_a:
+            wins_et_h += 1
+        elif et_g_a > et_g_h:
+            wins_et_a += 1
+        else:
+            p_h = np.random.beta(alpha_h, beta_h)
+            p_a = np.random.beta(alpha_a, beta_a)
+            
+            sh_h, sh_a = 0, 0
+            g_h, g_a = 0, 0
+            winner = None
+            
+            for r in range(5):
+                if np.random.rand() < p_h:
+                    g_h += 1
+                sh_h += 1
+                if g_h > g_a + (5 - sh_a):
+                    winner = 'H'
+                    break
+                if g_a > g_h + (5 - sh_h):
+                    winner = 'A'
+                    break
+                    
+                if np.random.rand() < p_a:
+                    g_a += 1
+                sh_a += 1
+                if g_h > g_a + (5 - sh_a):
+                    winner = 'H'
+                    break
+                if g_a > g_h + (5 - sh_h):
+                    winner = 'A'
+                    break
+                    
+            if winner is None:
+                while True:
+                    scored_h = np.random.rand() < p_h
+                    scored_a = np.random.rand() < p_a
+                    if scored_h and not scored_a:
+                        winner = 'H'
+                        break
+                    if scored_a and not scored_h:
+                        winner = 'A'
+                        break
+                        
+            if winner == 'H':
+                wins_pk_h += 1
+            else:
+                wins_pk_a += 1
+                
+    return (
+        wins_et_h / simulations,
+        wins_et_a / simulations,
+        wins_pk_h / simulations,
+        wins_pk_a / simulations
+    )
 
 # --- SIMULACIÓN DE LÍNEA DE TIEMPO WEIBULL CON PAUSAS DE HIDRATACIÓN ---
 def simulate_match_timeline_weibull(l_h, l_a, h_name, a_name, out_path, simulations=2000):
@@ -1435,8 +1561,13 @@ if __name__ == '__main__':
         # Generar simulación de línea de tiempo Weibull
         weibull_data = simulate_match_timeline_weibull(exp_goles_h, exp_goles_a, h, a, timeline_out)
 
-        # Simulación de tanda de penaltis Beta-Binomial
+        # Simulación de tanda de penaltis Beta-Binomial simple (compatibilidad)
         p_shoot_h, p_shoot_a = simulate_shootout_beta_binomial(float(elo_h), float(elo_a))
+
+        # Simulación combinada de prórroga (extra time) y penaltis
+        prob_et_h, prob_et_a, prob_pk_h, prob_pk_a = simulate_knockout_resolution(
+            float(elo_h), float(elo_a), exp_goles_h, exp_goles_a
+        )
 
         match_predictions[m_id] = {
             'home': float(p_1x2[0]),
@@ -1459,8 +1590,11 @@ if __name__ == '__main__':
             'away_elo': float(elo_a),
             'shootout_home': float(p_shoot_h),
             'shootout_away': float(p_shoot_a),
-            'timeline_file': f"/graphs/{day}/{m_id}_timeline.png",
-            'weibull_analysis': weibull_data
+            'prob_et_home': float(prob_et_h),
+            'prob_et_away': float(prob_et_a),
+            'prob_pk_home': float(prob_pk_h),
+            'prob_pk_away': float(prob_pk_a),
+            'timeline_file': f"/graphs/{day}/{m_id}_timeline.png"
         }
         
         mcmc_out = os.path.join(graphs_dir, match['mcmc_file'])

@@ -380,9 +380,15 @@ function KnockoutAdvancePanel({ prediction, match, home, away }) {
   const shootoutHome = prediction.shootout_home !== undefined ? prediction.shootout_home : wHome;
   const shootoutAway = prediction.shootout_away !== undefined ? prediction.shootout_away : (1.0 - wHome);
 
-  // Calculate classification probability
-  const homeAdv = (pH + pD * shootoutHome) * 100;
-  const awayAdv = (pA + pD * shootoutAway) * 100;
+  // Cargar desgloses condicionales de prórroga y penales (simulados)
+  const probEtH = prediction.prob_et_home !== undefined ? prediction.prob_et_home : 0.0;
+  const probEtA = prediction.prob_et_away !== undefined ? prediction.prob_et_away : 0.0;
+  const probPkH = prediction.prob_pk_home !== undefined ? prediction.prob_pk_home : shootoutHome;
+  const probPkA = prediction.prob_pk_away !== undefined ? prediction.prob_pk_away : shootoutAway;
+
+  // Probabilidad final de avanzar acumulada
+  const homeAdv = (pH + pD * (probEtH + probPkH)) * 100;
+  const awayAdv = (pA + pD * (probEtA + probPkA)) * 100;
 
   return (
     <div className="card" style={{ marginBottom: '1.5rem', background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.05) 0%, rgba(251, 191, 36, 0.01) 100%)', border: '1px solid rgba(245, 158, 11, 0.15)' }}>
@@ -390,10 +396,10 @@ function KnockoutAdvancePanel({ prediction, match, home, away }) {
         🏆 Probabilidad de Clasificación (Eliminatoria Directa)
       </h3>
       <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: '1.4' }}>
-        En fase de eliminación directa no hay empates. Si empatan en los 90', la probabilidad de avanzar se calcula simulando la tanda de penaltis mediante un modelo **Beta-Binomial** de 10,000 iteraciones (Ratings ELO: {Math.round(eloH)} vs {Math.round(eloA)}).
+        En fase de eliminación directa no hay empates. Si empatan en los 90', la probabilidad de avanzar se calcula combinando la **simulación de prórroga de 30' (Poisson)** y la **tanda de penaltis (Beta-Binomial)** stocástica de 10,000 iteraciones (Ratings ELO: {Math.round(eloH)} vs {Math.round(eloA)}).
       </p>
       
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', width: '100%', marginBottom: '1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', width: '100%', marginBottom: '1.25rem' }}>
         <span style={{ fontSize: '0.88rem', fontWeight: 'bold', width: '120px', textAlign: 'right', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {home}
         </span>
@@ -410,18 +416,18 @@ function KnockoutAdvancePanel({ prediction, match, home, away }) {
         </span>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--text-secondary)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '0.75rem' }}>
-        <div>
-          <strong>Tanda de Penaltis (Beta-Binomial):</strong>
-          <div style={{ marginTop: '0.2rem' }}>
-            {home}: <span style={{ color: '#f59e0b', fontWeight: 'bold' }}>{(shootoutHome * 100).toFixed(0)}%</span> | {away}: <span style={{ color: '#3b82f6', fontWeight: 'bold' }}>{(shootoutAway * 100).toFixed(0)}%</span>
-          </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.78rem', color: 'var(--text-secondary)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '0.75rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <span><strong>Tiempo Regular (90'):</strong></span>
+          <span>{home}: <span style={{color:'#f59e0b',fontWeight:'bold'}}>{(pH*100).toFixed(0)}%</span> | {away}: <span style={{color:'#3b82f6',fontWeight:'bold'}}>{(pA*100).toFixed(0)}%</span> | Empate: <span style={{color:'#cbd5e1',fontWeight:'bold'}}>{(pD*100).toFixed(0)}%</span></span>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <strong>Resolución en 90':</strong>
-          <div style={{ marginTop: '0.2rem' }}>
-            Empate: <span style={{ color: '#cbd5e1', fontWeight: 'bold' }}>{(pD * 100).toFixed(0)}%</span>
-          </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <span><strong>Tiempo Extra (Prórroga 30'):</strong></span>
+          <span>{home}: <span style={{color:'#f59e0b',fontWeight:'bold'}}>{(pD * probEtH * 100).toFixed(1)}%</span> | {away}: <span style={{color:'#3b82f6',fontWeight:'bold'}}>{(pD * probEtA * 100).toFixed(1)}%</span></span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <span><strong>Tanda de Penaltis (Beta-Binomial):</strong></span>
+          <span>{home}: <span style={{color:'#f59e0b',fontWeight:'bold'}}>{(pD * probPkH * 100).toFixed(1)}%</span> | {away}: <span style={{color:'#3b82f6',fontWeight:'bold'}}>{(pD * probPkA * 100).toFixed(1)}%</span></span>
         </div>
       </div>
     </div>

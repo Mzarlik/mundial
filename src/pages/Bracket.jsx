@@ -87,6 +87,7 @@ export default function Bracket() {
   const realResults = {
     'rsa-can': 'Canadá', // Jugado, avanzó Canadá
     'bra-jpn': 'Brasil',  // Jugado, avanzó Brasil
+    'ger-par': 'Paraguay', // Jugado, avanzó Paraguay
   };
 
   // Pre-calcular los resultados de 16avos de final
