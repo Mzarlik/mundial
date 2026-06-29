@@ -83,10 +83,27 @@ export default function Bracket() {
     return { homeAdv, awayAdv, winner };
   };
 
+  // Resultados reales de partidos ya jugados (anula la predicción estocástica en el Bracket)
+  const realResults = {
+    'rsa-can': 'Canadá', // Jugado, avanzó Canadá
+    'bra-jpn': 'Brasil',  // Jugado, avanzó Brasil
+  };
+
   // Pre-calcular los resultados de 16avos de final
   const r32Results = {};
   r32Matches.forEach(m => {
-    r32Results[m.id] = getClassificationProb(m);
+    const calculated = getClassificationProb(m);
+    if (realResults[m.id]) {
+      calculated.winner = realResults[m.id];
+      if (realResults[m.id] === m.home) {
+        calculated.homeAdv = 100;
+        calculated.awayAdv = 0;
+      } else {
+        calculated.homeAdv = 0;
+        calculated.awayAdv = 100;
+      }
+    }
+    r32Results[m.id] = calculated;
   });
 
   // Simulación de una llave por ELO

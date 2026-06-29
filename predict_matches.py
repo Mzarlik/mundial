@@ -57,13 +57,24 @@ if os.path.exists(mv_path):
     except Exception as e:
         pass
 
+# Cargar datos de clima y altitud de estadios
+STADIUMS_CLIMATE = {}
+stadiums_climate_path = os.path.join(script_dir, 'public', 'data', 'stadiums_climate.json')
+if os.path.exists(stadiums_climate_path):
+    try:
+        import json
+        with open(stadiums_climate_path, 'r', encoding='utf-8') as f:
+            STADIUMS_CLIMATE = json.load(f)
+    except Exception as e:
+        pass
+
 # Configuración global de los modelos
 DESDE = pd.Timestamp('2018-01-01')       # Ventana de datos históricos para Dixon-Coles, XGBoost, MLP y CatBoost
-DESDE_BAYES = pd.Timestamp('2018-01-01') # Ventana para MCMC Bayesiano (Ciclos mundialistas completos)
+DESDE_BAYES = pd.Timestamp('2021-01-01') # Ventana para MCMC Bayesiano (Ciclos mundialistas completos)
 VAL_CUTOFF = pd.Timestamp('2025-09-01')  # Fecha límite para separar el conjunto de entrenamiento y validación
 MATCH_DATE = pd.Timestamp('2026-06-22')  # Fecha base de las predicciones del Mundial
 HALF_LIFE = 100                           # Dixon-Coles Dinámico (Vida media de 100 días para priorizar rachas recientes)
-MIN_PARTIDOS_BAYES = 15                  # Filtro mínimo de partidos para entrenar variables en MCMC
+MIN_PARTIDOS_BAYES = 10                  # Filtro mínimo de partidos para entrenar variables en MCMC
 MAXG = 7
 
 # Colores premium consistentes
@@ -439,11 +450,12 @@ def dc_nb_matrix(dcm, h, a, host):
     return M / M.sum()
 
 # --- MODELO MCMC BAYESIANO ---
-def fit_mcmc(train, draws=1000, tune=1000, seed=1):
+def fit_mcmc(train, final_elos, draws=1000, tune=1000, seed=1):
     """
     Ajusta un modelo predictivo bayesiano jerárquico de Poisson.
     Utiliza PyMC para estimar la distribución posterior de las habilidades de ataque
     y defensa a través de muestreo por cadenas de Montecarlo (MCMC NUTS).
+    Incopora prioris informadas basadas en el rating ELO de cada selección.
     """
     cnt = pd.concat([train.home_team, train.away_team]).value_counts()
     keep = set(cnt[cnt >= MIN_PARTIDOS_BAYES].index)
@@ -453,11 +465,22 @@ def fit_mcmc(train, draws=1000, tune=1000, seed=1):
     hs = tb.home_score.values; as_ = tb.away_score.values
     lm = (tb.neutral == False).values.astype(float)
     
+    # Prioris informadas basadas en ELO (escalado ELO -> goles esperados relativos)
+    elo_means = []
+    for t in teams:
+        current_elo = final_elos.get(t, 1500.0)
+        elo_means.append((current_elo - 1500.0) / 800.0)
+    elo_means = np.array(elo_means)
+    
     with pm.Model():
-        sa = pm.HalfNormal('sa', 1.0); sd = pm.HalfNormal('sd', 1.0)
-        att = pm.Normal('att', 0, sa, shape=n); dfn = pm.Normal('dfn', 0, sd, shape=n)
-        home = pm.Normal('home', 0.25, 0.5); base = pm.Normal('base', 0, 1)
-        ac = att - att.mean(); dc_ = dfn - dfn.mean()
+        sa = pm.HalfNormal('sa', 0.5); sd = pm.HalfNormal('sd', 0.5)
+        # Inicializar medias con los ratings ELO correspondientes
+        att = pm.Normal('att', mu=elo_means, sigma=sa, shape=n)
+        dfn = pm.Normal('dfn', mu=-elo_means, sigma=sd, shape=n)
+        home = pm.Normal('home', 0.25, 0.2)
+        base = pm.Normal('base', 0, 0.5)
+        ac = pm.Deterministic('ac', att - att.mean())
+        dc_ = pm.Deterministic('dc_', dfn - dfn.mean())
         
         pm.Poisson('gh', pm.math.exp(base + home*lm + ac[hi] - dc_[ai]), observed=hs)
         pm.Poisson('ga', pm.math.exp(base + ac[ai] - dc_[hi]), observed=as_)
@@ -470,10 +493,8 @@ def mcmc_matrix_mean(mc, h, a, host, dc_model):
     post = mc['trace'].posterior
     idxb = mc['idxb']
     
-    am = post['att'].mean(('chain','draw')).values
-    am -= am.mean()
-    dm = post['dfn'].mean(('chain','draw')).values
-    dm -= dm.mean()
+    am = post['ac'].mean(('chain','draw')).values
+    dm = post['dc_'].mean(('chain','draw')).values
     hm = float(post['home'].mean())
     bm = float(post['base'].mean())
     
@@ -531,7 +552,7 @@ def get_h2h_at_date(h, a, date, h2h_dict):
         gd = -gd
     return gd
 
-def make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis):
+def make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue=None):
     idx = dcm['idx']
     if h not in idx or a not in idx:
         return None
@@ -559,20 +580,23 @@ def make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, 
     mv_a = MARKET_VALUES.get(a, 0.0) if 'MARKET_VALUES' in globals() else 0.0
     mv_diff = mv_h - mv_a
     
-    age_h = AVG_AGE.get(h, 27.0) if 'AVG_AGE' in globals() else 27.0
-    age_a = AVG_AGE.get(a, 27.0) if 'AVG_AGE' in globals() else 27.0
-    age_diff = age_h - age_a
-    
-    sq_h = SQUAD_SIZE.get(h, 23.0) if 'SQUAD_SIZE' in globals() else 23.0
-    sq_a = SQUAD_SIZE.get(a, 23.0) if 'SQUAD_SIZE' in globals() else 23.0
-    sq_diff = sq_h - sq_a
-    
-    # Devolvemos un vector purgado de ruido (sin edad/plantilla vacíos, pero incluyendo el market value poblado)
+    # Cargar datos de clima y altitud
+    altitude = 100.0
+    temp = 20.0
+    taxing = 0.1
+    if venue and venue in STADIUMS_CLIMATE:
+        st_info = STADIUMS_CLIMATE[venue]
+        altitude = st_info.get("altitude_m", 100.0)
+        temp = st_info.get("effective_temp_c", 20.0)
+        taxing = st_info.get("taxing_score", 0.1)
+        
+    # Devolvemos un vector purgado de ruido con datos climáticos y de altitud agregados
     return [
         lam, mu, att[idx[h]] - att[idx[a]], dfn[idx[h]] - dfn[idx[a]], float(host),
         fh[0], fh[1], fh[2], fa[0], fa[1], fa[2],
         elo_h, elo_a, elo_diff, pi_h, pi_a, h2h_gd, float(is_comp),
-        mv_h, mv_a, mv_diff
+        mv_h, mv_a, mv_diff,
+        float(altitude), float(temp), float(taxing)
     ]
 
 def build_dataset(dcm, fecha_max, df_all, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis):
@@ -620,16 +644,16 @@ def clip_lambda(val):
     return max(0.35, min(3.2, val))
 
 def train_mlp_goals(X, yh, ya):
-    # La Red Neuronal funciona mejor sin la dispersión de valores de mercado (se acota a las primeras 18 características)
-    X_mlp = X[:, :18]
+    # La Red Neuronal ahora utiliza todas las 21 características (incluyendo Market Values normalizados)
+    X_mlp = X
     scaler = StandardScaler().fit(X_mlp)
     X_s = scaler.transform(X_mlp)
-    # Aumentamos regularización L2 alpha a 1.0, habilitamos early stopping con 15% de validación y simplificamos capas
+    # Aumentamos regularización L2 alpha a 2.5 y simplificamos la arquitectura a (32, 16) para prevenir sobreajuste
     params = dict(
-        hidden_layer_sizes=(48, 24),
+        hidden_layer_sizes=(32, 16),
         activation='relu',
         max_iter=400,
-        alpha=1.0,
+        alpha=2.5,
         early_stopping=True,
         validation_fraction=0.15,
         n_iter_no_change=15,
@@ -653,14 +677,14 @@ def train_catboost_goals(X, yh, ya, teams_h, teams_a):
     cb_a.fit(df_x, ya)
     return cb_h, cb_a
 
-def mlp_matrix(scaler, rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis):
-    f = make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)
+def mlp_matrix(scaler, rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue=None):
+    f = make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue)
     if f is None:
         M = np.outer(poisson.pmf(range(MAXG), 1.2), poisson.pmf(range(MAXG), 1.2))
         return M / M.sum(), 1.2, 1.2
     
-    # Acotamos el vector a las 18 primeras características para la red neuronal
-    f_mlp = f[:18]
+    # Utilizar las 24 características para la predicción de la red neuronal
+    f_mlp = f
     f_arr = scaler.transform(np.array(f_mlp).reshape(1, -1))
     lh = float(rh.predict(f_arr)[0])
     la = float(ra.predict(f_arr)[0])
@@ -669,8 +693,8 @@ def mlp_matrix(scaler, rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team,
     M = np.outer(poisson.pmf(range(MAXG), lh), poisson.pmf(range(MAXG), la))
     return M / M.sum(), lh, la
 
-def xgb_matrix(rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis):
-    f = make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)
+def xgb_matrix(rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue=None):
+    f = make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue)
     if f is None:
         M = np.outer(poisson.pmf(range(MAXG), 1.2), poisson.pmf(range(MAXG), 1.2))
         return M / M.sum(), 1.2, 1.2
@@ -681,8 +705,8 @@ def xgb_matrix(rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team, final_e
     M = np.outer(poisson.pmf(range(MAXG), lh), poisson.pmf(range(MAXG), la))
     return M / M.sum(), lh, la
 
-def catboost_matrix(cb_h, cb_a, dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis):
-    f = make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)
+def catboost_matrix(cb_h, cb_a, dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue=None):
+    f = make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue)
     if f is None:
         M = np.outer(poisson.pmf(range(MAXG), 1.2), poisson.pmf(range(MAXG), 1.2))
         return M / M.sum(), 1.2, 1.2
@@ -979,12 +1003,51 @@ def simulate_match_timeline_weibull(l_h, l_a, h_name, a_name, out_path, simulati
     ax.set_xlim(1, 90)
     ax.set_ylim(0, max_val * 1.25)
     ax.legend(loc='upper left', fontsize=8)
-    
     sns.despine()
     plt.tight_layout()
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     plt.savefig(out_path, dpi=120, bbox_inches='tight')
     plt.close()
+    
+    # Calcular frecuencias de marcadores al medio tiempo (minuto 45, índice 44)
+    ht_scores = {}
+    for sim in range(simulations):
+        score_str = f"{int(goals_h_timeline[sim, 44])}-{int(goals_a_timeline[sim, 44])}"
+        ht_scores[score_str] = ht_scores.get(score_str, 0) + 1
+        
+    # Convertir a lista ordenada de dicts
+    top_ht = []
+    for score_str, count in sorted(ht_scores.items(), key=lambda x: x[1], reverse=True)[:3]:
+        top_ht.append({
+            "score": score_str,
+            "prob": round((count / simulations) * 100, 1)
+        })
+        
+    # Probabilidad de goles en 1T (al menos 1 gol anotado en min 1-45)
+    gt_1t = np.sum((goals_h_timeline[:, 44] + goals_a_timeline[:, 44]) > 0)
+    prob_1t = float(gt_1t / simulations)
+    
+    # Probabilidad de goles en 2T (al menos 1 gol anotado en min 46-90)
+    goals_2t = (goals_h_timeline[:, 89] - goals_h_timeline[:, 44]) + (goals_a_timeline[:, 89] - goals_a_timeline[:, 44])
+    gt_2t = np.sum(goals_2t > 0)
+    prob_2t = float(gt_2t / simulations)
+    
+    # Minuto de primer gol promedio
+    first_goal_minutes = []
+    for sim in range(simulations):
+        total_goals = goals_h_timeline[sim, :] + goals_a_timeline[sim, :]
+        idxs = np.where(total_goals > 0)[0]
+        if len(idxs) > 0:
+            first_goal_minutes.append(int(idxs[0] + 1))
+            
+    avg_first_goal = int(np.mean(first_goal_minutes)) if first_goal_minutes else 45
+    
+    return {
+        "prob_goals_1t": round(prob_1t * 100, 1),
+        "prob_goals_2t": round(prob_2t * 100, 1),
+        "avg_first_goal_minute": avg_first_goal,
+        "top_halftime_scores": top_ht
+    }
 
 # --- PROGRAMA PRINCIPAL ---
 if __name__ == '__main__':
@@ -1057,7 +1120,7 @@ if __name__ == '__main__':
     dc_nb_final = fit_dixon_coles_nb(df_all[(df_all.date >= DESDE) & (df_all.date < MATCH_DATE)], MATCH_DATE)
     
     print("[INFO] Muestreando MCMC Bayesiano global (PyMC)... Esto puede tardar ~2-4 min...")
-    mc_final = fit_mcmc(df_all[(df_all.date >= DESDE_BAYES) & (df_all.date < MATCH_DATE)], draws=3000, tune=3000)
+    mc_final = fit_mcmc(df_all[(df_all.date >= DESDE_BAYES) & (df_all.date < MATCH_DATE)], final_elos, draws=3000, tune=3000)
     
     print("[INFO] Entrenando regresores XGBoost globales...")
     X_f, yh_f, ya_f, th_f, ta_f = build_dataset(dc_final, MATCH_DATE, df_all, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis)
@@ -1144,23 +1207,26 @@ if __name__ == '__main__':
         res['MCMC Bayesiano'][0] += int(np.argmax(p_mc) == o)
         res['MCMC Bayesiano'][1] += rps_1x2(p_mc, o)
         
+        # Obtener sede para cargar datos climáticos
+        v_val = match_obj.get('venue')
+
         # XGB
         M_xg = xgb_matrix(reg_home, reg_away, dc_final, h_eng, a_eng, host, MATCH_DATE,
-                                      form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)[0]
+                                      form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, v_val)[0]
         p_xg = matrix_to_1x2(M_xg)
         res['XGBoost'][0] += int(np.argmax(p_xg) == o)
         res['XGBoost'][1] += rps_1x2(p_xg, o)
         
         # MLP
         M_ml = mlp_matrix(scaler_f, mlp_home, mlp_away, dc_final, h_eng, a_eng, host, MATCH_DATE,
-                                      form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)[0]
+                                      form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, v_val)[0]
         p_ml = matrix_to_1x2(M_ml)
         res['Red Neuronal'][0] += int(np.argmax(p_ml) == o)
         res['Red Neuronal'][1] += rps_1x2(p_ml, o)
         
         # CatBoost
         M_cb = catboost_matrix(cb_home, cb_away, dc_final, h_eng, a_eng, host, MATCH_DATE,
-                                      form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)[0]
+                                      form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, v_val)[0]
         p_cb = matrix_to_1x2(M_cb)
         res['CatBoost'][0] += int(np.argmax(p_cb) == o)
         res['CatBoost'][1] += rps_1x2(p_cb, o)
@@ -1170,8 +1236,8 @@ if __name__ == '__main__':
         elo_a = get_elo_at_date(a_eng, MATCH_DATE, elo_by_team, final_elos)
         fh = get_form_at_date(h_eng, MATCH_DATE, form_by_team)
         fa = get_form_at_date(a_eng, MATCH_DATE, form_by_team)
-        form_h_val = fh[2] if fh else 0.5
-        form_a_val = fa[2] if fa else 0.5
+        form_h_val = fh[0] if fh else 0.5
+        form_a_val = fa[0] if fa else 0.5
         M_mfa = montecarlo_mfa_matrix(h_eng, a_eng, elo_h, elo_a, form_h_val, form_a_val, host)[0]
         p_mfa = matrix_to_1x2(M_mfa)
         res['MFA Montecarlo'][0] += int(np.argmax(p_mfa) == o)
@@ -1287,16 +1353,18 @@ if __name__ == '__main__':
         h_eng = SPANISH_TO_ENGLISH.get(h, h)
         a_eng = SPANISH_TO_ENGLISH.get(a, a)
         
+        v = match.get('venue')
+        
         # Obtener matrices de predicción
         M_dc = dc_matrix(dc_final, h_eng, a_eng, host)
         M_dcnb = dc_nb_matrix(dc_nb_final, h_eng, a_eng, host)
         M_mc = mcmc_matrix_mean(mc_final, h_eng, a_eng, host, dc_final)
         M_xgb, lh_xgb, la_xgb = xgb_matrix(reg_home, reg_away, dc_final, h_eng, a_eng, host, MATCH_DATE,
-                                          form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)
+                                          form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, v)
         M_mlp, lh_mlp, la_mlp = mlp_matrix(scaler_f, mlp_home, mlp_away, dc_final, h_eng, a_eng, host, MATCH_DATE,
-                                          form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)
+                                          form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, v)
         M_cb, lh_cb, la_cb = catboost_matrix(cb_home, cb_away, dc_final, h_eng, a_eng, host, MATCH_DATE,
-                                          form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)
+                                          form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, v)
         
         # Extraer Elo y Forma para MFA Montecarlo
         elo_h = get_elo_at_date(h_eng, MATCH_DATE, elo_by_team, final_elos)
@@ -1360,6 +1428,13 @@ if __name__ == '__main__':
         away_form_gf = float(fa[1]) if fa else 1.2
         away_form_ga = float(fa[2]) if fa else 1.2
 
+        # Definir rutas de salida físicas
+        graphs_dir = os.path.join(script_dir, 'public', 'graphs', day)
+        timeline_out = os.path.join(graphs_dir, f"{m_id}_timeline.png")
+        
+        # Generar simulación de línea de tiempo Weibull
+        weibull_data = simulate_match_timeline_weibull(exp_goles_h, exp_goles_a, h, a, timeline_out)
+
         # Simulación de tanda de penaltis Beta-Binomial
         p_shoot_h, p_shoot_a = simulate_shootout_beta_binomial(float(elo_h), float(elo_a))
 
@@ -1384,15 +1459,9 @@ if __name__ == '__main__':
             'away_elo': float(elo_a),
             'shootout_home': float(p_shoot_h),
             'shootout_away': float(p_shoot_a),
-            'timeline_file': f"/graphs/{day}/{m_id}_timeline.png"
+            'timeline_file': f"/graphs/{day}/{m_id}_timeline.png",
+            'weibull_analysis': weibull_data
         }
-        
-        # Definir rutas de salida físicas
-        graphs_dir = os.path.join(script_dir, 'public', 'graphs', day)
-        timeline_out = os.path.join(graphs_dir, f"{m_id}_timeline.png")
-        
-        # Generar simulación de línea de tiempo Weibull
-        simulate_match_timeline_weibull(exp_goles_h, exp_goles_a, h, a, timeline_out)
         
         mcmc_out = os.path.join(graphs_dir, match['mcmc_file'])
         xgb_out = os.path.join(graphs_dir, match['xgb_file'])

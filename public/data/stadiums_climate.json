@@ -1,0 +1,178 @@
+{
+    "MetLife Stadium, East Rutherford": {
+        "latitude": 40.8136,
+        "longitude": -74.0744,
+        "altitude_m": 4.0,
+        "avg_temp_june_c": 30.6375,
+        "avg_humidity_june_pct": 65.5,
+        "effective_temp_c": 30.6375,
+        "effective_humidity_pct": 65.5,
+        "roof_ac": false,
+        "taxing_score": 0.23859375
+    },
+    "SoFi Stadium, Inglewood": {
+        "latitude": 33.9534,
+        "longitude": -118.3387,
+        "altitude_m": 44.0,
+        "avg_temp_june_c": 26.45,
+        "avg_humidity_june_pct": 70.125,
+        "effective_temp_c": 21.5,
+        "effective_humidity_pct": 50.0,
+        "roof_ac": true,
+        "taxing_score": 0.05
+    },
+    "AT&T Stadium, Arlington": {
+        "latitude": 32.7473,
+        "longitude": -97.0945,
+        "altitude_m": 176.0,
+        "avg_temp_june_c": 33.0375,
+        "avg_humidity_june_pct": 63.625,
+        "effective_temp_c": 21.5,
+        "effective_humidity_pct": 50.0,
+        "roof_ac": true,
+        "taxing_score": 0.05
+    },
+    "Mercedes-Benz Stadium, Atlanta": {
+        "latitude": 33.7573,
+        "longitude": -84.401,
+        "altitude_m": 305.0,
+        "avg_temp_june_c": 33.8125,
+        "avg_humidity_june_pct": 52.0,
+        "effective_temp_c": 21.5,
+        "effective_humidity_pct": 50.0,
+        "roof_ac": true,
+        "taxing_score": 0.05
+    },
+    "NRG Stadium, Houston": {
+        "latitude": 29.6847,
+        "longitude": -95.4078,
+        "altitude_m": 32.0,
+        "avg_temp_june_c": 31.375,
+        "avg_humidity_june_pct": 78.125,
+        "effective_temp_c": 21.5,
+        "effective_humidity_pct": 50.0,
+        "roof_ac": true,
+        "taxing_score": 0.05
+    },
+    "Lincoln Financial Field, Filadelfia": {
+        "latitude": 39.9008,
+        "longitude": -75.1675,
+        "altitude_m": 0.0,
+        "avg_temp_june_c": 33.275,
+        "avg_humidity_june_pct": 55.5,
+        "effective_temp_c": 33.275,
+        "effective_humidity_pct": 55.5,
+        "roof_ac": false,
+        "taxing_score": 0.27266369047619043
+    },
+    "Lumen Field, Seattle": {
+        "latitude": 47.5952,
+        "longitude": -122.3316,
+        "altitude_m": 11.0,
+        "avg_temp_june_c": 20.5375,
+        "avg_humidity_june_pct": 68.875,
+        "effective_temp_c": 20.5375,
+        "effective_humidity_pct": 68.875,
+        "roof_ac": false,
+        "taxing_score": 0.059464285714285706
+    },
+    "Levi's Stadium, Santa Clara": {
+        "latitude": 37.4033,
+        "longitude": -121.9694,
+        "altitude_m": 3.0,
+        "avg_temp_june_c": 26.7375,
+        "avg_humidity_june_pct": 54.625,
+        "effective_temp_c": 26.7375,
+        "effective_humidity_pct": 54.625,
+        "roof_ac": false,
+        "taxing_score": 0.07984375000000002
+    },
+    "Gillette Stadium, Foxborough": {
+        "latitude": 42.0909,
+        "longitude": -71.2643,
+        "altitude_m": 89.0,
+        "avg_temp_june_c": 28.1375,
+        "avg_humidity_june_pct": 71.5,
+        "effective_temp_c": 28.1375,
+        "effective_humidity_pct": 71.5,
+        "roof_ac": false,
+        "taxing_score": 0.19139136904761903
+    },
+    "Hard Rock Stadium, Miami Gardens": {
+        "latitude": 25.958,
+        "longitude": -80.2389,
+        "altitude_m": 5.0,
+        "avg_temp_june_c": 29.575,
+        "avg_humidity_june_pct": 82.375,
+        "effective_temp_c": 29.575,
+        "effective_humidity_pct": 82.375,
+        "roof_ac": false,
+        "taxing_score": 0.2799255952380952
+    },
+    "Arrowhead Stadium, Kansas City": {
+        "latitude": 39.0489,
+        "longitude": -94.4839,
+        "altitude_m": 259.0,
+        "avg_temp_june_c": 32.125,
+        "avg_humidity_june_pct": 66.5,
+        "effective_temp_c": 32.125,
+        "effective_humidity_pct": 66.5,
+        "roof_ac": false,
+        "taxing_score": 0.28626488095238095
+    },
+    "BMO Field, Toronto": {
+        "latitude": 43.6328,
+        "longitude": -79.4186,
+        "altitude_m": 83.0,
+        "avg_temp_june_c": 25.8,
+        "avg_humidity_june_pct": 79.125,
+        "effective_temp_c": 25.8,
+        "effective_humidity_pct": 79.125,
+        "roof_ac": false,
+        "taxing_score": 0.15589285714285714
+    },
+    "BC Place, Vancouver": {
+        "latitude": 49.2768,
+        "longitude": -123.112,
+        "altitude_m": 18.0,
+        "avg_temp_june_c": 18.425,
+        "avg_humidity_june_pct": 74.625,
+        "effective_temp_c": 21.5,
+        "effective_humidity_pct": 50.0,
+        "roof_ac": true,
+        "taxing_score": 0.05
+    },
+    "Estadio Azteca, Ciudad de M\u00e9xico": {
+        "latitude": 19.303,
+        "longitude": -99.1506,
+        "altitude_m": 2245.0,
+        "avg_temp_june_c": 27.3125,
+        "avg_humidity_june_pct": 54.75,
+        "effective_temp_c": 27.3125,
+        "effective_humidity_pct": 54.75,
+        "roof_ac": false,
+        "taxing_score": 0.5116145833333333
+    },
+    "Estadio BBVA, Monterrey": {
+        "latitude": 25.6691,
+        "longitude": -100.2449,
+        "altitude_m": 489.0,
+        "avg_temp_june_c": 31.7375,
+        "avg_humidity_june_pct": 71.5,
+        "effective_temp_c": 31.7375,
+        "effective_humidity_pct": 71.5,
+        "roof_ac": false,
+        "taxing_score": 0.2963913690476191
+    },
+    "Estadio Akron, Zapopan": {
+        "latitude": 20.6811,
+        "longitude": -103.4627,
+        "altitude_m": 1673.0,
+        "avg_temp_june_c": 30.1875,
+        "avg_humidity_june_pct": 66.125,
+        "effective_temp_c": 30.1875,
+        "effective_humidity_pct": 66.125,
+        "roof_ac": false,
+        "taxing_score": 0.45248065476190474
+    }
+}

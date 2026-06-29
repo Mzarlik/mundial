@@ -268,7 +268,7 @@ function OverUnderPanel({ prediction }) {
   if (prediction.over25 === undefined) return null;
 
   return (
-    <div className="card" style={{ padding: '1.5rem 2rem', marginBottom: '1.5rem', background: 'rgba(30, 41, 59, 0.4)' }}>
+    <div className="card" style={{ padding: '1.5rem 2rem', background: 'rgba(30, 41, 59, 0.4)', height: '100%', boxSizing: 'border-box' }}>
       <h3 style={{ fontSize: '1.05rem', color: '#fff', marginBottom: '1.2rem', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
         📊 Mercado de Goles (Over / Under)
       </h3>
@@ -321,6 +321,44 @@ function OverUnderPanel({ prediction }) {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function WeibullSummaryPanel({ prediction }) {
+  if (!prediction) return null;
+
+  return (
+    <div className="card" style={{ padding: '1.5rem 2rem', background: 'rgba(30, 41, 59, 0.4)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '100%', boxSizing: 'border-box' }}>
+      <div>
+        <h3 style={{ fontSize: '1.05rem', color: '#fff', marginBottom: '0.6rem', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          ⏱️ Línea de Tiempo (Weibull)
+        </h3>
+        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.3', marginBottom: '1.25rem' }}>
+          Expectativa de goles minuto a minuto considerando fatiga física, pausas de hidratación y ajustes tácticos (DT).
+        </p>
+      </div>
+      
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '180px' }}>
+        {prediction.timeline_file ? (
+          <>
+            <img 
+              src={prediction.timeline_file} 
+              alt="Línea de tiempo Weibull" 
+              style={{ width: '100%', maxHeight: '150px', objectFit: 'contain', borderRadius: 'var(--radius-md)' }} 
+            />
+            {prediction.weibull_analysis?.top_halftime_scores && (
+              <div style={{ width: '100%', marginTop: '0.75rem', fontSize: '0.78rem', color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.03)', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)', boxSizing: 'border-box', textAlign: 'center' }}>
+                ⏱️ <strong>Medio Tiempo Proyectado:</strong> {prediction.weibull_analysis.top_halftime_scores[0].score} ({prediction.weibull_analysis.top_halftime_scores[0].prob}%)
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="graph-placeholder" style={{ padding: '2rem 1rem', fontSize: '0.8rem' }}>
+            Simulación temporal no disponible.
+          </div>
+        )}
       </div>
     </div>
   );
@@ -447,7 +485,15 @@ export default function MatchDetail() {
     {activeTab === 'summary' && (
       <div>
         <StatsAndFormPanel prediction={prediction} home={match.home} away={match.away} />
-        <OverUnderPanel prediction={prediction} />
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+          gap: '1.5rem',
+          marginBottom: '1.5rem'
+        }}>
+          <OverUnderPanel prediction={prediction} />
+          <WeibullSummaryPanel prediction={prediction} />
+        </div>
         
         <div className="graph-section">
           <h2>Consenso Comparativo de Modelos</h2>
@@ -465,11 +511,65 @@ export default function MatchDetail() {
         <p style={{color:'var(--text-secondary)',fontSize:'0.88rem',marginBottom:'1rem'}}>
           Simulación dinámica minuto a minuto de la expectativa acumulada de goles. Incorpora **pausas de hidratación** a los minutos 30' y 75' (donde la intensidad de gol cae a cero) y el **Efecto DT** (ajustes tácticos defensivos automáticos de los entrenadores cuando van perdiendo).
         </p>
-        {prediction?.timeline_file ? (
-          <GraphImage src={prediction.timeline_file} alt={`Línea de tiempo Weibull ${match.home} vs ${match.away}`} />
-        ) : (
-          <div className="graph-placeholder">Simulación de línea de tiempo no disponible para este partido.</div>
-        )}
+        
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
+          {prediction?.timeline_file ? (
+            <GraphImage src={prediction.timeline_file} alt={`Línea de tiempo Weibull ${match.home} vs ${match.away}`} />
+          ) : (
+            <div className="graph-placeholder">Simulación de línea de tiempo no disponible para este partido.</div>
+          )}
+          
+          {prediction?.weibull_analysis && (
+            <div className="card" style={{ padding: '1.5rem', background: 'rgba(30, 41, 59, 0.45)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '1.25rem', boxSizing: 'border-box' }}>
+              <h3 style={{ fontSize: '1.1rem', color: '#fff', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                📊 Análisis de Tiempos y Goles
+              </h3>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <div>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Expectativa de Primer Gol:</span>
+                  <div style={{ fontSize: '1.2rem', color: 'var(--orange)', fontWeight: 'bold', marginTop: '0.2rem' }}>
+                    ⏱️ Minuto {prediction.weibull_analysis.avg_first_goal_minute}'
+                  </div>
+                </div>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.25rem' }}>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Gol en el 1er Tiempo (1T):</div>
+                    <div style={{ fontSize: '1.1rem', color: '#fff', fontWeight: 'bold', marginTop: '0.2rem' }}>
+                      {prediction.weibull_analysis.prob_goals_1t}%
+                    </div>
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Gol en el 2do Tiempo (2T):</div>
+                    <div style={{ fontSize: '1.1rem', color: '#fff', fontWeight: 'bold', marginTop: '0.2rem' }}>
+                      {prediction.weibull_analysis.prob_goals_2t}%
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.5rem' }}>
+                  Resultados al Medio Tiempo Proyectados (45'):
+                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {prediction.weibull_analysis.top_halftime_scores?.map((item, idx) => (
+                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: idx === 0 ? 'rgba(245, 158, 11, 0.1)' : 'rgba(255,255,255,0.02)', padding: '0.5rem 0.75rem', borderRadius: '6px', border: idx === 0 ? '1px solid rgba(245, 158, 11, 0.2)' : '1px solid transparent' }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: idx === 0 ? 'var(--orange)' : '#fff' }}>
+                        ⚽ Marcador {item.score}
+                      </span>
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                        {item.prob}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        
         <div style={{ marginTop: '1.5rem', background: 'rgba(255,255,255,0.03)', padding: '1.25rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', fontSize: '0.85rem', lineHeight: '1.5' }}>
           <strong>🔬 Fundamento Científico del Modelo:</strong>
           <ul style={{ paddingLeft: '1.2rem', marginTop: '0.5rem', color: 'var(--text-secondary)' }}>
