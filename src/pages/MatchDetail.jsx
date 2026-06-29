@@ -335,12 +335,16 @@ function KnockoutAdvancePanel({ prediction, match, home, away }) {
   const eloH = prediction.home_elo || 1500;
   const eloA = prediction.away_elo || 1500;
 
-  // Calculate ELO win expectancy
+  // Calculate ELO win expectancy as a fallback
   const wHome = 1.0 / (1.0 + Math.pow(10, (eloA - eloH) / 400.0));
   
+  // Utilizar la simulación Beta-Binomial si está disponible en predictions.json
+  const shootoutHome = prediction.shootout_home !== undefined ? prediction.shootout_home : wHome;
+  const shootoutAway = prediction.shootout_away !== undefined ? prediction.shootout_away : (1.0 - wHome);
+
   // Calculate classification probability
-  const homeAdv = (pH + pD * wHome) * 100;
-  const awayAdv = (pA + pD * (1 - wHome)) * 100;
+  const homeAdv = (pH + pD * shootoutHome) * 100;
+  const awayAdv = (pA + pD * shootoutAway) * 100;
 
   return (
     <div className="card" style={{ marginBottom: '1.5rem', background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.05) 0%, rgba(251, 191, 36, 0.01) 100%)', border: '1px solid rgba(245, 158, 11, 0.15)' }}>
@@ -348,10 +352,10 @@ function KnockoutAdvancePanel({ prediction, match, home, away }) {
         🏆 Probabilidad de Clasificación (Eliminatoria Directa)
       </h3>
       <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: '1.4' }}>
-        En fase de eliminación directa no hay empates al final del día. En caso de igualar en los 90', la probabilidad de resolución en tiempo extra/penaltis se pondera mediante la diferencia de fuerza competitiva (Ratings ELO: {Math.round(eloH)} vs {Math.round(eloA)}).
+        En fase de eliminación directa no hay empates. Si empatan en los 90', la probabilidad de avanzar se calcula simulando la tanda de penaltis mediante un modelo **Beta-Binomial** de 10,000 iteraciones (Ratings ELO: {Math.round(eloH)} vs {Math.round(eloA)}).
       </p>
       
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', width: '100%' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', width: '100%', marginBottom: '1rem' }}>
         <span style={{ fontSize: '0.88rem', fontWeight: 'bold', width: '120px', textAlign: 'right', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {home}
         </span>
@@ -367,6 +371,21 @@ function KnockoutAdvancePanel({ prediction, match, home, away }) {
           {away}
         </span>
       </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--text-secondary)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '0.75rem' }}>
+        <div>
+          <strong>Tanda de Penaltis (Beta-Binomial):</strong>
+          <div style={{ marginTop: '0.2rem' }}>
+            {home}: <span style={{ color: '#f59e0b', fontWeight: 'bold' }}>{(shootoutHome * 100).toFixed(0)}%</span> | {away}: <span style={{ color: '#3b82f6', fontWeight: 'bold' }}>{(shootoutAway * 100).toFixed(0)}%</span>
+          </div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <strong>Resolución en 90':</strong>
+          <div style={{ marginTop: '0.2rem' }}>
+            Empate: <span style={{ color: '#cbd5e1', fontWeight: 'bold' }}>{(pD * 100).toFixed(0)}%</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -375,6 +394,8 @@ export default function MatchDetail() {
   const { matchId } = useParams();
   const match = getMatchById(matchId);
   const [prediction, setPrediction] = useState(null);
+  const [activeTab, setActiveTab] = useState('summary'); // 'summary', 'timeline', 'models', 'accuracy'
+  const [selectedModel, setSelectedModel] = useState('ensemble'); // 'ensemble', 'dixoncoles', 'dcnb', 'xgboost', 'catboost', 'mlp', 'mfa', 'mcmc'
   
   useEffect(() => {
     fetch('/data/predictions.json')
@@ -406,72 +427,179 @@ export default function MatchDetail() {
     <SafeBetBanner prediction={prediction} home={match.home} away={match.away} />
     <KnockoutAdvancePanel prediction={prediction} match={match} home={match.home} away={match.away} />
     
-    <StatsAndFormPanel prediction={prediction} home={match.home} away={match.away} />
-    <OverUnderPanel prediction={prediction} />
-    
-    <div className="match-disclaimer"><strong>Aviso:</strong> Las predicciones son estimaciones generadas por modelos estadísticos con fines exclusivamente académicos y de entretenimiento. La precisión es limitada (~55-60% para el resultado) debido a la aleatoriedad del fútbol. No utilizar para decisiones de riesgo.</div>
-    <div className="data-note"><strong>Nota:</strong> Los datos se calculan dinámicamente con cortes temporales para simular precisión fuera de muestra.</div>
-    
-    <div className="graph-section">
-      <h2>Comparativa de Modelos (Resumen)</h2>
-      <p style={{color:'var(--text-secondary)',fontSize:'0.88rem',marginBottom:'1rem'}}>Comparación directa de las probabilidades asignadas por cada modelo al resultado del partido. Analiza el consenso entre diferentes metodologías.</p>
-      <GraphImage src={match.graphs.Resumen} alt={`Resumen comparativo ${match.home} vs ${match.away}`} />
-    </div>
-    
-    <div className="graph-section" style={{borderLeft: '4px solid var(--orange)'}}>
-      <h2>Predicción Definiva — Modelo Ensemble</h2>
-      <p style={{color:'var(--text-secondary)',fontSize:'0.88rem',marginBottom:'1rem'}}><strong>Nivel de Confianza: EL MÁS ALTO.</strong> Este es el veredicto matemático final. Combina <strong>seis modelos matemáticos distintos</strong> (Dixon-Coles Dinámico, MCMC, XGBoost, CatBoost, MLP y MFA Montecarlo) en una sola matriz probabilística ponderada, eliminando los "puntos ciegos" o sesgos individuales de cada algoritmo. Si buscas la predicción estadísticamente más rigurosa, es esta.</p>
-      <GraphImage src={match.graphs.ensemble} alt={`Ensemble ${match.home} vs ${match.away}`} />
+    {/* Selector de Pestañas */}
+    <div className="day-tabs" style={{ marginBottom: '2rem' }}>
+      <button className={`day-tab ${activeTab === 'summary' ? 'active' : ''}`} onClick={() => setActiveTab('summary')}>
+        📋 Resumen y Consenso
+      </button>
+      <button className={`day-tab ${activeTab === 'timeline' ? 'active' : ''}`} onClick={() => setActiveTab('timeline')}>
+        ⏱️ Línea de Tiempo (Weibull)
+      </button>
+      <button className={`day-tab ${activeTab === 'models' ? 'active' : ''}`} onClick={() => setActiveTab('models')}>
+        🔬 Detalle de Modelos
+      </button>
+      <button className={`day-tab ${activeTab === 'accuracy' ? 'active' : ''}`} onClick={() => setActiveTab('accuracy')}>
+        📊 Validación Científica
+      </button>
     </div>
 
-    <div className="graph-section" style={{borderLeft: '4px solid #94a3b8'}}>
-      <h2><span className="model-badge badge-dc">DC</span> Dixon-Coles Dinámico (Poisson Corregido)</h2>
-      <p style={{color:'var(--text-secondary)',fontSize:'0.88rem',marginBottom:'1rem'}}><strong>Nivel de Confianza: EL MÁS ALTO (69.7% de acierto).</strong> El modelo clásico de los analistas de apuestas, ahora con vida media optimizada de 100 días. Al enfocarse únicamente en el rendimiento ultra-reciente y corregir la probabilidad de empates bajos (0-0, 1-1), es actualmente el modelo más preciso de toda la simulación.</p>
-      <GraphImage src={match.graphs.dixoncoles} alt={`Dixon-Coles ${match.home} vs ${match.away}`} />
-    </div>
-
-    <div className="graph-section">
-      <h2><span className="model-badge badge-ml">MLP</span> Red Neuronal (Deep Learning)</h2>
-      <p style={{color:'var(--text-secondary)',fontSize:'0.88rem',marginBottom:'1rem'}}><strong>Nivel de Confianza: ALTO.</strong> Diseñada para atrapar patrones abstractos. Las redes neuronales son excepcionales para encontrar correlaciones invisibles (por ejemplo, cómo el valor de mercado afecta la mentalidad de los jugadores), aunque a veces pueden sobreajustar (memorizar) los datos.</p>
-      <GraphImage src={match.graphs.mlp} alt={`Red Neuronal ${match.home} vs ${match.away}`} />
-    </div>
-
-    <div className="graph-section">
-      <h2><span className="model-badge badge-cb">CB</span> Gradient Boosting Categórico (CatBoost)</h2>
-      <p style={{color:'var(--text-secondary)',fontSize:'0.88rem',marginBottom:'1rem'}}><strong>Nivel de Confianza: ALTO.</strong> Especialista en "leer etiquetas". A diferencia de otros modelos, CatBoost procesa directamente el nombre del país y lo asocia matemáticamente con su historial y su valor financiero (Market Value), revelando ventajas posicionales.</p>
-      <GraphImage src={match.graphs.catboost} alt={`CatBoost ${match.home} vs ${match.away}`} />
-    </div>
-
-    <div className="graph-section">
-      <h2><span className="model-badge badge-ml" style={{background: '#0ea5e9'}}>MFA</span> Simulador Montecarlo Auditable</h2>
-      <p style={{color:'var(--text-secondary)',fontSize:'0.88rem',marginBottom:'1rem'}}><strong>Nivel de Confianza: ALTO.</strong> Este modelo extrae la fuerza competitiva de los equipos basándose en el historial reciente, penalizaciones por bajas y multiplicadores subjetivos (factor sorpresa o localía), generando una distribución probabilística independiente a través de muestreo de Poisson.</p>
-      <GraphImage src={match.graphs.mfa} alt={`MFA Montecarlo ${match.home} vs ${match.away}`} />
-    </div>
-
-    <div className="graph-section">
-      <h2><span className="model-badge badge-xg">XGB</span> Regresión de Goles (XGBoost)</h2>
-      <p style={{color:'var(--text-secondary)',fontSize:'0.88rem',marginBottom:'1rem'}}><strong>Nivel de Confianza: ALTO.</strong> El modelo predictivo más famoso del mundo. Utiliza miles de árboles de decisión para "corregir sus propios errores" recursivamente. Se guía fuertemente por la diferencia en el "Ranking ELO" y el "Pi-Rating" (poder ofensivo real).</p>
-      <GraphImage src={match.graphs.xgboost} alt={`XGBoost ${match.home} vs ${match.away}`} />
-    </div>
-
-    <div className="graph-section">
-      <h2><span className="model-badge badge-mc">MCMC</span> Estadística Bayesiana (PyMC)</h2>
-      <p style={{color:'var(--text-secondary)',fontSize:'0.88rem',marginBottom:'1rem'}}><strong>Nivel de Confianza: MODERADO/ALTO.</strong> No usa Machine Learning moderno, sino pura estadística probabilística pesada. En lugar de predecir un resultado directo, simula 12,000 líneas de tiempo posibles para entender los límites ofensivos de cada país. Es el más cauteloso de los cuatro.</p>
-      <GraphImage src={match.graphs.mcmc} alt={`MCMC Bayesiano ${match.home} vs ${match.away}`} />
-    </div>
-
-    <div className="graph-section">
-      <h2>Accuracy Comparativo Global</h2>
-      <div style={{color:'var(--text-secondary)',fontSize:'0.9rem',lineHeight:'1.6',marginBottom:'1.5rem', background: 'rgba(255,255,255,0.03)', padding: '1.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)'}}>
-        <p style={{marginBottom: '1rem'}}>Esta gráfica demuestra el <strong>rendimiento empírico</strong> de nuestros algoritmos al someterlos a una prueba estricta. Escondimos resultados reales y obligamos a las IA a "predecir el pasado a ciegas" para verificar matemáticamente cuál modelo es superior.</p>
-        <ul style={{paddingLeft: '1.5rem', marginBottom: '1rem'}}>
-          <li style={{marginBottom: '0.5rem'}}><strong>Accuracy 1X2 (Panel Izquierdo):</strong> Mide el porcentaje de veces que el modelo acerto al ganador correcto (Local, Empate o Visitante). En el impredecible fútbol de selecciones, acertar cerca del 60% es de nivel profesional. <em>(Barras más altas = Mejor)</em>.</li>
-          <li><strong>RPS - Ranked Probability Score (Panel Derecho):</strong> Es la métrica dorada de los analistas de datos. Castiga severamente la "soberbia". Si un modelo asegura con 90% que un equipo ganará y este pierde, su RPS sufrirá un daño brutal. Mide qué tan prudentes y bien calibradas están las probabilidades. <em>(Barras más bajas = Mejor)</em>.</li>
-        </ul>
-        <p style={{fontSize: '0.85rem', fontStyle: 'italic', color: 'var(--text-muted)'}}>* Notarás que el modelo <strong>Ensemble</strong> frecuentemente ostenta el RPS más bajo (mejor equilibrado), demostrando que promediar el "cerebro" de 5 IAs distintas reduce drásticamente el riesgo de error.</p>
+    {/* CONTENIDO DE PESTAÑAS */}
+    {activeTab === 'summary' && (
+      <div>
+        <StatsAndFormPanel prediction={prediction} home={match.home} away={match.away} />
+        <OverUnderPanel prediction={prediction} />
+        
+        <div className="graph-section">
+          <h2>Consenso Comparativo de Modelos</h2>
+          <p style={{color:'var(--text-secondary)',fontSize:'0.88rem',marginBottom:'1rem'}}>
+            Comparación directa de las probabilidades asignadas por cada modelo al resultado del partido en los 90 minutos reglamentarios.
+          </p>
+          <GraphImage src={match.graphs.Resumen} alt={`Resumen comparativo ${match.home} vs ${match.away}`} />
+        </div>
       </div>
-      <GraphImage src={match.graphs.accuracy} alt={`Accuracy ${match.home} vs ${match.away}`} />
-    </div>
+    )}
+
+    {activeTab === 'timeline' && (
+      <div className="graph-section" style={{ borderLeft: '4px solid var(--orange)' }}>
+        <h2>Evolución Temporal (Expectativa Weibull)</h2>
+        <p style={{color:'var(--text-secondary)',fontSize:'0.88rem',marginBottom:'1rem'}}>
+          Simulación dinámica minuto a minuto de la expectativa acumulada de goles. Incorpora **pausas de hidratación** a los minutos 30' y 75' (donde la intensidad de gol cae a cero) y el **Efecto DT** (ajustes tácticos defensivos automáticos de los entrenadores cuando van perdiendo).
+        </p>
+        {prediction?.timeline_file ? (
+          <GraphImage src={prediction.timeline_file} alt={`Línea de tiempo Weibull ${match.home} vs ${match.away}`} />
+        ) : (
+          <div className="graph-placeholder">Simulación de línea de tiempo no disponible para este partido.</div>
+        )}
+        <div style={{ marginTop: '1.5rem', background: 'rgba(255,255,255,0.03)', padding: '1.25rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', fontSize: '0.85rem', lineHeight: '1.5' }}>
+          <strong>🔬 Fundamento Científico del Modelo:</strong>
+          <ul style={{ paddingLeft: '1.2rem', marginTop: '0.5rem', color: 'var(--text-secondary)' }}>
+            <li style={{ marginBottom: '0.4rem' }}>
+              <strong>Fatiga Física (Weibull $k=1.15$):</strong> A diferencia de una Poisson clásica de tasa constante, el proceso de Weibull con $k &gt; 1$ modela que la probabilidad de gol aumenta gradualmente a medida que avanza cada tiempo debido al cansancio acumulado.
+            </li>
+            <li style={{ marginBottom: '0.4rem' }}>
+              <strong>Pausas de Hidratación:</strong> Representan un cese total de juego (refrigerio táctico). En la gráfica se aprecian como mesetas planas alrededor de los minutos 30 y 75.
+            </li>
+            <li>
+              <strong>Recalibración del Coach (DT):</strong> Si un equipo va perdiendo tras una pausa, el entrenador reorganiza marcas y táctica, lo cual reduce la efectividad del ataque rival en un 15% (segundo tiempo) o 25% (cierre desesperado del partido).
+            </li>
+          </ul>
+        </div>
+      </div>
+    )}
+
+    {activeTab === 'models' && (
+      <div className="graph-section" style={{ borderLeft: '4px solid var(--accent)' }}>
+        <h2>Análisis Detallado por Algoritmo</h2>
+        <p style={{color:'var(--text-secondary)',fontSize:'0.88rem',marginBottom:'1.5rem'}}>
+          Inspecciona el desglose de predicción, distribución de goles y simulación de resultados para cada IA individual.
+        </p>
+        
+        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '2rem' }}>
+          {[
+            { id: 'ensemble', name: 'Ensemble Ponderado', style: {background: 'rgba(245, 158, 11, 0.12)', color: 'var(--accent)', borderColor: 'var(--accent)'} },
+            { id: 'dcnb', name: 'Dixon-Coles NB (Binomial Negativa)', style: {background: 'rgba(244, 63, 94, 0.12)', color: '#f43f5e', borderColor: '#f43f5e'} },
+            { id: 'dixoncoles', name: 'Dixon-Coles Poisson', style: {background: 'rgba(148, 163, 184, 0.12)', color: '#cbd5e1', borderColor: '#cbd5e1'} },
+            { id: 'xgboost', name: 'XGBoost (Pi-Ratings)', style: {background: 'rgba(16, 185, 129, 0.12)', color: '#10b981', borderColor: '#10b981'} },
+            { id: 'catboost', name: 'CatBoost', style: {background: 'rgba(236, 72, 153, 0.12)', color: '#ec4899', borderColor: '#ec4899'} },
+            { id: 'mlp', name: 'Red Neuronal (MLP)', style: {background: 'rgba(139, 92, 246, 0.12)', color: '#8b5cf6', borderColor: '#8b5cf6'} },
+            { id: 'mfa', name: 'MFA Montecarlo', style: {background: 'rgba(14, 165, 233, 0.12)', color: '#0ea5e9', borderColor: '#0ea5e9'} },
+            { id: 'mcmc', name: 'MCMC Bayesiano', style: {background: 'rgba(59, 130, 246, 0.12)', color: '#3b82f6', borderColor: '#3b82f6'} },
+          ].map(m => (
+            <button 
+              key={m.id} 
+              className={`btn ${selectedModel === m.id ? 'btn-accent' : 'btn-outline'}`}
+              style={{ fontSize: '0.74rem', padding: '0.4rem 0.8rem', borderRadius: '20px', ...(selectedModel === m.id ? {} : m.style) }}
+              onClick={() => setSelectedModel(m.id)}
+            >
+              {m.name}
+            </button>
+          ))}
+        </div>
+        
+        {selectedModel === 'ensemble' && (
+          <div>
+            <p style={{fontSize:'0.82rem',color:'var(--text-secondary)',marginBottom:'1rem'}}>
+              <strong>Ensemble Ponderado:</strong> Veredicto final del sistema. Pondera dinámicamente las predicciones individuales usando el optimizador SLSQP basado en la precisión empírica. Actualmente concentrado en **Dixon-Coles NB (83.35%)** y **XGBoost (16.65%)**.
+            </p>
+            <GraphImage src={match.graphs.ensemble} alt="Ensemble" />
+          </div>
+        )}
+        {selectedModel === 'dixoncoles' && (
+          <div>
+            <p style={{fontSize:'0.82rem',color:'var(--text-secondary)',marginBottom:'1rem'}}>
+              <strong>Dixon-Coles Poisson:</strong> Modelo de regresión Poisson clásico ponderado por tiempo (vida media de 100 días). Modela los goles asumiendo independencia Poisson corregida para empates bajos.
+            </p>
+            <GraphImage src={match.graphs.dixoncoles} alt="Dixon-Coles Poisson" />
+          </div>
+        )}
+        {selectedModel === 'dcnb' && (
+          <div>
+            <p style={{fontSize:'0.82rem',color:'var(--text-secondary)',marginBottom:'1rem'}}>
+              <strong>Dixon-Coles NB (Binomial Negativa):</strong> Modela los goles con una distribución binomial negativa para capturar la sobredispersión (varianza mayor que la media). Es el modelo dominante del ensamble actual (83.35%).
+            </p>
+            <GraphImage src={`/graphs/${match.day}/${match.id}_dcnb.png`} alt="Dixon-Coles NB" />
+          </div>
+        )}
+        {selectedModel === 'xgboost' && (
+          <div>
+            <p style={{fontSize:'0.82rem',color:'var(--text-secondary)',marginBottom:'1rem'}}>
+              <strong>XGBoost:</strong> Modelo de Gradient Boosting. Utiliza Pi-Ratings y ELO para predecir las medias de anotación. Aporta un 16.65% de peso al ensamble.
+            </p>
+            <GraphImage src={match.graphs.xgboost} alt="XGBoost" />
+          </div>
+        )}
+        {selectedModel === 'catboost' && (
+          <div>
+            <p style={{fontSize:'0.82rem',color:'var(--text-secondary)',marginBottom:'1rem'}}>
+              <strong>CatBoost:</strong> Algoritmo de boosting categórico que trata de forma nativa los nombres de las selecciones y su peso financiero.
+            </p>
+            <GraphImage src={match.graphs.catboost} alt="CatBoost" />
+          </div>
+        )}
+        {selectedModel === 'mlp' && (
+          <div>
+            <p style={{fontSize:'0.82rem',color:'var(--text-secondary)',marginBottom:'1rem'}}>
+              <strong>Red Neuronal MLP:</strong> Perceptrón multicapa que utiliza regularización L2 para aproximar la no linealidad en el rendimiento de los equipos.
+            </p>
+            <GraphImage src={match.graphs.mlp} alt="Red Neuronal MLP" />
+          </div>
+        )}
+        {selectedModel === 'mfa' && (
+          <div>
+            <p style={{fontSize:'0.82rem',color:'var(--text-secondary)',marginBottom:'1rem'}}>
+              <strong>MFA Montecarlo:</strong> Simulación de Poisson que utiliza penalizaciones por fatiga física y ratings de plantilla subjetivos.
+            </p>
+            <GraphImage src={match.graphs.mfa} alt="MFA Montecarlo" />
+          </div>
+        )}
+        {selectedModel === 'mcmc' && (
+          <div>
+            <p style={{fontSize:'0.82rem',color:'var(--text-secondary)',marginBottom:'1rem'}}>
+              <strong>MCMC Bayesiano:</strong> Muestreador bayesiano (PyMC) que infiere la capacidad ofensiva/defensiva latente de cada selección simulando miles de cadenas estocásticas.
+            </p>
+            <GraphImage src={match.graphs.mcmc} alt="MCMC Bayesiano" />
+          </div>
+        )}
+      </div>
+    )}
+
+    {activeTab === 'accuracy' && (
+      <div className="graph-section">
+        <h2>Prueba Fuera de Muestra y Calibración Histórica</h2>
+        <div style={{color:'var(--text-secondary)',fontSize:'0.9rem',lineHeight:'1.6',marginBottom:'1.5rem', background: 'rgba(255,255,255,0.03)', padding: '1.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)'}}>
+          <p style={{marginBottom: '1rem'}}>Esta sección demuestra el <strong>rendimiento empírico</strong> de nuestros algoritmos evaluándolos a ciegas sobre resultados reales ya conocidos del torneo (Fase de Grupos + Eliminatorias).</p>
+          <ul style={{paddingLeft: '1.5rem', marginBottom: '1rem'}}>
+            <li style={{marginBottom: '0.5rem'}}><strong>Accuracy 1X2 (Panel Izquierdo):</strong> Porcentaje de acierto de victoria local/empate/visita. En fútbol internacional, superar el 60% es de rango profesional. Nuestro Ensamble optimizado ronda actualmente el **69.9%**.</li>
+            <li><strong>RPS - Ranked Probability Score (Panel Derecho):</strong> Métrica que castiga la sobreconfianza errónea. Mide qué tan prudentes e impecablemente calibradas están las probabilidades. Valores más bajos indican un modelo estadísticamente superior y más balanceado.</li>
+          </ul>
+        </div>
+        <GraphImage src={match.graphs.accuracy} alt={`Accuracy ${match.home} vs ${match.away}`} />
+      </div>
+    )}
+
+    <div className="match-disclaimer" style={{ marginTop: '2.5rem' }}><strong>Aviso:</strong> Las predicciones son estimaciones generadas por modelos estadísticos con fines exclusivamente académicos y de entretenimiento. La precisión es limitada debido a la aleatoriedad del fútbol. No utilizar para decisiones de riesgo.</div>
+    <div className="data-note"><strong>Nota:</strong> Los datos se calculan dinámicamente con cortes temporales para simular precisión fuera de muestra.</div>
+
     <div style={{textAlign:'center', marginTop: '3rem'}}>
       <Link to={`/resultados/${match.day}`} className="btn btn-outline">Volver a los partidos</Link>
     </div>

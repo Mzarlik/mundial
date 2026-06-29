@@ -19,7 +19,7 @@ export default function Parlays() {
       <div style={{ textAlign: 'center', padding: '5rem 2rem', color: 'var(--text-secondary)' }}>
         <div style={{ fontSize: '3rem', marginBottom: '1.5rem', animation: 'pulse 1.5s infinite' }}>⚙️</div>
         <h2>Analizando cuotas y ventajas matemáticas...</h2>
-        <p style={{ fontSize: '0.9rem', marginTop: '0.5rem', color: 'var(--text-muted)' }}>Combinando probabilidades de 5 inteligencias artificiales</p>
+        <p style={{ fontSize: '0.9rem', marginTop: '0.5rem', color: 'var(--text-muted)' }}>Combinando probabilidades de 7 inteligencias artificiales</p>
       </div>
     );
   }
@@ -53,7 +53,26 @@ export default function Parlays() {
       candidates.push({ pick: `Doble Oportunidad: ${match.home} o ${match.away}`, prob: pH + pA, type: 'Doble Oportunidad', shortType: '12', color: '#a78bfa', bg: 'rgba(167, 139, 250, 0.15)' });
     }
 
-    // Over / Under Goles (evaluado de forma conjunta de las 5 IAs)
+    // Clasificación a la siguiente ronda (solo eliminatorias)
+    if (match.day === 'dieciseisavos' || match.day === 'octavos' || match.day === 'cuartos' || match.day === 'semifinal' || match.day === 'final') {
+      const eloH = pred.home_elo || 1500;
+      const eloA = pred.away_elo || 1500;
+      const wHome = 1.0 / (1.0 + Math.pow(10, (eloA - eloH) / 400.0));
+      const shootoutHome = pred.shootout_home !== undefined ? pred.shootout_home : wHome;
+      const shootoutAway = pred.shootout_away !== undefined ? pred.shootout_away : (1.0 - wHome);
+      
+      const homeAdv = pH + pD * shootoutHome;
+      const awayAdv = pA + pD * shootoutAway;
+      
+      if (homeAdv > 0.58) {
+        candidates.push({ pick: `Clasifica: ${match.home}`, prob: homeAdv, type: 'Clasificación', shortType: 'Pase', color: '#fbbf24', bg: 'rgba(251, 191, 36, 0.15)' });
+      }
+      if (awayAdv > 0.58) {
+        candidates.push({ pick: `Clasifica: ${match.away}`, prob: awayAdv, type: 'Clasificación', shortType: 'Pase', color: '#fbbf24', bg: 'rgba(251, 191, 36, 0.15)' });
+      }
+    }
+
+    // Over / Under Goles (evaluado de forma conjunta de las 7 IAs)
     if (pred.over15 !== undefined && pred.over15 > 0.75) {
       candidates.push({ pick: 'Más de 1.5 Goles', prob: pred.over15, type: 'Total Goles', shortType: '+1.5 G', color: '#60a5fa', bg: 'rgba(96, 165, 250, 0.15)' });
     }
@@ -133,7 +152,7 @@ export default function Parlays() {
           </h1>
         </div>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', maxWidth: '800px', lineHeight: '1.6' }}>
-          Escanea la jornada futbolística utilizando el modelo **Ensemble (5 IAs)** y calcula de forma probabilística apuestas combinadas con ventaja matemática real (+EV) frente a las cuotas de las casas de apuestas.
+          Escanea la jornada futbolística utilizando el modelo **Ensemble (7 IAs)** y calcula de forma probabilística apuestas combinadas con ventaja matemática real (+EV) frente a las cuotas de las casas de apuestas.
         </p>
       </div>
 

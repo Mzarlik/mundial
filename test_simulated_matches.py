@@ -16,22 +16,7 @@ warnings.filterwarnings('ignore')
 
 # Asegurar importación de predict_matches
 import predict_matches as pm
-
-# =====================================================================
-# 📊 RESULTADOS REALES DE TU SIMULACIÓN DEL MUNDIAL 2026
-# =====================================================================
-# Edita este diccionario agregando los marcadores reales a medida que se jueguen los partidos.
-# Estructura: 'id_del_partido': (goles_home, goles_away)
-REAL_RESULTS = {
-    'arg-aut': (2, 0),
-    'fra-irq': (3, 0),
-    'nor-sen': (3, 2),
-    'jor-alg': (1, 2),
-    'por-uzb': (5, 0),
-    'eng-gha': (0, 0),
-    'pan-cro': (0, 1),
-    'col-cod': (1, 0),
-}
+from scipy.optimize import minimize
 
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -61,18 +46,18 @@ def main():
                     a_abbr = TEAM_TO_ID_ABBR.get(row['Visitante'], row['Visitante'][:3].lower())
                     m_id = f"{h_abbr}-{a_abbr}"
                     simulated_results[m_id] = (int(gh), int(ga))
-            print(f"[INFO] Cargados {len(simulated_results)} marcadores jugados desde partidos_simulados.csv")
         except Exception as e:
-            print(f"[WARNING] Error leyendo partidos_simulados.csv, usando hardcoded: {e}")
-            simulated_results = REAL_RESULTS
-    else:
-        simulated_results = REAL_RESULTS
+            print(f"[WARNING] Error al leer partidos_simulados.csv: {e}")
+            
+    if not simulated_results:
+        print("[ERROR] No se encontraron resultados reales de partidos simulados en partidos_simulados.csv.")
+        return
 
-    # 1.5 Cargar partidos de matches.js para buscar metadatos por ID
+    # Cargar partidos de matches.js
     js_path = os.path.join(script_dir, 'src', 'config', 'matches.js')
     matches = pm.parse_matches(js_path)
     
-    # 2. Cargar historial y entrenar modelos idénticos a los globales
+    # Cargar datos históricos
     csv_path = os.path.join(script_dir, 'international_results-master', 'international_results-master', 'results.csv')
     df_raw = pd.read_csv(csv_path)
     df_raw['date'] = pd.to_datetime(df_raw['date'])
@@ -80,11 +65,10 @@ def main():
     df_all['home_score'] = df_all['home_score'].astype(int)
     df_all['away_score'] = df_all['away_score'].astype(int)
     
-    print("[INFO] Entrenando modelos globales con el historial de partidos...")
+    # Calcular ratings ELO, Pi y forma
     df_all, elo_by_team, final_elos = pm.compute_elo_ratings(df_all)
     df_all, pi_by_team, final_pis = pm.compute_pi_ratings(df_all)
     
-    # Rachas de forma
     long_list = []
     for r in df_all[df_all.date >= pm.DESDE].itertuples():
         long_list.append((r.date, r.home_team, r.home_score, r.away_score, 1))
@@ -116,79 +100,122 @@ def main():
         
     # Modelos
     dc_final = pm.fit_dixon_coles(df_all[(df_all.date >= pm.DESDE) & (df_all.date < pm.MATCH_DATE)], pm.MATCH_DATE)
+    dc_nb_final = pm.fit_dixon_coles_nb(df_all[(df_all.date >= pm.DESDE) & (df_all.date < pm.MATCH_DATE)], pm.MATCH_DATE)
     mc_final = pm.fit_mcmc(df_all[(df_all.date >= pm.DESDE_BAYES) & (df_all.date < pm.MATCH_DATE)], draws=1500, tune=1500)
     X_f, yh_f, ya_f, th_f, ta_f = pm.build_dataset(dc_final, pm.MATCH_DATE, df_all, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis)
     reg_home, reg_away = pm.train_xgb_goals(X_f, yh_f, ya_f)
     scaler_f, mlp_home, mlp_away = pm.train_mlp_goals(X_f, yh_f, ya_f)
     cb_home, cb_away = pm.train_catboost_goals(X_f, yh_f, ya_f, th_f, ta_f)
     
-    print(f"\n[INFO] Evaluando acierto real sobre los {len(simulated_results)} partidos jugados de tu simulación...")
-    
-    eval_results = {
-        'Dixon-Coles': {'hits': 0, 'rps_sum': 0.0},
-        'MCMC Bayesiano': {'hits': 0, 'rps_sum': 0.0},
-        'XGBoost': {'hits': 0, 'rps_sum': 0.0},
-        'Red Neuronal (MLP)': {'hits': 0, 'rps_sum': 0.0},
-        'CatBoost': {'hits': 0, 'rps_sum': 0.0},
-        'MFA Montecarlo': {'hits': 0, 'rps_sum': 0.0},
-        'Ensemble (5 IAs)': {'hits': 0, 'rps_sum': 0.0}
-    }
-    
-    matches_evaluated = 0
-    
+    # PASO 1: Recolectar datos y optimizar pesos del Ensamble
+    opt_data = []
     for m_id, (goals_h, goals_a) in simulated_results.items():
-        # Buscar el partido en matches.js
         match_obj = next((m for m in matches if m['id'] == m_id), None)
         if not match_obj:
-            print(f"[WARNING] El partido con ID '{m_id}' no se encontró en matches.js. Se omitirá del test.")
             continue
-            
         h = match_obj['home']
         a = match_obj['away']
-        
-        # En el mundial todos los partidos son neutrales (host=0.0)
-        host = 0.0
-        is_comp = 1.0
-        
-        # Traducir nombres
         h_eng = pm.SPANISH_TO_ENGLISH.get(h, h)
         a_eng = pm.SPANISH_TO_ENGLISH.get(a, a)
         
-        # Obtener predicciones de cada modelo
-        M_dc = pm.dc_matrix(dc_final, h_eng, a_eng, host)
-        M_mc = pm.mcmc_matrix_mean(mc_final, h_eng, a_eng, host, dc_final)
-        M_xgb, _, _ = pm.xgb_matrix(reg_home, reg_away, dc_final, h_eng, a_eng, host, pm.MATCH_DATE,
-                                          form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)
-        M_mlp, _, _ = pm.mlp_matrix(scaler_f, mlp_home, mlp_away, dc_final, h_eng, a_eng, host, pm.MATCH_DATE,
-                                          form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)
-        M_cb, _, _ = pm.catboost_matrix(cb_home, cb_away, dc_final, h_eng, a_eng, host, pm.MATCH_DATE,
-                                          form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)
+        M_dc = pm.dc_matrix(dc_final, h_eng, a_eng, 0.0)
+        M_dcnb = pm.dc_nb_matrix(dc_nb_final, h_eng, a_eng, 0.0)
+        M_mc = pm.mcmc_matrix_mean(mc_final, h_eng, a_eng, 0.0, dc_final)
+        M_xgb, _, _ = pm.xgb_matrix(reg_home, reg_away, dc_final, h_eng, a_eng, 0.0, pm.MATCH_DATE,
+                                      form_by_team, elo_by_team, final_elos, h2h_dict, 1.0, pi_by_team, final_pis)
+        M_mlp, _, _ = pm.mlp_matrix(scaler_f, mlp_home, mlp_away, dc_final, h_eng, a_eng, 0.0, pm.MATCH_DATE,
+                                      form_by_team, elo_by_team, final_elos, h2h_dict, 1.0, pi_by_team, final_pis)
+        M_cb, _, _ = pm.catboost_matrix(cb_home, cb_away, dc_final, h_eng, a_eng, 0.0, pm.MATCH_DATE,
+                                      form_by_team, elo_by_team, final_elos, h2h_dict, 1.0, pi_by_team, final_pis)
         
-        # MFA Montecarlo
         elo_h = pm.get_elo_at_date(h_eng, pm.MATCH_DATE, elo_by_team, final_elos)
         elo_a = pm.get_elo_at_date(a_eng, pm.MATCH_DATE, elo_by_team, final_elos)
         fh = pm.get_form_at_date(h_eng, pm.MATCH_DATE, form_by_team)
         fa = pm.get_form_at_date(a_eng, pm.MATCH_DATE, form_by_team)
         form_h_val = fh[2] if fh else 0.5
         form_a_val = fa[2] if fa else 0.5
-        M_mfa, _, _ = pm.montecarlo_mfa_matrix(h_eng, a_eng, elo_h, elo_a, form_h_val, form_a_val, host)
+        M_mfa, _, _ = pm.montecarlo_mfa_matrix(h_eng, a_eng, elo_h, elo_a, form_h_val, form_a_val, 0.0)
         
-        # Ensemble Optimizado
-        M_ens = (M_dc * 0.81 + M_xgb * 0.10 + M_cb * 0.09)
+        o = pm.resultado_real(goals_h, goals_a)
+        opt_data.append((M_dc, M_dcnb, M_mc, M_xgb, M_mlp, M_cb, M_mfa, o))
         
-        # Resultado Real (0: Gana Local, 1: Empate, 2: Gana Visita)
+    def rps_opt_1x2(p, o):
+        e = [0., 0., 0.]
+        e[o] = 1.
+        return 0.5 * ((p[0] - e[0])**2 + (p[0]+p[1] - e[0]-e[1])**2)
+        
+    def eval_w(w):
+        tot = 0.0
+        for M_dc_t, M_dcnb_t, M_mc_t, M_xg_t, M_ml_t, M_cb_t, M_mfa_t, o_t in opt_data:
+            M_ens_t = (M_dc_t * w[0] + M_dcnb_t * w[1] + M_mc_t * w[2] + M_xg_t * w[3] + M_ml_t * w[4] + M_cb_t * w[5] + M_mfa_t * w[6])
+            p_t = pm.matrix_to_1x2(M_ens_t)
+            tot += rps_opt_1x2(p_t, o_t)
+        return tot / len(opt_data)
+        
+    cons = ({'type': 'eq', 'fun': lambda w: 1.0 - sum(w)})
+    bounds = [(0.0, 1.0) for _ in range(7)]
+    w0 = [0.30, 0.20, 0.05, 0.15, 0.10, 0.10, 0.10]
+    res_opt = minimize(eval_w, w0, method='SLSQP', bounds=bounds, constraints=cons)
+    w_opt = res_opt.x
+
+    print(f"\n[INFO] Evaluando acierto real sobre los {len(simulated_results)} partidos jugados de tu simulación...")
+    
+    eval_results = {
+        'Dixon-Coles Poisson': {'hits': 0, 'rps_sum': 0.0},
+        'Dixon-Coles NB': {'hits': 0, 'rps_sum': 0.0},
+        'MCMC Bayesiano': {'hits': 0, 'rps_sum': 0.0},
+        'XGBoost': {'hits': 0, 'rps_sum': 0.0},
+        'Red Neuronal (MLP)': {'hits': 0, 'rps_sum': 0.0},
+        'CatBoost': {'hits': 0, 'rps_sum': 0.0},
+        'MFA Montecarlo': {'hits': 0, 'rps_sum': 0.0},
+        'Ensemble Ponderado': {'hits': 0, 'rps_sum': 0.0}
+    }
+    
+    matches_evaluated = 0
+    
+    for m_id, (goals_h, goals_a) in simulated_results.items():
+        match_obj = next((m for m in matches if m['id'] == m_id), None)
+        if not match_obj:
+            continue
+            
+        h = match_obj['home']
+        a = match_obj['away']
+        h_eng = pm.SPANISH_TO_ENGLISH.get(h, h)
+        a_eng = pm.SPANISH_TO_ENGLISH.get(a, a)
+        
+        M_dc = pm.dc_matrix(dc_final, h_eng, a_eng, 0.0)
+        M_dcnb = pm.dc_nb_matrix(dc_nb_final, h_eng, a_eng, 0.0)
+        M_mc = pm.mcmc_matrix_mean(mc_final, h_eng, a_eng, 0.0, dc_final)
+        M_xgb, _, _ = pm.xgb_matrix(reg_home, reg_away, dc_final, h_eng, a_eng, 0.0, pm.MATCH_DATE,
+                                          form_by_team, elo_by_team, final_elos, h2h_dict, 1.0, pi_by_team, final_pis)
+        M_mlp, _, _ = pm.mlp_matrix(scaler_f, mlp_home, mlp_away, dc_final, h_eng, a_eng, 0.0, pm.MATCH_DATE,
+                                          form_by_team, elo_by_team, final_elos, h2h_dict, 1.0, pi_by_team, final_pis)
+        M_cb, _, _ = pm.catboost_matrix(cb_home, cb_away, dc_final, h_eng, a_eng, 0.0, pm.MATCH_DATE,
+                                          form_by_team, elo_by_team, final_elos, h2h_dict, 1.0, pi_by_team, final_pis)
+        
+        elo_h = pm.get_elo_at_date(h_eng, pm.MATCH_DATE, elo_by_team, final_elos)
+        elo_a = pm.get_elo_at_date(a_eng, pm.MATCH_DATE, elo_by_team, final_elos)
+        fh = pm.get_form_at_date(h_eng, pm.MATCH_DATE, form_by_team)
+        fa = pm.get_form_at_date(a_eng, pm.MATCH_DATE, form_by_team)
+        form_h_val = fh[2] if fh else 0.5
+        form_a_val = fa[2] if fa else 0.5
+        M_mfa, _, _ = pm.montecarlo_mfa_matrix(h_eng, a_eng, elo_h, elo_a, form_h_val, form_a_val, 0.0)
+        
+        # Ensemble con pesos óptimos SLSQP
+        M_ens = (M_dc * w_opt[0] + M_dcnb * w_opt[1] + M_mc * w_opt[2] + M_xgb * w_opt[3] + M_mlp * w_opt[4] + M_cb * w_opt[5] + M_mfa * w_opt[6])
+        
         real_outcome = 0 if goals_h > goals_a else (1 if goals_h == goals_a else 2)
         outcome_labels = ["Gana Local", "Empate", "Gana Visita"]
         
-        # Mapear modelos a sus predicciones
         models_predictions = {
-            'Dixon-Coles': M_dc,
+            'Dixon-Coles Poisson': M_dc,
+            'Dixon-Coles NB': M_dcnb,
             'MCMC Bayesiano': M_mc,
             'XGBoost': M_xgb,
             'Red Neuronal (MLP)': M_mlp,
             'CatBoost': M_cb,
             'MFA Montecarlo': M_mfa,
-            'Ensemble (5 IAs)': M_ens
+            'Ensemble Ponderado': M_ens
         }
         
         print(f"\n⚽ Partido: {h} {goals_h} - {goals_a} {a} (Resultado real: {outcome_labels[real_outcome]})")
@@ -196,18 +223,13 @@ def main():
         for name, M_pred in models_predictions.items():
             p_1x2 = pm.matrix_to_1x2(M_pred)
             pred_outcome = int(np.argmax(p_1x2))
-            
-            # Calcular acierto
             is_hit = pred_outcome == real_outcome
             if is_hit:
                 eval_results[name]['hits'] += 1
-                
-            # Calcular RPS
             match_rps = pm.rps_1x2(p_1x2, real_outcome)
             eval_results[name]['rps_sum'] += match_rps
             
-            # Imprimir predicción para Ensemble
-            if name == 'Ensemble (5 IAs)':
+            if name == 'Ensemble Ponderado':
                 print(f"   ↳ Pred Ensemble: Gana H: {p_1x2[0]*100:.1f}% | Empate: {p_1x2[1]*100:.1f}% | Gana A: {p_1x2[2]*100:.1f}% -> {'✅ ACERTADO' if is_hit else '❌ FALLADO'} (RPS: {match_rps:.4f})")
                 
         matches_evaluated += 1
@@ -229,7 +251,6 @@ def main():
         avg_rps = metrics['rps_sum'] / matches_evaluated
         summary_list.append((name, metrics['hits'], acc, avg_rps))
         
-    # Ordenar por mayor Accuracy, y a igualdad por menor RPS
     summary_list.sort(key=lambda x: (-x[2], x[3]))
     
     for name, hits, acc, avg_rps in summary_list:

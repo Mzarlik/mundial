@@ -69,9 +69,15 @@ export default function Bracket() {
     const eloH = pred.home_elo || 1500;
     const eloA = pred.away_elo || 1500;
 
+    // Convertir ELO a expectativa de ganar tanda de penaltis (fallback)
     const wHome = 1.0 / (1.0 + Math.pow(10, (eloA - eloH) / 400.0));
-    const homeAdv = (pH + pD * wHome) * 100;
-    const awayAdv = (pA + pD * (1 - wHome)) * 100;
+    
+    // Cargar la tanda simulada Beta-Binomial si existe
+    const shootoutHome = pred.shootout_home !== undefined ? pred.shootout_home : wHome;
+    const shootoutAway = pred.shootout_away !== undefined ? pred.shootout_away : (1.0 - wHome);
+
+    const homeAdv = (pH + pD * shootoutHome) * 100;
+    const awayAdv = (pA + pD * shootoutAway) * 100;
 
     const winner = homeAdv >= awayAdv ? match.home : match.away;
     return { homeAdv, awayAdv, winner };
@@ -222,15 +228,18 @@ export default function Bracket() {
           <div className="bracket-column">
             <div className="bracket-round-title">Octavos (Izq)</div>
             <div className="bracket-match-group-spaced">
-              {renderSimMatch(octL1.winner, octL2.winner, octL1)}
-              {renderSimMatch(octL3.winner, octL4.winner, octL3)}
+              {renderSimMatch(r32Results['ger-par']?.winner, r32Results['fra-swe']?.winner, octL1)}
+              {renderSimMatch(r32Results['rsa-can']?.winner, r32Results['ned-mar']?.winner, octL2)}
+              {renderSimMatch(r32Results['por-cro']?.winner, r32Results['esp-aut']?.winner, octL3)}
+              {renderSimMatch(r32Results['usa-bih']?.winner, r32Results['bel-sen']?.winner, octL4)}
             </div>
           </div>
 
           <div className="bracket-column">
             <div className="bracket-round-title">Cuartos (Izq)</div>
-            <div className="bracket-match-group-spaced" style={{ justifyContent: 'center', height: '100%' }}>
-              {renderSimMatch(qL1.winner, qL2.winner, qL1)}
+            <div className="bracket-match-group-spaced">
+              {renderSimMatch(octL1.winner, octL2.winner, qL1)}
+              {renderSimMatch(octL3.winner, octL4.winner, qL2)}
             </div>
           </div>
 
@@ -247,25 +256,38 @@ export default function Bracket() {
               </p>
             </div>
 
-            <div style={{ marginTop: '1.5rem', width: '100%' }}>
-              <div className="bracket-round-title">Gran Final</div>
-              {renderSimMatch(semiL.winner, semiR.winner, semiL)}
+            <div style={{ marginTop: '1.5rem', width: '100%', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <div className="bracket-round-title" style={{ fontSize: '0.7rem', marginBottom: '0.2rem' }}>Semifinal Izq</div>
+                {renderSimMatch(qL1.winner, qL2.winner, semiL)}
+              </div>
+              <div>
+                <div className="bracket-round-title" style={{ fontSize: '0.7rem', marginBottom: '0.2rem' }}>Semifinal Der</div>
+                {renderSimMatch(qR1.winner, qR2.winner, semiR)}
+              </div>
+              <div>
+                <div className="bracket-round-title">Gran Final</div>
+                {renderSimMatch(semiL.winner, semiR.winner, grandFinal)}
+              </div>
             </div>
           </div>
 
           {/* LADO DERECHO */}
           <div className="bracket-column">
             <div className="bracket-round-title">Cuartos (Der)</div>
-            <div className="bracket-match-group-spaced" style={{ justifyContent: 'center', height: '100%' }}>
-              {renderSimMatch(qR1.winner, qR2.winner, qR1)}
+            <div className="bracket-match-group-spaced">
+              {renderSimMatch(octR1.winner, octR2.winner, qR1)}
+              {renderSimMatch(octR3.winner, octR4.winner, qR2)}
             </div>
           </div>
 
           <div className="bracket-column">
             <div className="bracket-round-title">Octavos (Der)</div>
             <div className="bracket-match-group-spaced">
-              {renderSimMatch(octR1.winner, octR2.winner, octR1)}
-              {renderSimMatch(octR3.winner, octR4.winner, octR3)}
+              {renderSimMatch(r32Results['bra-jpn']?.winner, r32Results['civ-nor']?.winner, octR1)}
+              {renderSimMatch(r32Results['mex-ecu']?.winner, r32Results['eng-cod']?.winner, octR2)}
+              {renderSimMatch(r32Results['arg-cpv']?.winner, r32Results['aus-egy']?.winner, octR3)}
+              {renderSimMatch(r32Results['sui-alg']?.winner, r32Results['col-gha']?.winner, octR4)}
             </div>
           </div>
 
@@ -317,10 +339,14 @@ export default function Bracket() {
               2. Octavos de Final
             </h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', marginTop: '1rem' }}>
-              {renderSimMatch(octL1.winner, octL2.winner, octL1)}
-              {renderSimMatch(octL3.winner, octL4.winner, octL3)}
-              {renderSimMatch(octR1.winner, octR2.winner, octR1)}
-              {renderSimMatch(octR3.winner, octR4.winner, octR3)}
+              {renderSimMatch(r32Results['ger-par']?.winner, r32Results['fra-swe']?.winner, octL1)}
+              {renderSimMatch(r32Results['rsa-can']?.winner, r32Results['ned-mar']?.winner, octL2)}
+              {renderSimMatch(r32Results['por-cro']?.winner, r32Results['esp-aut']?.winner, octL3)}
+              {renderSimMatch(r32Results['usa-bih']?.winner, r32Results['bel-sen']?.winner, octL4)}
+              {renderSimMatch(r32Results['bra-jpn']?.winner, r32Results['civ-nor']?.winner, octR1)}
+              {renderSimMatch(r32Results['mex-ecu']?.winner, r32Results['eng-cod']?.winner, octR2)}
+              {renderSimMatch(r32Results['arg-cpv']?.winner, r32Results['aus-egy']?.winner, octR3)}
+              {renderSimMatch(r32Results['sui-alg']?.winner, r32Results['col-gha']?.winner, octR4)}
             </div>
           </div>
 
@@ -329,8 +355,10 @@ export default function Bracket() {
               3. Cuartos de Final
             </h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', marginTop: '1rem' }}>
-              {renderSimMatch(qL1.winner, qL2.winner, qL1)}
-              {renderSimMatch(qR1.winner, qR2.winner, qR1)}
+              {renderSimMatch(octL1.winner, octL2.winner, qL1)}
+              {renderSimMatch(octL3.winner, octL4.winner, qL2)}
+              {renderSimMatch(octR1.winner, octR2.winner, qR1)}
+              {renderSimMatch(octR3.winner, octR4.winner, qR2)}
             </div>
           </div>
 
@@ -339,7 +367,8 @@ export default function Bracket() {
               4. Semifinales
             </h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', marginTop: '1rem' }}>
-              {renderSimMatch(semiL.winner, semiR.winner, semiL)}
+              {renderSimMatch(qL1.winner, qL2.winner, semiL)}
+              {renderSimMatch(qR1.winner, qR2.winner, semiR)}
             </div>
           </div>
 
@@ -348,7 +377,7 @@ export default function Bracket() {
               5. Gran Final
             </h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', marginTop: '1rem' }}>
-              {renderSimMatch(semiL.winner, semiR.winner, semiL)}
+              {renderSimMatch(semiL.winner, semiR.winner, grandFinal)}
             </div>
           </div>
         </div>

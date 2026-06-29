@@ -23,7 +23,7 @@ import matplotlib.patches   # modificado para importar patches de forma explíci
 import matplotlib.patches as mpatches
 import seaborn as sns
 from scipy.optimize import minimize
-from scipy.stats import poisson
+from scipy.stats import poisson, nbinom
 import pymc as pm
 import xgboost as xgb
 from catboost import CatBoostRegressor
@@ -366,6 +366,77 @@ def dc_matrix(dcm, h, a, host):
 
 def matrix_to_1x2(M):
     return [np.tril(M, -1).sum(), np.trace(M), np.triu(M, 1).sum()]
+
+# --- MODELO DIXON-COLES CON BINOMIAL NEGATIVA (DC-NB) ---
+def fit_dixon_coles_nb(train, cutoff, half_life=HALF_LIFE):
+    """
+    Ajusta el modelo de Dixon-Coles utilizando distribuciones Binomial Negativa (NB) bivariadas.
+    Permite modelar la sobredispersión (varianza > media) de goles en partidos reales.
+    Optimiza parámetros de ataque, defensa, ventaja de localía, correlación de empates (rho)
+    y parámetros de dispersión alpha_h y alpha_a.
+    """
+    train = train.copy()
+    train['w'] = 0.5 ** ((cutoff - train['date']).dt.days / half_life)
+    teams = sorted(set(train['home_team']) | set(train['away_team']))
+    idx = {t:i for i,t in enumerate(teams)}; n = len(teams)
+    hi = train['home_team'].map(idx).values; ai = train['away_team'].map(idx).values
+    hs = train['home_score'].values; as_ = train['away_score'].values; w = train['w'].values
+    lm = (train['neutral'] == False).values.astype(float)
+    
+    def tau(x, y, l, m, r):
+        t = np.ones_like(l)
+        a = (x==0)&(y==0); t[a] = 1 - l[a]*m[a]*r
+        a = (x==0)&(y==1); t[a] = 1 + l[a]*r
+        a = (x==1)&(y==0); t[a] = 1 + m[a]*r
+        a = (x==1)&(y==1); t[a] = 1 - r
+        return t
+        
+    def nll(p):
+        at = p[:n] - p[:n].mean(); dn = p[n:2*n]; h = p[2*n]; r = p[2*n+1]
+        alpha_h = np.exp(p[2*n+2])
+        alpha_a = np.exp(p[2*n+3])
+        l = np.exp(at[hi] - dn[ai] + h*lm)
+        m = np.exp(at[ai] - dn[hi])
+        t = np.clip(tau(hs, as_, l, m, r), 1e-10, None)
+        
+        n_h = 1.0 / alpha_h
+        p_h = 1.0 / (1.0 + alpha_h * l)
+        n_a = 1.0 / alpha_a
+        p_a = 1.0 / (1.0 + alpha_a * m)
+        
+        logpmf_h = nbinom.logpmf(hs, n_h, p_h)
+        logpmf_a = nbinom.logpmf(as_, n_a, p_a)
+        
+        return -(w * (np.log(t) + logpmf_h + logpmf_a)).sum()
+        
+    init_p = np.concatenate([np.zeros(n), np.zeros(n), [.25, -.05, -1.0, -1.0]])
+    r = minimize(nll, init_p, method='L-BFGS-B')
+    at = r.x[:n] - r.x[:n].mean()
+    return {
+        'att': at, 'dfn': r.x[n:2*n], 'home': r.x[2*n], 'rho': r.x[2*n+1],
+        'alpha_h': np.exp(r.x[2*n+2]), 'alpha_a': np.exp(r.x[2*n+3]),
+        'idx': idx, 'teams': teams
+    }
+
+def dc_nb_matrix(dcm, h, a, host):
+    idx = dcm['idx']
+    if h not in idx or a not in idx:
+        M = np.outer(poisson.pmf(range(MAXG), 1.2), poisson.pmf(range(MAXG), 1.2))
+        return M / M.sum()
+        
+    att, dfn, home, rho = dcm['att'], dcm['dfn'], dcm['home'], dcm['rho']
+    alpha_h, alpha_a = dcm['alpha_h'], dcm['alpha_a']
+    l = np.exp(att[idx[h]] - dfn[idx[a]] + (home if host else 0))
+    m = np.exp(att[idx[a]] - dfn[idx[h]])
+    
+    n_h = 1.0 / alpha_h
+    p_h = 1.0 / (1.0 + alpha_h * l)
+    n_a = 1.0 / alpha_a
+    p_a = 1.0 / (1.0 + alpha_a * m)
+    
+    M = np.outer(nbinom.pmf(range(MAXG), n_h, p_h), nbinom.pmf(range(MAXG), n_a, p_a))
+    M[0,0] *= 1 - l*m*rho; M[0,1] *= 1 + l*rho; M[1,0] *= 1 + m*rho; M[1,1] *= 1 - rho
+    return M / M.sum()
 
 # --- MODELO MCMC BAYESIANO ---
 def fit_mcmc(train, draws=1000, tune=1000, seed=1):
@@ -714,9 +785,10 @@ def plot_3panel(M, top_df, nombre, home, away, abbr_home, abbr_away, out_path):
     plt.savefig(out_path, dpi=120, bbox_inches='tight')
     plt.close()
 
-def plot_resumen(M_dc, M_mc, M_xg, M_mlp, M_cb, M_mfa, M_ens, home, away, out_path):
+def plot_resumen(M_dc, M_dcnb, M_mc, M_xg, M_mlp, M_cb, M_mfa, M_ens, home, away, out_path):
     # Genera un barplot de 1X2 para comparar TODOS los modelos
     pH_dc, pD_dc, pA_dc = matrix_to_1x2(M_dc)
+    pH_dcnb, pD_dcnb, pA_dcnb = matrix_to_1x2(M_dcnb)
     pH_mc, pD_mc, pA_mc = matrix_to_1x2(M_mc)
     pH_xg, pD_xg, pA_xg = matrix_to_1x2(M_xg)
     pH_mlp, pD_mlp, pA_mlp = matrix_to_1x2(M_mlp)
@@ -726,16 +798,17 @@ def plot_resumen(M_dc, M_mc, M_xg, M_mlp, M_cb, M_mfa, M_ens, home, away, out_pa
     
     labels = [f'Gana {home}', 'Empate', f'Gana {away}']
     x = np.arange(len(labels))
-    width = 0.12
+    width = 0.09
     
     fig, ax = plt.subplots(figsize=(12, 5))
-    rects1 = ax.bar(x - width*3, [pH_dc*100, pD_dc*100, pA_dc*100], width, label='Dixon-Coles', color=C_DRAW)
-    rects2 = ax.bar(x - width*2, [pH_mc*100, pD_mc*100, pA_mc*100], width, label='MCMC', color='#3b82f6')
-    rects3 = ax.bar(x - width, [pH_xg*100, pD_xg*100, pA_xg*100], width, label='XGBoost', color='#10b981')
-    rects4 = ax.bar(x, [pH_mlp*100, pD_mlp*100, pA_mlp*100], width, label='MLP', color='#8b5cf6')
-    rects5 = ax.bar(x + width, [pH_cb*100, pD_cb*100, pA_cb*100], width, label='CatBoost', color='#ec4899')
-    rects6 = ax.bar(x + width*2, [pH_mfa*100, pD_mfa*100, pA_mfa*100], width, label='MFA Montecarlo', color='#0ea5e9')
-    rects7 = ax.bar(x + width*3, [pH_ens*100, pD_ens*100, pA_ens*100], width, label='Ensemble', color='#f59e0b')
+    rects1 = ax.bar(x - width*3.5, [pH_dc*100, pD_dc*100, pA_dc*100], width, label='Dixon-Coles Poisson', color=C_DRAW)
+    rects2 = ax.bar(x - width*2.5, [pH_dcnb*100, pD_dcnb*100, pA_dcnb*100], width, label='Dixon-Coles NB', color='#f43f5e')
+    rects3 = ax.bar(x - width*1.5, [pH_mc*100, pD_mc*100, pA_mc*100], width, label='MCMC', color='#3b82f6')
+    rects4 = ax.bar(x - width*0.5, [pH_xg*100, pD_xg*100, pA_xg*100], width, label='XGBoost', color='#10b981')
+    rects5 = ax.bar(x + width*0.5, [pH_mlp*100, pD_mlp*100, pA_mlp*100], width, label='MLP', color='#8b5cf6')
+    rects6 = ax.bar(x + width*1.5, [pH_cb*100, pD_cb*100, pA_cb*100], width, label='CatBoost', color='#ec4899')
+    rects7 = ax.bar(x + width*2.5, [pH_mfa*100, pD_mfa*100, pA_mfa*100], width, label='MFA Montecarlo', color='#0ea5e9')
+    rects8 = ax.bar(x + width*3.5, [pH_ens*100, pD_ens*100, pA_ens*100], width, label='Ensemble', color='#f59e0b')
     
     ax.set_ylabel('Probabilidad (%)', fontweight='bold')
     ax.set_title(f'Resumen de Modelos: {home} vs {away}', fontweight='bold', fontsize=12)
@@ -744,7 +817,7 @@ def plot_resumen(M_dc, M_mc, M_xg, M_mlp, M_cb, M_mfa, M_ens, home, away, out_pa
     ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     ax.set_ylim(0, 100)
     
-    for rects in [rects1, rects2, rects3, rects4, rects5, rects6, rects7]:
+    for rects in [rects1, rects2, rects3, rects4, rects5, rects6, rects7, rects8]:
         for rect in rects:
             height = rect.get_height()
             if height > 1:
@@ -763,6 +836,155 @@ def build_top_df(M, home, away):
             rs = f'{home} gana' if i > j else ('Empate' if i == j else f'{away} gana')
             rows.append({'Marcador': f'{i}-{j}', 'Prob (%)': round(M[i,j]*100, 2), 'Resultado': rs})
     return pd.DataFrame(rows).sort_values('Prob (%)', ascending=False).reset_index(drop=True)
+
+# --- SIMULACIÓN BETA-BINOMIAL DE PENALTIS ---
+def simulate_shootout_beta_binomial(elo_h, elo_a, simulations=10000):
+    """
+    Simula una tanda de penaltis utilizando una distribución Beta-Binomial.
+    La probabilidad de anotar de cada equipo (p_h, p_a) en cada tanda es una variable aleatoria
+    extraída de una distribución Beta, modelando la influencia de la presión psicológica
+    y la variabilidad del momento.
+    """
+    diff = elo_h - elo_a
+    mean_h = np.clip(0.75 + (diff / 400.0) * 0.04, 0.60, 0.90)
+    mean_a = np.clip(0.75 - (diff / 400.0) * 0.04, 0.60, 0.90)
+    
+    S = 20.0
+    alpha_h, beta_h = mean_h * S, (1.0 - mean_h) * S
+    alpha_a, beta_a = mean_a * S, (1.0 - mean_a) * S
+    
+    wins_h = 0
+    for _ in range(simulations):
+        p_h = np.random.beta(alpha_h, beta_h)
+        p_a = np.random.beta(alpha_a, beta_a)
+        
+        sh_h, sh_a = 0, 0
+        g_h, g_a = 0, 0
+        winner = None
+        
+        for r in range(5):
+            if np.random.rand() < p_h:
+                g_h += 1
+            sh_h += 1
+            if g_h > g_a + (5 - sh_a):
+                winner = 'H'
+                break
+            if g_a > g_h + (5 - sh_h):
+                winner = 'A'
+                break
+                
+            if np.random.rand() < p_a:
+                g_a += 1
+            sh_a += 1
+            if g_h > g_a + (5 - sh_a):
+                winner = 'H'
+                break
+            if g_a > g_h + (5 - sh_h):
+                winner = 'A'
+                break
+                
+        if winner is None:
+            while True:
+                scored_h = np.random.rand() < p_h
+                scored_a = np.random.rand() < p_a
+                if scored_h and not scored_a:
+                    winner = 'H'
+                    break
+                if scored_a and not scored_h:
+                    winner = 'A'
+                    break
+                    
+        if winner == 'H':
+            wins_h += 1
+            
+    prob_h = wins_h / simulations
+    return prob_h, 1.0 - prob_h
+
+# --- SIMULACIÓN DE LÍNEA DE TIEMPO WEIBULL CON PAUSAS DE HIDRATACIÓN ---
+def simulate_match_timeline_weibull(l_h, l_a, h_name, a_name, out_path, simulations=2000):
+    """
+    Simula el transcurso de un partido minuto a minuto mediante un proceso de Weibull.
+    Incorpora pausas de hidratación en los minutos [30-32] y [75-77] (tasa de gol = 0).
+    Aplica el 'Efecto DT' (recalibración táctica): si un equipo va perdiendo después de una pausa,
+    su defensa se incrementa, reduciendo la tasa de gol del rival en un 15% (tras min 32) o 25% (tras min 77).
+    Genera un gráfico acumulativo de la expectativa de goles y lo guarda en out_path.
+    """
+    k = 1.15
+    t_grid = np.arange(1, 91)
+    
+    goals_h_timeline = np.zeros((simulations, 90))
+    goals_a_timeline = np.zeros((simulations, 90))
+    
+    for sim in range(simulations):
+        g_h, g_a = 0, 0
+        hist_h = []
+        hist_a = []
+        
+        for t in t_grid:
+            adj_h = 1.0
+            adj_a = 1.0
+            
+            if t > 32 and t <= 77:
+                if g_h > g_a:
+                    adj_h = 0.85
+                elif g_a > g_h:
+                    adj_a = 0.85
+            elif t > 77:
+                if g_h > g_a:
+                    adj_h = 0.75
+                elif g_a > g_h:
+                    adj_a = 0.75
+                    
+            r_h = adj_h * (l_h * k / 90.0) * ((t / 90.0) ** (k - 1))
+            r_a = adj_a * (l_a * k / 90.0) * ((t / 90.0) ** (k - 1))
+            
+            if (t >= 30 and t <= 32) or (t >= 75 and t <= 77):
+                r_h = 0.0
+                r_a = 0.0
+                
+            if np.random.rand() < r_h:
+                g_h += 1
+            if np.random.rand() < r_a:
+                g_a += 1
+                
+            hist_h.append(g_h)
+            hist_a.append(g_a)
+            
+        goals_h_timeline[sim, :] = hist_h
+        goals_a_timeline[sim, :] = hist_a
+        
+    mean_h = np.mean(goals_h_timeline, axis=0)
+    mean_a = np.mean(goals_a_timeline, axis=0)
+    
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    ax.plot(t_grid, mean_h, label=f'Expectativa {h_name}', color='#f59e0b', linewidth=2.5)
+    ax.plot(t_grid, mean_a, label=f'Expectativa {a_name}', color='#3b82f6', linewidth=2.5)
+    
+    ax.axvspan(30, 32, color='#3b82f6', alpha=0.15)
+    ax.axvline(30, color='gray', linestyle='--', linewidth=0.8, alpha=0.7)
+    
+    max_val = max(max(mean_h), max(mean_a)) if len(mean_h) > 0 else 1.0
+    ax.text(31, max_val * 0.1, 'Pausa de\nHidratación', ha='center', fontsize=7, color='gray', fontweight='bold')
+    
+    ax.axvspan(75, 77, color='#3b82f6', alpha=0.15)
+    ax.axvline(75, color='gray', linestyle='--', linewidth=0.8, alpha=0.7)
+    ax.text(76, max_val * 0.1, 'Pausa de\nHidratación', ha='center', fontsize=7, color='gray', fontweight='bold')
+    
+    ax.annotate('Efecto DT (Ajuste)', xy=(33, mean_h[32]), xytext=(38, mean_h[32] + 0.15),
+                arrowprops=dict(facecolor='black', arrowstyle="->", lw=0.8), fontsize=7, color='gray')
+    
+    ax.set_title('Evolución Temporal del Partido (Modelo Weibull)', fontweight='bold', fontsize=11)
+    ax.set_xlabel('Minuto del Partido', fontweight='bold', fontsize=9)
+    ax.set_ylabel('Expectativa de Goles Acumulados', fontweight='bold', fontsize=9)
+    ax.set_xlim(1, 90)
+    ax.set_ylim(0, max_val * 1.25)
+    ax.legend(loc='upper left', fontsize=8)
+    
+    sns.despine()
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    plt.savefig(out_path, dpi=120, bbox_inches='tight')
+    plt.close()
 
 # --- PROGRAMA PRINCIPAL ---
 if __name__ == '__main__':
@@ -831,6 +1053,9 @@ if __name__ == '__main__':
     print("\n[INFO] Ajustando Dixon-Coles global...")
     dc_final = fit_dixon_coles(df_all[(df_all.date >= DESDE) & (df_all.date < MATCH_DATE)], MATCH_DATE)
     
+    print("[INFO] Ajustando Dixon-Coles NB (Binomial Negativa) global...")
+    dc_nb_final = fit_dixon_coles_nb(df_all[(df_all.date >= DESDE) & (df_all.date < MATCH_DATE)], MATCH_DATE)
+    
     print("[INFO] Muestreando MCMC Bayesiano global (PyMC)... Esto puede tardar ~2-4 min...")
     mc_final = fit_mcmc(df_all[(df_all.date >= DESDE_BAYES) & (df_all.date < MATCH_DATE)], draws=3000, tune=3000)
     
@@ -875,6 +1100,7 @@ if __name__ == '__main__':
     # Si no hay partidos de simulación jugados, caemos a una lista vacía
     res = {
         'Dixon-Coles': [0, 0.],
+        'Dixon-Coles NB': [0, 0.],
         'MCMC Bayesiano': [0, 0.],
         'XGBoost': [0, 0.],
         'Red Neuronal': [0, 0.],
@@ -886,7 +1112,6 @@ if __name__ == '__main__':
     opt_data = []
     
     for m_id, (goals_h, goals_a) in simulated_results.items():
-        # Buscar partido en matches
         match_obj = next((m for m in matches if m['id'] == m_id), None)
         if not match_obj:
             continue
@@ -896,7 +1121,6 @@ if __name__ == '__main__':
         host = 0.0
         is_comp = 1.0
         
-        # Traducir nombres
         h_eng = SPANISH_TO_ENGLISH.get(h, h)
         a_eng = SPANISH_TO_ENGLISH.get(a, a)
         
@@ -907,6 +1131,12 @@ if __name__ == '__main__':
         p_dc = matrix_to_1x2(M_dc)
         res['Dixon-Coles'][0] += int(np.argmax(p_dc) == o)
         res['Dixon-Coles'][1] += rps_1x2(p_dc, o)
+        
+        # DC NB
+        M_dcnb = dc_nb_matrix(dc_nb_final, h_eng, a_eng, host)
+        p_dcnb = matrix_to_1x2(M_dcnb)
+        res['Dixon-Coles NB'][0] += int(np.argmax(p_dcnb) == o)
+        res['Dixon-Coles NB'][1] += rps_1x2(p_dcnb, o)
         
         # MCMC
         M_mc = mcmc_matrix_mean(mc_final, h_eng, a_eng, host, dc_final)
@@ -947,10 +1177,10 @@ if __name__ == '__main__':
         res['MFA Montecarlo'][0] += int(np.argmax(p_mfa) == o)
         res['MFA Montecarlo'][1] += rps_1x2(p_mfa, o)
         
-        opt_data.append((M_dc, M_mc, M_xg, M_ml, M_cb, M_mfa, o))
+        opt_data.append((M_dc, M_dcnb, M_mc, M_xg, M_ml, M_cb, M_mfa, o))
         
-        # Ensemble Optimizado
-        M_ens_val = (M_dc * 0.81 + M_xg * 0.10 + M_cb * 0.09)
+        # Ensemble por defecto
+        M_ens_val = (M_dc * 0.70 + M_dcnb * 0.10 + M_xg * 0.10 + M_cb * 0.10)
         p_en = matrix_to_1x2(M_ens_val)
         res['Ensemble'][0] += int(np.argmax(p_en) == o)
         res['Ensemble'][1] += rps_1x2(p_en, o)
@@ -966,28 +1196,28 @@ if __name__ == '__main__':
         
     def eval_w(w):
         tot = 0.0
-        for M_dc_t, M_mc_t, M_xg_t, M_ml_t, M_cb_t, M_mfa_t, o_t in opt_data:
-            M_ens_t = (M_dc_t * w[0] + M_mc_t * w[1] + M_xg_t * w[2] + M_ml_t * w[3] + M_cb_t * w[4] + M_mfa_t * w[5])
+        for M_dc_t, M_dcnb_t, M_mc_t, M_xg_t, M_ml_t, M_cb_t, M_mfa_t, o_t in opt_data:
+            M_ens_t = (M_dc_t * w[0] + M_dcnb_t * w[1] + M_mc_t * w[2] + M_xg_t * w[3] + M_ml_t * w[4] + M_cb_t * w[5] + M_mfa_t * w[6])
             p_t = matrix_to_1x2(M_ens_t)
             tot += rps_opt_1x2(p_t, o_t)
         return tot / len(opt_data)
         
     cons = ({'type': 'eq', 'fun': lambda w: 1.0 - sum(w)})
-    bounds = [(0.0, 1.0) for _ in range(6)]
-    w0 = [0.35, 0.10, 0.15, 0.10, 0.15, 0.15]
+    bounds = [(0.0, 1.0) for _ in range(7)]
+    w0 = [0.30, 0.20, 0.05, 0.15, 0.10, 0.10, 0.10]
     res_opt = minimize(eval_w, w0, method='SLSQP', bounds=bounds, constraints=cons)
     w_opt = res_opt.x
     
     print("\n[OPTIMIZACIÓN] Ponderación Matemática Óptima por Mínimo RPS:")
-    names_opt = ['Dixon-Coles', 'MCMC Bayesiano', 'XGBoost', 'Red Neuronal (MLP)', 'CatBoost', 'MFA Montecarlo']
+    names_opt = ['Dixon-Coles Poisson', 'Dixon-Coles NB', 'MCMC Bayesiano', 'XGBoost', 'Red Neuronal (MLP)', 'CatBoost', 'MFA Montecarlo']
     for i, name_o in enumerate(names_opt):
         print(f"  {name_o}: {w_opt[i]*100:.2f}%")
         
     # Calcular métricas con la ponderación óptima
     opt_hits = 0
     opt_rps = 0.0
-    for M_dc_t, M_mc_t, M_xg_t, M_ml_t, M_cb_t, M_mfa_t, o_t in opt_data:
-        M_ens_t = (M_dc_t * w_opt[0] + M_mc_t * w_opt[1] + M_xg_t * w_opt[2] + M_ml_t * w_opt[3] + M_cb_t * w_opt[4] + M_mfa_t * w_opt[5])
+    for M_dc_t, M_dcnb_t, M_mc_t, M_xg_t, M_ml_t, M_cb_t, M_mfa_t, o_t in opt_data:
+        M_ens_t = (M_dc_t * w_opt[0] + M_dcnb_t * w_opt[1] + M_mc_t * w_opt[2] + M_xg_t * w_opt[3] + M_ml_t * w_opt[4] + M_cb_t * w_opt[5] + M_mfa_t * w_opt[6])
         p_t = matrix_to_1x2(M_ens_t)
         if np.argmax(p_t) == o_t:
             opt_hits += 1
@@ -1011,7 +1241,7 @@ if __name__ == '__main__':
     names = [s[0] for s in summary_metrics]
     accs = [s[1] for s in summary_metrics]
     rpss = [s[2] for s in summary_metrics]
-    cols = ['#94a3b8', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#0ea5e9', '#f59e0b']
+    cols = ['#94a3b8', '#f43f5e', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#0ea5e9', '#f59e0b']
     
     axes[0].bar(names, accs, color=cols, width=0.52, edgecolor='white', linewidth=1.5)
     for i, v in enumerate(accs):
@@ -1059,6 +1289,7 @@ if __name__ == '__main__':
         
         # Obtener matrices de predicción
         M_dc = dc_matrix(dc_final, h_eng, a_eng, host)
+        M_dcnb = dc_nb_matrix(dc_nb_final, h_eng, a_eng, host)
         M_mc = mcmc_matrix_mean(mc_final, h_eng, a_eng, host, dc_final)
         M_xgb, lh_xgb, la_xgb = xgb_matrix(reg_home, reg_away, dc_final, h_eng, a_eng, host, MATCH_DATE,
                                           form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis)
@@ -1077,11 +1308,12 @@ if __name__ == '__main__':
         
         M_mfa, lh_mfa, la_mfa = montecarlo_mfa_matrix(h_eng, a_eng, elo_h, elo_a, form_h_val, form_a_val, host)
         
-        # Ensemble Optimizado
-        M_ens = (M_dc * 0.81 + M_xgb * 0.10 + M_cb * 0.09)
+        # Ensemble Optimizado con pesos SLSQP dinámicos
+        M_ens = (M_dc * w_opt[0] + M_dcnb * w_opt[1] + M_mc * w_opt[2] + M_xgb * w_opt[3] + M_mlp * w_opt[4] + M_cb * w_opt[5] + M_mfa * w_opt[6])
         
         # Dataframes ordenados para top 10
         top_dc = build_top_df(M_dc, h, a)
+        top_dcnb = build_top_df(M_dcnb, h, a)
         top_mc = build_top_df(M_mc, h, a)
         top_xgb = build_top_df(M_xgb, h, a)
         top_mlp = build_top_df(M_mlp, h, a)
@@ -1128,6 +1360,9 @@ if __name__ == '__main__':
         away_form_gf = float(fa[1]) if fa else 1.2
         away_form_ga = float(fa[2]) if fa else 1.2
 
+        # Simulación de tanda de penaltis Beta-Binomial
+        p_shoot_h, p_shoot_a = simulate_shootout_beta_binomial(float(elo_h), float(elo_a))
+
         match_predictions[m_id] = {
             'home': float(p_1x2[0]),
             'draw': float(p_1x2[1]),
@@ -1146,17 +1381,25 @@ if __name__ == '__main__':
             'away_form_gf': away_form_gf,
             'away_form_ga': away_form_ga,
             'home_elo': float(elo_h),
-            'away_elo': float(elo_a)
+            'away_elo': float(elo_a),
+            'shootout_home': float(p_shoot_h),
+            'shootout_away': float(p_shoot_a),
+            'timeline_file': f"/graphs/{day}/{m_id}_timeline.png"
         }
         
         # Definir rutas de salida físicas
         graphs_dir = os.path.join(script_dir, 'public', 'graphs', day)
+        timeline_out = os.path.join(graphs_dir, f"{m_id}_timeline.png")
+        
+        # Generar simulación de línea de tiempo Weibull
+        simulate_match_timeline_weibull(exp_goles_h, exp_goles_a, h, a, timeline_out)
         
         mcmc_out = os.path.join(graphs_dir, match['mcmc_file'])
         xgb_out = os.path.join(graphs_dir, match['xgb_file'])
         mlp_out = os.path.join(graphs_dir, f"{m_id}_mlp.png")
         cb_out = os.path.join(graphs_dir, f"{m_id}_catboost.png")
         dc_out = os.path.join(graphs_dir, f"{m_id}_dixoncoles.png")
+        dcnb_out = os.path.join(graphs_dir, f"{m_id}_dcnb.png")
         mfa_out = os.path.join(graphs_dir, f"{m_id}_mfa.png")
         ens_out = os.path.join(graphs_dir, f"{m_id}_ensemble.png")
         acc_out = os.path.join(graphs_dir, match['accuracy_file'])
@@ -1164,6 +1407,7 @@ if __name__ == '__main__':
         
         # Guardar gráficos de 3 paneles
         plot_3panel(M_dc, top_dc, 'Dixon-Coles Dinámico (Poisson)', h, a, abbr_h, abbr_a, dc_out)
+        plot_3panel(M_dcnb, top_dcnb, 'Dixon-Coles NB (Binomial Negativa)', h, a, abbr_h, abbr_a, dcnb_out)
         plot_3panel(M_mc, top_mc, 'MCMC Bayesiano (PyMC)', h, a, abbr_h, abbr_a, mcmc_out)
         plot_3panel(M_xgb, top_xgb, 'XGBoost (Regresión de Goles + Pi-Ratings)', h, a, abbr_h, abbr_a, xgb_out)
         plot_3panel(M_mlp, top_mlp, 'Red Neuronal (MLP)', h, a, abbr_h, abbr_a, mlp_out)
@@ -1172,7 +1416,7 @@ if __name__ == '__main__':
         plot_3panel(M_ens, top_ens, 'Ensemble (Promedio Ponderado)', h, a, abbr_h, abbr_a, ens_out)
         
         # Guardar gráfico resumen comparativo
-        plot_resumen(M_dc, M_mc, M_xgb, M_mlp, M_cb, M_mfa, M_ens, h, a, res_out)
+        plot_resumen(M_dc, M_dcnb, M_mc, M_xgb, M_mlp, M_cb, M_mfa, M_ens, h, a, res_out)
         
         # Copiar gráfico de Accuracy general
         if os.path.exists(temp_acc_path):
