@@ -1,0 +1,325 @@
+{
+  "iterations": 2000,
+  "probabilities": [
+    {
+      "team": "Portugal",
+      "code": "pt",
+      "elo": 1955.1326506469436,
+      "r16": 69.3,
+      "qf": 41.0,
+      "sf": 30.2,
+      "final": 19.1,
+      "champion": 13.5
+    },
+    {
+      "team": "Argentina",
+      "code": "ar",
+      "elo": 2084.3212629725235,
+      "r16": 68.6,
+      "qf": 47.6,
+      "sf": 33.5,
+      "final": 23.2,
+      "champion": 13.1
+    },
+    {
+      "team": "España",
+      "code": "es",
+      "elo": 2059.886678798697,
+      "r16": 68.5,
+      "qf": 36.5,
+      "sf": 25.1,
+      "final": 16.4,
+      "champion": 10.0
+    },
+    {
+      "team": "Francia",
+      "code": "fr",
+      "elo": 2069.09983082012,
+      "r16": 69.7,
+      "qf": 46.9,
+      "sf": 30.2,
+      "final": 17.7,
+      "champion": 9.7
+    },
+    {
+      "team": "Marruecos",
+      "code": "ma",
+      "elo": 1957.4995232100966,
+      "r16": 100.0,
+      "qf": 59.9,
+      "sf": 27.9,
+      "final": 11.8,
+      "champion": 5.3
+    },
+    {
+      "team": "Colombia",
+      "code": "co",
+      "elo": 1966.4904958844434,
+      "r16": 67.5,
+      "qf": 38.1,
+      "sf": 17.6,
+      "final": 10.4,
+      "champion": 5.3
+    },
+    {
+      "team": "Paraguay",
+      "code": "py",
+      "elo": 1898.3891521079026,
+      "r16": 100.0,
+      "qf": 42.0,
+      "sf": 21.1,
+      "final": 8.9,
+      "champion": 4.0
+    },
+    {
+      "team": "Noruega",
+      "code": "no",
+      "elo": 1909.4919047005358,
+      "r16": 57.5,
+      "qf": 33.9,
+      "sf": 16.5,
+      "final": 7.8,
+      "champion": 3.9
+    },
+    {
+      "team": "Ecuador",
+      "code": "ec",
+      "elo": 1936.1032859360998,
+      "r16": 48.9,
+      "qf": 27.6,
+      "sf": 17.4,
+      "final": 8.7,
+      "champion": 3.5
+    },
+    {
+      "team": "México",
+      "code": "mx",
+      "elo": 1940.8435874806867,
+      "r16": 51.1,
+      "qf": 28.0,
+      "sf": 15.7,
+      "final": 7.3,
+      "champion": 3.5
+    },
+    {
+      "team": "Suiza",
+      "code": "ch",
+      "elo": 1903.9066478024088,
+      "r16": 54.6,
+      "qf": 28.1,
+      "sf": 11.9,
+      "final": 6.1,
+      "champion": 3.3
+    },
+    {
+      "team": "Inglaterra",
+      "code": "gb-eng",
+      "elo": 1988.0940254804834,
+      "r16": 61.6,
+      "qf": 30.4,
+      "sf": 16.9,
+      "final": 8.3,
+      "champion": 3.2
+    },
+    {
+      "team": "Brasil",
+      "code": "br",
+      "elo": 2024.2269872372212,
+      "r16": 100.0,
+      "qf": 45.3,
+      "sf": 18.6,
+      "final": 7.6,
+      "champion": 3.2
+    },
+    {
+      "team": "Canadá",
+      "code": "ca",
+      "elo": 1808.862322216232,
+      "r16": 100.0,
+      "qf": 40.1,
+      "sf": 16.2,
+      "final": 5.9,
+      "champion": 2.9
+    },
+    {
+      "team": "Australia",
+      "code": "au",
+      "elo": 1855.105225043788,
+      "r16": 55.8,
+      "qf": 23.2,
+      "sf": 11.5,
+      "final": 5.3,
+      "champion": 2.1
+    },
+    {
+      "team": "Bélgica",
+      "code": "be",
+      "elo": 1880.5649285190837,
+      "r16": 51.8,
+      "qf": 29.3,
+      "sf": 9.4,
+      "final": 4.5,
+      "champion": 1.8
+    },
+    {
+      "team": "Senegal",
+      "code": "sn",
+      "elo": 1839.411364597019,
+      "r16": 48.1,
+      "qf": 26.0,
+      "sf": 8.3,
+      "final": 3.6,
+      "champion": 1.5
+    },
+    {
+      "team": "Argelia",
+      "code": "dz",
+      "elo": 1838.972004242852,
+      "r16": 45.4,
+      "qf": 21.8,
+      "sf": 8.8,
+      "final": 3.5,
+      "champion": 1.5
+    },
+    {
+      "team": "Croacia",
+      "code": "hr",
+      "elo": 1936.2125074095277,
+      "r16": 30.6,
+      "qf": 11.9,
+      "sf": 7.7,
+      "final": 3.2,
+      "champion": 1.3
+    },
+    {
+      "team": "Estados Unidos",
+      "code": "us",
+      "elo": 1794.1953636328496,
+      "r16": 56.9,
+      "qf": 26.6,
+      "sf": 8.7,
+      "final": 3.5,
+      "champion": 1.2
+    },
+    {
+      "team": "Costa de Marfil",
+      "code": "ci",
+      "elo": 1809.0369206296116,
+      "r16": 42.5,
+      "qf": 20.8,
+      "sf": 8.6,
+      "final": 3.5,
+      "champion": 1.2
+    },
+    {
+      "team": "Egipto",
+      "code": "eg",
+      "elo": 1798.5928660923219,
+      "r16": 44.2,
+      "qf": 16.2,
+      "sf": 7.3,
+      "final": 3.0,
+      "champion": 1.0
+    },
+    {
+      "team": "RD Congo",
+      "code": "cd",
+      "elo": 1771.6403119635145,
+      "r16": 38.5,
+      "qf": 14.1,
+      "sf": 6.2,
+      "final": 2.0,
+      "champion": 0.9
+    },
+    {
+      "team": "Cabo Verde",
+      "code": "cv",
+      "elo": 1698.2328855859612,
+      "r16": 31.4,
+      "qf": 13.0,
+      "sf": 5.4,
+      "final": 2.0,
+      "champion": 0.7
+    },
+    {
+      "team": "Suecia",
+      "code": "se",
+      "elo": 1748.7659386905568,
+      "r16": 30.3,
+      "qf": 11.2,
+      "sf": 4.6,
+      "final": 1.6,
+      "champion": 0.7
+    },
+    {
+      "team": "Ghana",
+      "code": "gh",
+      "elo": 1670.4849108891965,
+      "r16": 32.5,
+      "qf": 12.0,
+      "sf": 4.0,
+      "final": 1.3,
+      "champion": 0.6
+    },
+    {
+      "team": "Bosnia y Herzegovina",
+      "code": "ba",
+      "elo": 1699.1570085725941,
+      "r16": 43.1,
+      "qf": 18.1,
+      "sf": 6.2,
+      "final": 2.0,
+      "champion": 0.5
+    },
+    {
+      "team": "Austria",
+      "code": "at",
+      "elo": 1806.6392232931225,
+      "r16": 31.5,
+      "qf": 10.5,
+      "sf": 4.4,
+      "final": 1.8,
+      "champion": 0.5
+    },
+    {
+      "team": "Sudáfrica",
+      "code": "za",
+      "elo": 1636.5222176214836,
+      "r16": 0.0,
+      "qf": 0.0,
+      "sf": 0.0,
+      "final": 0.0,
+      "champion": 0.0
+    },
+    {
+      "team": "Japón",
+      "code": "jp",
+      "elo": 1878.070738393029,
+      "r16": 0.0,
+      "qf": 0.0,
+      "sf": 0.0,
+      "final": 0.0,
+      "champion": 0.0
+    },
+    {
+      "team": "Alemania",
+      "code": "de",
+      "elo": 1915.6373311695554,
+      "r16": 0.0,
+      "qf": 0.0,
+      "sf": 0.0,
+      "final": 0.0,
+      "champion": 0.0
+    },
+    {
+      "team": "Países Bajos",
+      "code": "nl",
+      "elo": 1952.465328356122,
+      "r16": 0.0,
+      "qf": 0.0,
+      "sf": 0.0,
+      "final": 0.0,
+      "champion": 0.0
+    }
+  ]
+}

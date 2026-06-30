@@ -396,7 +396,7 @@ function KnockoutAdvancePanel({ prediction, match, home, away }) {
         🏆 Probabilidad de Clasificación (Eliminatoria Directa)
       </h3>
       <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: '1.4' }}>
-        En fase de eliminación directa no hay empates. Si empatan en los 90', la probabilidad de avanzar se calcula combinando la **simulación de prórroga de 30' (Poisson)** y la **tanda de penaltis (Beta-Binomial)** stocástica de 10,000 iteraciones (Ratings ELO: {Math.round(eloH)} vs {Math.round(eloA)}).
+        En fase de eliminación directa no hay empates. Si empatan en los 90', la probabilidad de avanzar se calcula combinando la <strong>simulación de prórroga de 30' (Poisson)</strong> y la <strong>tanda de penaltis (Beta-Binomial)</strong> estocástica de 10,000 iteraciones (Ratings ELO: {Math.round(eloH)} vs {Math.round(eloA)}).
       </p>
       
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', width: '100%', marginBottom: '1.25rem' }}>
@@ -430,6 +430,12 @@ function KnockoutAdvancePanel({ prediction, match, home, away }) {
           <span>{home}: <span style={{color:'#f59e0b',fontWeight:'bold'}}>{(pD * probPkH * 100).toFixed(1)}%</span> | {away}: <span style={{color:'#3b82f6',fontWeight:'bold'}}>{(pD * probPkA * 100).toFixed(1)}%</span></span>
         </div>
       </div>
+      
+      {Math.abs(homeAdv - awayAdv) <= 10.0 && (
+        <div style={{ marginTop: '1.25rem', padding: '0.85rem', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '6px', color: '#fca5a5', fontSize: '0.82rem', lineHeight: '1.5' }}>
+          <strong>⚠️ Alerta de Paridad Extrema (Coin Toss):</strong> La diferencia de clasificación es menor al 10%. El Ensamble de IA detecta un duelo matemáticamente muy cerrado. Una ventaja tan ligera (ej. 51% a 49%) no garantiza ningún dominio claro; el partido tiene altísima probabilidad de decidirse por detalles mínimos, estado anímico, o en la ruleta de los penales. ¡Mucha cautela al interpretar este favoritismo!
+        </div>
+      )}
     </div>
   );
 }
@@ -515,7 +521,7 @@ export default function MatchDetail() {
       <div className="graph-section" style={{ borderLeft: '4px solid var(--orange)' }}>
         <h2>Evolución Temporal (Expectativa Weibull)</h2>
         <p style={{color:'var(--text-secondary)',fontSize:'0.88rem',marginBottom:'1rem'}}>
-          Simulación dinámica minuto a minuto de la expectativa acumulada de goles. Incorpora **pausas de hidratación** a los minutos 30' y 75' (donde la intensidad de gol cae a cero) y el **Efecto DT** (ajustes tácticos defensivos automáticos de los entrenadores cuando van perdiendo).
+          Simulación dinámica minuto a minuto de la expectativa acumulada de goles. Incorpora <strong>pausas de hidratación</strong> a los minutos 30' y 75' (donde la intensidad de gol cae a cero) y el <strong>Efecto DT</strong> (ajustes tácticos defensivos automáticos de los entrenadores cuando van perdiendo).
         </p>
         
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
@@ -625,7 +631,7 @@ export default function MatchDetail() {
         {selectedModel === 'ensemble' && (
           <div>
             <p style={{fontSize:'0.82rem',color:'var(--text-secondary)',marginBottom:'1rem'}}>
-              <strong>Ensemble Ponderado:</strong> Veredicto final del sistema. Pondera dinámicamente las predicciones individuales usando el optimizador SLSQP basado en la precisión empírica. Actualmente concentrado en **Dixon-Coles NB (83.35%)** y **XGBoost (16.65%)**.
+              <strong>Ensemble Ponderado:</strong> Veredicto final del sistema. Pondera dinámicamente las predicciones individuales usando el optimizador SLSQP basado en la precisión empírica. Actualmente concentrado en <strong>Dixon-Coles NB (83.35%)</strong> y <strong>XGBoost (16.65%)</strong>.
             </p>
             <GraphImage src={match.graphs.ensemble} alt="Ensemble" />
           </div>
@@ -695,7 +701,7 @@ export default function MatchDetail() {
         <div style={{color:'var(--text-secondary)',fontSize:'0.9rem',lineHeight:'1.6',marginBottom:'1.5rem', background: 'rgba(255,255,255,0.03)', padding: '1.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)'}}>
           <p style={{marginBottom: '1rem'}}>Esta sección demuestra el <strong>rendimiento empírico</strong> de nuestros algoritmos evaluándolos a ciegas sobre resultados reales ya conocidos del torneo (Fase de Grupos + Eliminatorias).</p>
           <ul style={{paddingLeft: '1.5rem', marginBottom: '1rem'}}>
-            <li style={{marginBottom: '0.5rem'}}><strong>Accuracy 1X2 (Panel Izquierdo):</strong> Porcentaje de acierto de victoria local/empate/visita. En fútbol internacional, superar el 60% es de rango profesional. Nuestro Ensamble optimizado ronda actualmente el **69.9%**.</li>
+            <li style={{marginBottom: '0.5rem'}}><strong>Accuracy 1X2 (Panel Izquierdo):</strong> Porcentaje de acierto de victoria local/empate/visita. En fútbol internacional, superar el 60% es de rango profesional. Nuestro Ensamble optimizado ronda actualmente el <strong>69.9%</strong>.</li>
             <li><strong>RPS - Ranked Probability Score (Panel Derecho):</strong> Métrica que castiga la sobreconfianza errónea. Mide qué tan prudentes e impecablemente calibradas están las probabilidades. Valores más bajos indican un modelo estadísticamente superior y más balanceado.</li>
           </ul>
         </div>

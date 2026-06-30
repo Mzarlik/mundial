@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, useLocation } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Disclaimer from './components/Disclaimer';
 import Home from './pages/Home';
@@ -8,6 +8,8 @@ import DayResults from './pages/DayResults';
 import MatchDetail from './pages/MatchDetail';
 import Parlays from './pages/Parlays';
 import Bracket from './pages/Bracket';
+import SwissSystem from './pages/SwissSystem';
+import PlayerStats from './pages/PlayerStats';
 
 /**
  * Componente Principal (App) que define la estructura básica de la aplicación:
@@ -18,6 +20,9 @@ import Bracket from './pages/Bracket';
 export default function App() {
   const [accepted, setAccepted] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const location = useLocation();
+  
+  const isWidePage = ['/cuadro', '/suizo', '/estadisticas-jugadores'].includes(location.pathname);
   
   function handleAccept() { 
     setAccepted(true); 
@@ -35,7 +40,7 @@ export default function App() {
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       
       {/* Rutas principales del frontend */}
-      <main className="main-content">
+      <main className={`main-content ${isWidePage ? 'wide-page-main' : ''}`}>
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/como-probar" element={<HowToTest />} />
@@ -43,9 +48,10 @@ export default function App() {
           <Route path="/partido/:matchId" element={<MatchDetail />} />
           <Route path="/parleys" element={<Parlays />} />
           <Route path="/cuadro" element={<Bracket />} />
+          <Route path="/suizo" element={<SwissSystem />} />
+          <Route path="/estadisticas-jugadores" element={<PlayerStats />} />
         </Routes>
       </main>
     </div>
   </>);
 }
-

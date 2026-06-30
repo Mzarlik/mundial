@@ -37,6 +37,8 @@ export default function Sidebar({ open, onClose }) {
         <NavLink to="/" end>Inicio</NavLink>
         <NavLink to="/parleys" style={{ color: '#f39c12', fontWeight: 'bold' }}>🎟️ Parleys Recomendados</NavLink>
         <NavLink to="/cuadro" style={{ color: '#0ea5e9', fontWeight: 'bold' }}>🏆 Simulador de Llaves</NavLink>
+        <NavLink to="/suizo" style={{ color: '#9b59b6', fontWeight: 'bold' }}>🧪 Laboratorios de IA</NavLink>
+        <NavLink to="/estadisticas-jugadores" style={{ color: '#10b981', fontWeight: 'bold' }}>📊 Estadísticas de Jugadores</NavLink>
         
         <div className="sidebar-section-label">Resultados por día</div>
         <button className="sidebar-toggle-btn" onClick={() => setDaysOpen(!daysOpen)}>

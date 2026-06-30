@@ -83,11 +83,11 @@ export default function Bracket() {
     return { homeAdv, awayAdv, winner };
   };
 
-  // Resultados reales de partidos ya jugados (anula la predicción estocástica en el Bracket)
   const realResults = {
     'rsa-can': 'Canadá', // Jugado, avanzó Canadá
     'bra-jpn': 'Brasil',  // Jugado, avanzó Brasil
     'ger-par': 'Paraguay', // Jugado, avanzó Paraguay
+    'ned-mar': 'Marruecos', // Jugado, avanzó Marruecos
   };
 
   // Pre-calcular los resultados de 16avos de final
@@ -219,12 +219,14 @@ export default function Bracket() {
         </button>
       </div>
 
+
+
       {/* MODO VISTA DE ÁRBOL */}
       {viewMode === 'tree' ? (
         <div className="bracket-container">
           {/* LADO IZQUIERDO */}
           <div className="bracket-column">
-            <div className="bracket-round-title">16avos de Final (Ida)</div>
+            <div className="bracket-round-title">16avos de Final</div>
             <div className="bracket-match-group">
               {renderSimMatch(getMatchBySlugId('ger-par').home, getMatchBySlugId('ger-par').away, null, true, getMatchBySlugId('ger-par'))}
               {renderSimMatch(getMatchBySlugId('fra-swe').home, getMatchBySlugId('fra-swe').away, null, true, getMatchBySlugId('fra-swe'))}
@@ -270,7 +272,7 @@ export default function Bracket() {
               <h3 style={{ fontSize: '1.2rem', margin: '0.2rem 0' }}>{grandFinal.winner}</h3>
               <div className="champion-badge">CAMPEÓN ML</div>
               <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.5rem', lineHeight: '1.3' }}>
-                Simulación: {grandFinal.winner} gana la final con un **{grandFinal.winner === semiL.winner ? grandFinal.probA.toFixed(0) : grandFinal.probB.toFixed(0)}%** de probabilidad.
+                Simulación: {grandFinal.winner} gana la final con un <strong>{grandFinal.winner === semiL.winner ? grandFinal.probA.toFixed(0) : grandFinal.probB.toFixed(0)}%</strong> de probabilidad.
               </p>
             </div>
 

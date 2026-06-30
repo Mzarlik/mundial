@@ -152,7 +152,7 @@ export default function Parlays() {
           </h1>
         </div>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', maxWidth: '800px', lineHeight: '1.6' }}>
-          Escanea la jornada futbolística utilizando el modelo **Ensemble (7 IAs)** y calcula de forma probabilística apuestas combinadas con ventaja matemática real (+EV) frente a las cuotas de las casas de apuestas.
+          Escanea la jornada futbolística utilizando el modelo <strong>Ensemble (7 IAs)</strong> y calcula de forma probabilística apuestas combinadas con ventaja matemática real (+EV) frente a las cuotas de las casas de apuestas.
         </p>
       </div>
 
@@ -373,7 +373,7 @@ export default function Parlays() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginTop: '1.5rem', padding: '0.8rem 1rem', background: 'rgba(245, 158, 11, 0.05)', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.1)' }}>
                 <span style={{ fontSize: '1.1rem' }}>💡</span>
                 <p style={{ margin: 0, fontSize: '0.82rem', color: 'rgba(255, 255, 255, 0.7)', lineHeight: '1.4' }}>
-                  Si tu casa de apuestas ofrece una cuota combinada **superior a {dailyParlay.odds}**, estarás apostando con valor matemático a largo plazo (+EV).
+                  Si tu casa de apuestas ofrece una cuota combinada <strong>superior a {dailyParlay.odds}</strong>, estarás apostando con valor matemático a largo plazo (+EV).
                 </p>
               </div>
             </div>
@@ -393,7 +393,7 @@ export default function Parlays() {
                 JORNADA DE MÁXIMA CAUTELA
               </h3>
               <p style={{ maxWidth: '600px', margin: '0.5rem auto 0 auto', fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                Para el {currentDayInfo?.full}, el Ensemble no detecta suficientes partidos seguros para armar un parley de alta confianza. La recomendación de la IA es apostar de forma **individual (singles)** en los partidos viables para mitigar riesgos.
+                Para el {currentDayInfo?.full}, el Ensemble no detecta suficientes partidos seguros para armar un parley de alta confianza. La recomendación de la IA es apostar de forma <strong>individual (singles)</strong> en los partidos viables para mitigar riesgos.
               </p>
             </div>
           )}

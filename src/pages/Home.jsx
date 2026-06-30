@@ -5,67 +5,60 @@ export default function Home() {
   return (
     <div>
       <div className="home-hero">
-        <h1>Fase de grupos <span>Interactiva</span></h1>
-        <p>Predicciones generadas con Inteligencia Artificial. Un ejercicio académico de frontera para explorar cómo el Machine Learning y la Inferencia Bayesiana descifran el deporte más complejo del mundo.</p>
+        <h1 style={{ fontSize: '3rem', marginBottom: '1rem' }}>Mundial 2026 <span>AI Predictor</span></h1>
+        <p style={{ fontSize: '1.2rem', maxWidth: '800px', margin: '0 auto' }}>
+          Un ecosistema avanzado de Machine Learning e Inferencia Bayesiana diseñado para predecir, simular y analizar la Copa del Mundo en tiempo real.
+        </p>
         <div style={{marginTop:'2.5rem',display:'flex',gap:'1rem',justifyContent:'center',flexWrap:'wrap'}}>
-          <Link to="/resultados/jornada1" className="btn btn-accent">Ver Predicciones</Link>
-          <Link to="/como-probar" className="btn btn-outline">Probar el Código Python</Link>
+          <Link to="/cuadro" className="btn btn-accent" style={{padding: '1rem 2rem'}}>🏆 Simulador de Llaves</Link>
+          <Link to="/parleys" className="btn btn-outline" style={{padding: '1rem 2rem'}}>🧪 Laboratorios Estocásticos</Link>
         </div>
       </div>
       
       <div className="section-block">
-        <h2>¿Qué es el Machine Learning Predictivo?</h2>
+        <h2>Un Motor que Aprende en Tiempo Real 🧠</h2>
         <div className="card" style={{padding: '2.5rem'}}>
-          <p>El Machine Learning (aprendizaje automático) es una rama de la IA que permite a las computadoras aprender patrones a partir de datos históricos sin ser programadas explícitamente. En lugar de seguir reglas de negocio, un modelo de ML ingiere millones de puntos de datos, encuentra correlaciones matemáticas invisibles al ojo humano y las usa para generar distribuciones probabilísticas sobre el futuro.</p>
-          <p style={{marginBottom: 0}}>En este proyecto, hemos alimentado a los algoritmos con más de <strong>49,000 partidos internacionales</strong> registrados desde 1872. El algoritmo no "adivina"; calcula el futuro basándose en una matriz de varianza histórica.</p>
+          <p>A diferencia de las calculadoras tradicionales, este sistema <strong>se retroalimenta de la realidad</strong>. Cada vez que un partido oficial concluye en el Mundial, los resultados se inyectan en nuestro motor. Las redes neuronales, XGBoost y las Cadenas de Markov (MCMC) recalculan sus pesos, y los puntajes ELO históricos se ajustan dinámicamente.</p>
+          <p style={{marginBottom: 0}}>Si una "cenicienta" da la sorpresa en Fase de Grupos, el algoritmo aprende inmediatamente de esa volatilidad para ajustar las predicciones del resto de sus partidos eliminatorios. El Optimizador Matemático evalúa constantemente cuál de nuestras 7 inteligencias artificiales tiene el menor margen de error (RPS) y le cede el control absoluto del Ensamble.</p>
         </div>
       </div>
 
       <div className="section-block">
-        <h2>La Arquitectura de Modelos</h2>
-        <p>No confiamos en un solo algoritmo. Hemos construido un <strong>Ensemble (Promedio Predictivo)</strong> que combina las tres metodologías más avanzadas del estado del arte:</p>
+        <h2>Laboratorios de Monte Carlo 🎲</h2>
+        <div className="comparison-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))' }}>
+          <div className="card">
+            <h3>♟️ Sistema Suizo Estocástico</h3>
+            <p>Simulamos un torneo masivo de Formato Suizo puro (48 equipos). Utilizando la distribución histórica de ELO, el motor realiza <strong>miles de iteraciones de Monte Carlo</strong> para encontrar el promedio exacto de puntos esperados (xPts), cruces y goles de cada selección si el Mundial se jugara como un torneo de ajedrez gigante.</p>
+          </div>
+          <div className="card">
+            <h3>⚔️ Supervivencia Eliminatoria</h3>
+            <p>La fase final no es predecible a simple vista. Inyectamos los 16 cruces de Dieciseisavos a un motor estocástico que tira los dados <strong>2,000 veces</strong> simulando prórrogas y tandas de penales con modelos Beta-Binomiales. El resultado es un mapa de calor que desnuda la verdadera probabilidad de cada selección de levantar la copa.</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="section-block">
+        <h2>Arquitectura Multi-Modelo (State of the Art)</h2>
+        <p>No confiamos el destino de un partido a un solo algoritmo. Hemos construido un <strong>Ensemble Optimizado</strong> que cruza las metodologías más potentes de Data Science:</p>
         
         <div className="comparison-grid">
           <div className="card">
-            <h3><span className="model-badge badge-ml">MLP</span> Redes Neuronales (Deep Learning)</h3>
-            <p>Un Perceptrón Multicapa (MLPRegressor) que utiliza capas ocultas para extraer relaciones no lineales complejas entre la fuerza histórica y la forma reciente. Destaca descubriendo "patrones abstractos" que escapan a la regresión lineal.</p>
+            <h3><span className="model-badge badge-xg">XGB</span> XGBoost & CatBoost</h3>
+            <p>Modelos de Gradient Boosting que destrozan la complejidad no lineal de las estadísticas. Aprenden de <strong>Pi-Ratings</strong>, formas recientes, historial Head-to-Head y ventaja de localía procesando casi 50,000 partidos históricos en milisegundos.</p>
           </div>
           <div className="card">
-            <h3><span className="model-badge badge-xg">XGB</span> Gradient Boosting (XGBoost)</h3>
-            <p>El rey indiscutible de las competiciones de Data Science. Ensambla miles de árboles de decisión secuencialmente. Utiliza métricas avanzadas como <strong>Pi-Ratings</strong> (para medir el dominio de un equipo por diferencia de goles) y <strong>ELO</strong>.</p>
+            <h3><span className="model-badge badge-mc">MCMC</span> Inferencia Bayesiana</h3>
+            <p>Usando PyMC, generamos 12,000 cadenas de Markov para estimar la "fuerza latente" de los equipos. No solo arroja un ganador, sino que cuantifica la <strong>incertidumbre</strong> para saber si un partido es realmente seguro o es un simple volado de suerte (Coin Toss).</p>
           </div>
           <div className="card">
-            <h3><span className="model-badge badge-cb">CB</span> Gradient Boosting Categórico (CatBoost)</h3>
-            <p>La alternativa de Microsoft/Yandex. Diseñado algorítmicamente para extraer patrones ocultos tratando directamente los nombres de las selecciones como variables categóricas nativas, sin perder información por codificación de texto.</p>
-          </div>
-          <div className="card">
-            <h3><span className="model-badge badge-mc">MCMC</span> Inferencia Bayesiana (PyMC)</h3>
-            <p>Un muestreador MCMC (Cadenas de Markov de Monte Carlo) con 12,000 iteraciones que no solo predice un resultado, sino que cuantifica la incertidumbre matemáticamente. Modela la capacidad ofensiva/defensiva latente de cada selección.</p>
-          </div>
-          <div className="card">
-            <h3><span className="model-badge badge-dc">B-P</span> Dixon-Coles (Poisson Bivariado)</h3>
-            <p>El estándar de oro estadístico (1997). Asume que los goles siguen distribuciones de Poisson, pero corrige la interdependencia (los empates 0-0 y 1-1 ocurren con más frecuencia que lo dictado por el azar puro). Sirve como nuestra base (baseline).</p>
+            <h3><span className="model-badge badge-dc">B-P</span> Poisson Bivariado</h3>
+            <p>Los modelos matemáticos puros (Dixon-Coles y Distribución Binomial Negativa) que estiman las tasas de ataque y defensa, corrigiendo la dependencia estadística típica de los empates 0-0 y 1-1 en torneos de alta presión.</p>
           </div>
         </div>
       </div>
-
-      <div className="section-block">
-        <h2>Medición de Precisión (Accuracy y RPS)</h2>
-        <div className="card" style={{padding: '2rem'}}>
-          <p>Para medir el rigor científico de estos algoritmos, ejecutamos simulaciones <strong>fuera de muestra (out-of-sample)</strong>. Escondemos partidos recientes y obligamos a la IA a "predecir el pasado" a ciegas.</p>
-          <ul style={{marginTop: '1.5rem', marginBottom: '0'}}>
-            <li><strong>Accuracy 1X2:</strong> Porcentaje de acierto directo. (Local, Empate o Visitante).</li>
-            <li><strong>Ranked Probability Score (RPS):</strong> La métrica más estricta. Penaliza severamente a un modelo cuando afirma con gran certeza (ej. 90%) un resultado que termina siendo incorrecto.</li>
-          </ul>
-        </div>
-      </div>
       
-      <div className="match-disclaimer" style={{textAlign: 'center', marginBottom: '3rem'}}>
-        El fútbol posee una entropía irreducible (aleatoriedad extrema). El mejor modelo matemático del mundo no puede prever una tarjeta roja al minuto 5. La información aquí presentada es para fines de investigación académica en <i>Data Science</i> y no debe usarse para apuestas o decisiones de riesgo financiero.
-      </div>
-      
-      <div style={{textAlign:'center',margin:'4rem 0'}}>
-        <Link to="/como-probar" className="btn btn-accent" style={{padding: '1rem 2.5rem', fontSize: '1.1rem'}}>Ver código fuente en GitHub</Link>
+      <div className="match-disclaimer" style={{textAlign: 'center', marginBottom: '3rem', marginTop: '4rem'}}>
+        El fútbol posee una entropía irreducible. El mejor modelo matemático del mundo no puede prever una tarjeta roja al minuto 5. La información y predicciones de esta arquitectura son producto de un <i>ejercicio académico de Data Science</i> avanzado y no constituyen recomendaciones financieras o de apuestas.
       </div>
     </div>
   );
