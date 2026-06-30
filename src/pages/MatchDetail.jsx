@@ -1,6 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getMatchById, flagUrl, DAYS } from '../config/matches';
+import { jsPDF } from 'jspdf';
+
+const loadImageAsBase64 = (url) => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'Anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const dataURL = canvas.toDataURL('image/png');
+      resolve(dataURL);
+    };
+    img.onerror = (err) => {
+      console.error("Error loading image for PDF:", url, err);
+      resolve(null);
+    };
+    img.src = url;
+  });
+};
+
 
 function GraphImage({ src, alt }) {
   if (!src) return (<div className="graph-placeholder">Gráfica pendiente — coloca el PNG en <code>public/graphs/</code> y actualiza <code>matches.js</code></div>);
@@ -458,13 +481,517 @@ export default function MatchDetail() {
       .catch(e => console.error("Error loading predictions", e));
   }, [matchId]);
 
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+
+  const downloadPDF = async () => {
+    setIsGeneratingPDF(true);
+    try {
+      const doc = new jsPDF('p', 'mm', 'a4');
+      const docWidth = doc.internal.pageSize.getWidth();
+      const docHeight = doc.internal.pageSize.getHeight();
+      
+      const primaryColor = [15, 23, 42]; // Slate 900
+      const accentColor = [245, 158, 11]; // Amber 500
+      const textColor = [51, 65, 85]; // Slate 700
+      const slateLight = [248, 250, 252]; // Slate 50
+      const borderLight = [226, 232, 240]; // Slate 200
+      
+      // Helper para dibujar barra de acento naranja al lado de títulos
+      const drawAccentBar = (currentY) => {
+        doc.setFillColor(...accentColor);
+        doc.rect(15, currentY - 4.5, 3.5, 6, 'F');
+      };
+      
+      // Helper para dibujar un recuadro con fondo gris suave
+      const drawCardBackground = (currentY, height) => {
+        doc.setFillColor(...slateLight);
+        doc.setDrawColor(...borderLight);
+        doc.rect(15, currentY, docWidth - 30, height, 'FD');
+      };
+      
+      // ==========================================
+      // PAGINA 1: CABECERA Y CONSENSO GENERAL
+      // ==========================================
+      
+      // Cabecera Principal (Banner Oscuro)
+      doc.setFillColor(...primaryColor);
+      doc.rect(0, 0, docWidth, 40, 'F');
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.text('COPA MUNDIAL FIFA 2026 - REPORTE DE PREDICCION ML', 15, 15);
+      
+      doc.setFontSize(22);
+      doc.text(`${match.home.toUpperCase()} vs ${match.away.toUpperCase()}`, 15, 27);
+      
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(200, 200, 200);
+      doc.text(`${day?.full || ''} | ${match.time || ''} | ${match.venue || ''} | ${match.group || ''}`, 15, 34);
+      
+      doc.setFillColor(...accentColor);
+      doc.rect(0, 40, docWidth, 3, 'F');
+      
+      let y = 53;
+      
+      // Sección 1: Análisis de Clasificación y Consenso
+      drawAccentBar(y);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.setTextColor(...primaryColor);
+      doc.text('1. ANALISIS DE CLASIFICACION Y CONSENSO', 21, y);
+      doc.setDrawColor(...borderLight);
+      doc.line(15, y + 2.5, docWidth - 15, y + 2.5);
+      
+      y += 10;
+      
+      // Datos de clasificación calculados
+      const pH = prediction.home || 0.33;
+      const pD = prediction.draw || 0.33;
+      const pA = prediction.away || 0.33;
+      
+      const eloH = prediction.home_elo || 1500;
+      const eloA = prediction.away_elo || 1500;
+      const wHome = 1.0 / (1.0 + Math.pow(10, (eloA - eloH) / 400.0));
+      
+      const shootoutHome = prediction.shootout_home !== undefined ? prediction.shootout_home : wHome;
+      const shootoutAway = prediction.shootout_away !== undefined ? prediction.shootout_away : (1.0 - wHome);
+      
+      const probEtH = prediction.prob_et_home !== undefined ? prediction.prob_et_home : 0.0;
+      const probEtA = prediction.prob_et_away !== undefined ? prediction.prob_et_away : 0.0;
+      const probPkH = prediction.prob_pk_home !== undefined ? prediction.prob_pk_home : shootoutHome;
+      const probPkA = prediction.prob_pk_away !== undefined ? prediction.prob_pk_away : shootoutAway;
+      
+      const homeAdv = (pH + pD * (probEtH + probPkH)) * 100;
+      const awayAdv = (pA + pD * (probEtA + probPkA)) * 100;
+      
+      // Recuadro de probabilidad detallada
+      drawCardBackground(y - 2, 22);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9.5);
+      doc.setTextColor(...textColor);
+      
+      doc.text(`Probabilidad Tiempo Regular (90'):`, 18, y + 3.5);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${match.home}: ${(pH*100).toFixed(0)}%  |  ${match.away}: ${(pA*100).toFixed(0)}%  |  Empate: ${(pD*100).toFixed(0)}%`, 88, y + 3.5);
+      
+      y += 6;
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Desglose Extra Time (Proroga 30'):`, 18, y + 3.5);
+      doc.text(`${match.home}: ${(pD * probEtH * 100).toFixed(1)}%  |  ${match.away}: ${(pD * probEtA * 100).toFixed(1)}%`, 88, y + 3.5);
+      
+      y += 6;
+      doc.text(`Tanda de Penaltis (Beta-Binomial):`, 18, y + 3.5);
+      doc.text(`${match.home}: ${(pD * probPkH * 100).toFixed(1)}%  |  ${match.away}: ${(pD * probPkA * 100).toFixed(1)}%`, 88, y + 3.5);
+      
+      y += 12;
+      // Fila destacada de clasificación final
+      doc.setFillColor(254, 243, 199); // Amber 100
+      doc.setDrawColor(251, 191, 36); // Amber 400
+      doc.rect(15, y - 4, docWidth - 30, 7.5, 'FD');
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...primaryColor);
+      doc.text(`EXPECTATIVA FINAL DE CLASIFICACION:`, 18, y + 1);
+      doc.setTextColor(...accentColor);
+      doc.text(`${match.home}: ${homeAdv.toFixed(1)}%  vs  ${match.away}: ${awayAdv.toFixed(1)}%`, 95, y + 1);
+      
+      y += 7;
+      // Nueva fila destacada de ELO de Fuerza
+      doc.setFillColor(...slateLight);
+      doc.setDrawColor(...borderLight);
+      doc.rect(15, y - 4, docWidth - 30, 6.5, 'FD');
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...textColor);
+      doc.text(`Rating ELO de Fuerza de los Equipos:`, 18, y + 0.5);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${match.home}: ${Math.round(eloH)} ELO  |  ${match.away}: ${Math.round(eloA)} ELO (Dif: ${Math.abs(Math.round(eloH) - Math.round(eloA))} pts)`, 85, y + 0.5);
+      
+      // Alerta de paridad extrema si aplica
+      if (Math.abs(homeAdv - awayAdv) <= 10.0) {
+        y += 9;
+        doc.setFillColor(254, 242, 242); // Red 50
+        doc.setDrawColor(248, 113, 113); // Red 400
+        doc.rect(15, y - 4, docWidth - 30, 11.5, 'FD');
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(220, 38, 38); // Red 600
+        doc.text(`ALERTA DE PARIDAD EXTREMA:`, 18, y);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(127, 29, 29); // Red 900
+        doc.text(`La diferencia de clasificacion es menor al 10%. El Ensamble detecta un duelo matematicamente muy cerrado.`, 18, y + 4.5);
+        doc.text(`Se recomienda mucha cautela, ya que el partido tiene alta probabilidad de decidirse por detalles minimos.`, 18, y + 8);
+        y += 5;
+      }
+      
+      y += 9;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9.5);
+      doc.setTextColor(...textColor);
+      if (prediction.top3_scores && prediction.top3_scores.length > 0) {
+        const top3Text = prediction.top3_scores.map(s => `${s.score} (${s.prob}%)`).join(', ');
+        doc.text(`Top 3 Marcadores mas probables (Ensemble):  ${top3Text}`, 15, y);
+        y += 6;
+      }
+      
+      let recommendedBet = 'Doble Oportunidad: Local o Empate';
+      let valueProb = ((pH + pD) * 100).toFixed(1);
+      if (pA + pD > pH + pD) {
+        recommendedBet = 'Doble Oportunidad: Empate o Visitante';
+        valueProb = ((pA + pD) * 100).toFixed(1);
+      }
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...accentColor);
+      doc.text(`Apuesta Recomendada (IA):  ${recommendedBet} (${valueProb}%)`, 15, y);
+      doc.setTextColor(...textColor);
+      
+      y += 10;
+      
+      // Bloque de Rendimiento Reciente (Racha de goles)
+      drawCardBackground(y - 2, 17);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...primaryColor);
+      doc.text('Rendimiento Reciente y Goles (Ultimos 5 partidos):', 18, y + 3.5);
+      
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...textColor);
+      doc.text(`${match.home}:  A favor: ${prediction.home_form_gf.toFixed(1)}  |  En contra: ${prediction.home_form_ga.toFixed(1)}`, 18, y + 10);
+      doc.text(`${match.away}:  A favor: ${prediction.away_form_gf.toFixed(1)}  |  En contra: ${prediction.away_form_ga.toFixed(1)}`, 110, y + 10);
+      
+      y += 24;
+      
+      // Sección 2: Consenso Comparativo de Modelos
+      drawAccentBar(y);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.setTextColor(...primaryColor);
+      doc.text('2. CONSENSO COMPARATIVO DE MODELOS (90 MINUTOS)', 21, y);
+      doc.setDrawColor(...borderLight);
+      doc.line(15, y + 2.5, docWidth - 15, y + 2.5);
+      
+      y += 6;
+      
+      if (match.graphs && match.graphs.Resumen) {
+        const resumenImg = await loadImageAsBase64(match.graphs.Resumen);
+        if (resumenImg) {
+          const imgWidth = docWidth - 30; // 180mm
+          const imgHeight = 72; // 72mm
+          doc.addImage(resumenImg, 'PNG', 15, y, imgWidth, imgHeight);
+          doc.setDrawColor(...borderLight);
+          doc.rect(15, y, imgWidth, imgHeight, 'S'); // Borde sutil alrededor
+        }
+      }
+      
+      // Pie de pagina 1
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8);
+      doc.setTextColor(150, 150, 150);
+      doc.text('Generado por Ensemble ML Engine por Antig.', 15, docHeight - 10);
+      doc.text('Pagina 1 de 4', docWidth - 30, docHeight - 10);
+      
+      // ==========================================
+      // PAGINA 2: DESGLOSE DE MATRICES (PARTE 1)
+      // ==========================================
+      doc.addPage();
+      y = 15;
+      
+      // Mini Cabecera
+      doc.setFillColor(...primaryColor);
+      doc.rect(0, 0, docWidth, 12, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.text(`DESGLOSE DE MATRICES Y DISTRIBUCION (PARTE 1) | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
+      
+      y = 23;
+      drawAccentBar(y);
+      doc.setFontSize(12);
+      doc.setTextColor(...primaryColor);
+      doc.text('3. DESGLOSE DE MATRICES Y DISTRIBUCION DE GOLES', 21, y);
+      doc.setDrawColor(...borderLight);
+      doc.line(15, y + 2.5, docWidth - 15, y + 2.5);
+      
+      y += 8;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(...primaryColor);
+      doc.text('A) Ensemble Ponderado (Consenso General)', 15, y);
+      y += 4;
+      
+      if (match.graphs && match.graphs.ensemble) {
+        const ensembleImg = await loadImageAsBase64(match.graphs.ensemble);
+        if (ensembleImg) {
+          const imgWidth = docWidth - 30; // 180mm
+          const imgHeight = 72; // 72mm
+          doc.addImage(ensembleImg, 'PNG', 15, y, imgWidth, imgHeight);
+          doc.setDrawColor(...borderLight);
+          doc.rect(15, y, imgWidth, imgHeight, 'S');
+          y += imgHeight + 9;
+        }
+      }
+      
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(...primaryColor);
+      
+      let dcWeight = 'Dixon-Coles NB (Modelo Base Principal - Peso: 66.20% - 84.35%)';
+      if (match.id === 'mex-ecu') {
+        dcWeight = 'B) Modelo Base 1: Dixon-Coles NB (Poder de Ataque/Defensa - Peso: 83.35%)';
+      } else if (match.id === 'ger-par') {
+        dcWeight = 'B) Modelo Base 1: Dixon-Coles NB (Poder de Ataque/Defensa - Peso: 66.20%)';
+      } else if (match.id === 'bra-jpn') {
+        dcWeight = 'B) Modelo Base 1: Dixon-Coles NB (Poder de Ataque/Defensa - Peso: 84.35%)';
+      }
+      
+      doc.text(dcWeight, 15, y);
+      y += 4;
+      
+      if (match.graphs && match.graphs.dixoncoles) {
+        const dcImg = await loadImageAsBase64(match.graphs.dixoncoles);
+        if (dcImg) {
+          const imgWidth = docWidth - 30; // 180mm
+          const imgHeight = 72; // 72mm
+          doc.addImage(dcImg, 'PNG', 15, y, imgWidth, imgHeight);
+          doc.setDrawColor(...borderLight);
+          doc.rect(15, y, imgWidth, imgHeight, 'S');
+        }
+      }
+      
+      // Pie de pagina 2
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8);
+      doc.setTextColor(150, 150, 150);
+      doc.text('Generado por Ensemble ML Engine por Antig.', 15, docHeight - 10);
+      doc.text('Pagina 2 de 4', docWidth - 30, docHeight - 10);
+      
+      // ==========================================
+      // PAGINA 3: DESGLOSE DE MATRICES (PARTE 2)
+      // ==========================================
+      doc.addPage();
+      y = 15;
+      
+      // Mini Cabecera
+      doc.setFillColor(...primaryColor);
+      doc.rect(0, 0, docWidth, 12, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.text(`DESGLOSE DE MATRICES Y DISTRIBUCION (PARTE 2) | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
+      
+      y = 23;
+      drawAccentBar(y);
+      doc.setFontSize(12);
+      doc.setTextColor(...primaryColor);
+      doc.text('3. DESGLOSE DE MATRICES (CONTINUACION)', 21, y);
+      doc.setDrawColor(...borderLight);
+      doc.line(15, y + 2.5, docWidth - 15, y + 2.5);
+      
+      y += 8;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(...primaryColor);
+      
+      let xgbWeight = 'C) Modelo Base 2: XGBoost (Machine Learning - Peso: 15.65% - 33.80%)';
+      if (match.id === 'mex-ecu') {
+        xgbWeight = 'C) Modelo Base 2: XGBoost (Machine Learning - Peso: 16.65%)';
+      } else if (match.id === 'ger-par') {
+        xgbWeight = 'C) Modelo Base 2: XGBoost (Machine Learning - Peso: 33.80%)';
+      } else if (match.id === 'bra-jpn') {
+        xgbWeight = 'C) Modelo Base 2: XGBoost (Machine Learning - Peso: 15.65%)';
+      }
+      
+      doc.text(xgbWeight, 15, y);
+      y += 4;
+      
+      if (match.graphs && match.graphs.xgboost) {
+        const xgbImg = await loadImageAsBase64(match.graphs.xgboost);
+        if (xgbImg) {
+          const imgWidth = docWidth - 30; // 180mm
+          const imgHeight = 72; // 72mm
+          doc.addImage(xgbImg, 'PNG', 15, y, imgWidth, imgHeight);
+          doc.setDrawColor(...borderLight);
+          doc.rect(15, y, imgWidth, imgHeight, 'S');
+          y += imgHeight + 9;
+        }
+      }
+      
+      // Explicación técnica de la influencia
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.text('D) Analisis Comparativo del Consenso:', 15, y);
+      y += 5;
+      
+      drawCardBackground(y - 2, 24);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(...textColor);
+      
+      let explanationText = '';
+      if (match.id === 'mex-ecu') {
+        explanationText = 'El Ensemble Ponderado esta fuertemente influenciado en un 83.35% por el modelo Dixon-Coles NB, debido a su precision en el historico de goles. Sin embargo, para capturar tendencias no lineales, la IA incorpora un 16.65% del modelo XGBoost. Al contrastar ambas matrices, se observa como XGBoost distribuye de forma mas conservadora la probabilidad en empates con pocos goles (0-0 y 1-1), mientras que Dixon-Coles NB estima mayor probabilidad de marcadores con ventaja para el local.';
+      } else if (match.id === 'ger-par') {
+        explanationText = 'El Ensemble Ponderado combina de manera equilibrada el modelo Dixon-Coles NB (66.20%) y XGBoost (33.80%). Esto permite compensar el sesgo de Poisson en marcadores extremos y ponderar mejor la consistencia defensiva de Paraguay. La matriz de XGBoost muestra una distribucion de goles mas dispersa en comparacion con Dixon-Coles NB, lo que genera un consenso que suaviza la expectativa y eleva la probabilidad de la linea de mas de 2.5 goles.';
+      } else {
+        explanationText = 'El optimizador SLSQP calibra los modelos basándose en el menor error RPS de la validacion. La combinacion de Dixon-Coles NB (principal) y XGBoost (secundario) permite capturar tanto el rendimiento estocastico historico como las rachas recientes de goles, logrando una precision global superior al 70%.';
+      }
+      
+      // Dividir el texto en lineas para que quepa en el recuadro
+      const lines = doc.splitTextToSize(explanationText, docWidth - 38);
+      doc.text(lines, 18, y + 3.5);
+      
+      // Pie de pagina 3
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8);
+      doc.setTextColor(150, 150, 150);
+      doc.text('Generado por Ensemble ML Engine por Antig.', 15, docHeight - 10);
+      doc.text('Pagina 3 de 4', docWidth - 30, docHeight - 10);
+      
+      // ==========================================
+      // PAGINA 4: WEIBULL Y RECOMENDACIONES
+      // ==========================================
+      doc.addPage();
+      y = 15;
+      
+      // Mini Cabecera
+      doc.setFillColor(...primaryColor);
+      doc.rect(0, 0, docWidth, 12, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.text(`ANALISIS TEMPORAL WEIBULL Y APUESTAS | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
+      
+      y = 23;
+      drawAccentBar(y);
+      doc.setFontSize(12);
+      doc.setTextColor(...primaryColor);
+      doc.text('4. ANALISIS TEMPORAL Y EXPECTATIVA (WEIBULL)', 21, y);
+      doc.setDrawColor(...borderLight);
+      doc.line(15, y + 2.5, docWidth - 15, y + 2.5);
+      
+      y += 8;
+      
+      // Datos Weibull detallados en una franja gris
+      drawCardBackground(y - 2, 27);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9.5);
+      doc.setTextColor(...textColor);
+      
+      const expGHome = prediction.exp_goles_home || 0.0;
+      const expGAway = prediction.exp_goles_away || 0.0;
+      
+      doc.text(`Goles Esperados Promedio (xG):  ${match.home}: ${expGHome.toFixed(2)} | ${match.away}: ${expGAway.toFixed(2)} (Total: ${(expGHome+expGAway).toFixed(2)})`, 18, y + 3.5);
+      y += 6;
+      doc.text(`Mercado Over/Under:  +1.5 Goles: ${(prediction.over15*100).toFixed(0)}% | +2.5 Goles: ${(prediction.over25*100).toFixed(0)}% | +3.5 Goles: ${(prediction.over35*100).toFixed(0)}%`, 18, y + 3.5);
+      y += 6;
+      
+      if (prediction.weibull_analysis) {
+        const wa = prediction.weibull_analysis;
+        doc.text(`Expectativa de Minuto Primer Gol: Minuto ${wa.avg_first_goal_minute}'`, 18, y + 3.5);
+        y += 6;
+        doc.text(`Probabilidad de Gol por Período: Gol en el 1er Tiempo (1T): ${wa.prob_goals_1t.toFixed(0)}% | Gol en el 2do Tiempo (2T): ${wa.prob_goals_2t.toFixed(0)}%`, 18, y + 3.5);
+        y += 6;
+        if (wa.top_halftime_scores && wa.top_halftime_scores.length > 0) {
+          const htText = wa.top_halftime_scores.map(s => `${s.score} (${s.prob}%)`).join(', ');
+          doc.text(`Top 3 Marcadores al Medio Tiempo Proyectados (45'): ${htText}`, 18, y + 3.5);
+        }
+      }
+      
+      y += 16;
+      
+      if (prediction.timeline_file) {
+        const timelineImg = await loadImageAsBase64(prediction.timeline_file);
+        if (timelineImg) {
+          const imgWidth = docWidth - 40; // 170mm
+          const imgHeight = 65; // 65mm
+          doc.addImage(timelineImg, 'PNG', 20, y, imgWidth, imgHeight);
+          doc.setDrawColor(...borderLight);
+          doc.rect(20, y, imgWidth, imgHeight, 'S');
+          y += imgHeight + 9;
+        }
+      }
+      
+      // Sección 5: Recomendaciones y Parlay
+      drawAccentBar(y);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.setTextColor(...primaryColor);
+      doc.text('5. RECOMENDACIONES DE PARLAY DEL DIA (IA)', 21, y);
+      doc.line(15, y + 2.5, docWidth - 15, y + 2.5);
+      
+      y += 7;
+      
+      doc.setFillColor(...slateLight);
+      doc.setDrawColor(...accentColor);
+      doc.rect(15, y, docWidth - 30, 22, 'FD');
+      
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(...primaryColor);
+      doc.text('APUESTA Y PARLAY RECOMENDADO POR NUESTRA IA:', 20, y + 7);
+      
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(...textColor);
+      
+      let parlayText = '';
+      if (match.id === 'ger-par') {
+        parlayText = 'Alemania vs Paraguay (Mas de 2.5 Goles | -140) + Paises Bajos vs Marruecos (Marruecos se clasifica | +120) = Momio +277';
+      } else if (match.id === 'ned-mar') {
+        parlayText = 'Paises Bajos vs Marruecos (Marruecos se clasifica | +120) + Alemania vs Paraguay (Mas de 2.5 Goles | -140) = Momio +277';
+      } else {
+        parlayText = 'Combina el "Mas de 2.5 Goles" o la "Clasificacion Directa" del favorito de hoy con el pase de Argentina en Cuartos para asegurar bonificaciones.';
+      }
+      
+      doc.text(parlayText, 20, y + 13);
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8);
+      doc.text('Nota: Recuerda que las eliminatorias directas pueden resolverse en prorroga o penales. El parlay tiene mayor valor de cuota combinada.', 20, y + 18);
+      
+      // Pie de pagina 4
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8);
+      doc.setTextColor(150, 150, 150);
+      doc.text('Generado por Ensemble ML Engine por Antig.', 15, docHeight - 10);
+      doc.text('Pagina 4 de 4', docWidth - 30, docHeight - 10);
+      
+      doc.save(`reporte-${match.id}.pdf`);
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      alert("Hubo un error al generar el PDF.");
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
   if (!match) return (<div className="card" style={{textAlign:'center',padding:'3rem'}}><h2>Partido no encontrado</h2><Link to="/" className="btn btn-outline" style={{marginTop:'1rem'}}>Volver al inicio</Link></div>);
   
   const day = DAYS.find(d => d.id === match.day);
   
   return (<div>
-    <div className="ficha">
-      <div style={{fontSize:'0.78rem',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Ficha técnica</div>
+    <div className="ficha" style={{ position: 'relative' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+        <div style={{fontSize:'0.78rem',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Ficha técnica</div>
+        {prediction && (
+          <button 
+            className="btn btn-outline" 
+            style={{ 
+              fontSize: '0.75rem', 
+              padding: '0.3rem 0.6rem', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.3rem',
+              border: '1px solid rgba(255,255,255,0.15)',
+              background: 'rgba(255,255,255,0.03)',
+              color: 'var(--text-muted)',
+              cursor: 'pointer'
+            }}
+            onClick={downloadPDF}
+            disabled={isGeneratingPDF}
+          >
+            {isGeneratingPDF ? '⏳ Generando...' : '📥 Descargar PDF'}
+          </button>
+        )}
+      </div>
       <div className="flags-big">
         <div style={{textAlign:'center'}}><img src={flagUrl(match.homeCode)} alt={match.home} /><div style={{fontFamily:'var(--font-display)',marginTop:'0.5rem',fontSize:'1.1rem',textTransform:'uppercase',color:'#fff'}}>{match.home}</div></div>
         <span className="vs-big">VS</span>

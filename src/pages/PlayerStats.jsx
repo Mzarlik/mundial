@@ -48,9 +48,9 @@ export default function PlayerStats() {
           
           <ol style={{ paddingLeft: '1.5rem', color: 'var(--text-secondary)', lineHeight: '1.8', margin: '1.5rem 0' }}>
             <li>Abre la página del partido en tu navegador y selecciona la pestaña <strong>"MATCH DETAILS"</strong> (para que la tabla de estadísticas se dibuje en pantalla).</li>
-            <li>Presiona la tecla <code>F12</code> (o haz Clic Derecho -> <strong>Inspeccionar</strong>) para abrir las Herramientas de Desarrollador.</li>
+            <li>Presiona la tecla <code>F12</code> (o haz Clic Derecho -&gt; <strong>Inspeccionar</strong>) para abrir las Herramientas de Desarrollador.</li>
             <li>En la pestaña <strong>"Elements"</strong>, busca la etiqueta <code>&lt;html&gt;</code> al principio de todo (o el contenedor principal).</li>
-            <li>Haz clic derecho sobre ella y elige <strong>"Copy" -> "Copy outerHTML"</strong> (esto copiará el código con la tabla ya cargada).</li>
+            <li>Haz clic derecho sobre ella y elige <strong>"Copy" -&gt; "Copy outerHTML"</strong> (esto copiará el código con la tabla ya cargada).</li>
             <li>Crea un archivo de texto nuevo en tu computadora, ponle extensión <code>.html</code> (ej. <code>partido1.html</code>), pega el código dentro y guárdalo en la carpeta:
               <br />
               <code style={{ background: 'var(--bg-darker)', padding: '0.2rem 0.5rem', borderRadius: '4px', display: 'inline-block', marginTop: '0.4rem', color: 'var(--accent)' }}>
