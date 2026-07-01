@@ -1074,9 +1074,36 @@ export default function MatchDetail() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                 <div>
                   <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Expectativa de Primer Gol:</span>
-                  <div style={{ fontSize: '1.2rem', color: 'var(--orange)', fontWeight: 'bold', marginTop: '0.2rem' }}>
-                    ⏱️ Minuto {prediction.weibull_analysis.avg_first_goal_minute}'
-                  </div>
+                  {(() => {
+                    const favor = (() => {
+                      if (prediction.weibull_analysis.first_goal_favor) {
+                        if (prediction.weibull_analysis.first_goal_favor === 'draw') return null;
+                        return {
+                          team: prediction.weibull_analysis.first_goal_favor === 'home' ? match.home : match.away,
+                          prob: prediction.weibull_analysis.first_goal_favor_prob
+                        };
+                      }
+                      const expH = prediction.exp_goles_home !== undefined ? prediction.exp_goles_home : 1.3;
+                      const expA = prediction.exp_goles_away !== undefined ? prediction.exp_goles_away : 1.1;
+                      if (Math.abs(expH - expA) < 0.05) return null;
+                      const prob = (Math.max(expH, expA) / (expH + expA)) * 100;
+                      return {
+                        team: expH > expA ? match.home : match.away,
+                        prob: Math.round(prob)
+                      };
+                    })();
+
+                    return (
+                      <div style={{ fontSize: '1.2rem', color: 'var(--orange)', fontWeight: 'bold', marginTop: '0.2rem' }}>
+                        ⏱️ Minuto {prediction.weibull_analysis.avg_first_goal_minute}'
+                        {favor && (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 'normal', marginLeft: '0.5rem', display: 'inline-block' }}>
+                            (más probable para {favor.team} con {favor.prob.toFixed(0)}% de probabilidad)
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
                 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.25rem' }}>

@@ -1170,20 +1170,48 @@ def simulate_match_timeline_weibull(l_h, l_a, h_name, a_name, out_path, simulati
     gt_2t = np.sum(goals_2t > 0)
     prob_2t = float(gt_2t / simulations)
     
-    # Minuto de primer gol promedio
+    # Minuto de primer gol promedio y a favor de quién
     first_goal_minutes = []
+    home_first_count = 0
+    away_first_count = 0
     for sim in range(simulations):
-        total_goals = goals_h_timeline[sim, :] + goals_a_timeline[sim, :]
-        idxs = np.where(total_goals > 0)[0]
-        if len(idxs) > 0:
-            first_goal_minutes.append(int(idxs[0] + 1))
+        goals_h = goals_h_timeline[sim, :]
+        goals_a = goals_a_timeline[sim, :]
+        
+        idx_h = np.where(goals_h > 0)[0]
+        idx_a = np.where(goals_a > 0)[0]
+        
+        first_h = idx_h[0] if len(idx_h) > 0 else 999
+        first_a = idx_a[0] if len(idx_a) > 0 else 999
+        
+        if first_h < first_a:
+            first_goal_minutes.append(int(first_h + 1))
+            home_first_count += 1
+        elif first_a < first_h:
+            first_goal_minutes.append(int(first_a + 1))
+            away_first_count += 1
+        elif first_h == first_a and first_h != 999:
+            first_goal_minutes.append(int(first_h + 1))
+            home_first_count += 0.5
+            away_first_count += 0.5
             
     avg_first_goal = int(np.mean(first_goal_minutes)) if first_goal_minutes else 45
     
+    total_first = home_first_count + away_first_count
+    if total_first > 0:
+        pct_home = (home_first_count / total_first) * 100
+        first_goal_favor = "home" if pct_home >= 50 else "away"
+        first_goal_favor_prob = round(max(pct_home, 100 - pct_home), 1)
+    else:
+        first_goal_favor = "draw"
+        first_goal_favor_prob = 0.0
+        
     return {
         "prob_goals_1t": round(prob_1t * 100, 1),
         "prob_goals_2t": round(prob_2t * 100, 1),
         "avg_first_goal_minute": avg_first_goal,
+        "first_goal_favor": first_goal_favor,
+        "first_goal_favor_prob": first_goal_favor_prob,
         "top_halftime_scores": top_ht
     }
 
@@ -1222,6 +1250,7 @@ if __name__ == '__main__':
         {'date': '2026-06-29', 'home_team': 'Netherlands', 'away_team': 'Morocco', 'home_score': 1, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-06-30', 'home_team': 'Ivory Coast', 'away_team': 'Norway', 'home_score': 1, 'away_score': 2, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-06-30', 'home_team': 'France', 'away_team': 'Sweden', 'home_score': 3, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-06-30', 'home_team': 'Mexico', 'away_team': 'Ecuador', 'home_score': 2, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
     ])
     real_matches['date'] = pd.to_datetime(real_matches['date'])
     df_all = pd.concat([df_all, real_matches], ignore_index=True)
@@ -1664,6 +1693,8 @@ if __name__ == '__main__':
                 'prob_goals_1t': float(weibull_data['prob_goals_1t']),
                 'prob_goals_2t': float(weibull_data['prob_goals_2t']),
                 'avg_first_goal_minute': int(weibull_data['avg_first_goal_minute']),
+                'first_goal_favor': weibull_data['first_goal_favor'],
+                'first_goal_favor_prob': float(weibull_data['first_goal_favor_prob']),
                 'top_halftime_scores': [
                     {'score': s['score'], 'prob': float(s['prob'])} for s in weibull_data['top_halftime_scores']
                 ]

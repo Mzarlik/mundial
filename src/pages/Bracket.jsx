@@ -88,6 +88,9 @@ export default function Bracket() {
     'bra-jpn': 'Brasil',  // Jugado, avanzó Brasil
     'ger-par': 'Paraguay', // Jugado, avanzó Paraguay
     'ned-mar': 'Marruecos', // Jugado, avanzó Marruecos
+    'civ-nor': 'Noruega',  // Jugado, avanzó Noruega
+    'fra-swe': 'Francia',  // Jugado, avanzó Francia
+    'mex-ecu': 'México',   // Jugado, avanzó México
   };
 
   // Pre-calcular los resultados de 16avos de final
