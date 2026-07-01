@@ -586,18 +586,6 @@ export default function MatchDetail() {
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
   useEffect(() => {
-    if (matchId === 'eng-cod') {
-      setLiveMinute(70);
-      setLiveScoreHome(1);
-      setLiveScoreAway(1);
-    } else {
-      setLiveMinute(0);
-      setLiveScoreHome(0);
-      setLiveScoreAway(0);
-    }
-  }, [matchId]);
-
-  useEffect(() => {
     fetch('/data/predictions.json')
       .then(r => r.json())
       .then(data => { if (data?.[matchId]) setPrediction(data[matchId]); })
