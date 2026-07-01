@@ -91,6 +91,7 @@ export default function Bracket() {
     'civ-nor': 'Noruega',  // Jugado, avanzó Noruega
     'fra-swe': 'Francia',  // Jugado, avanzó Francia
     'mex-ecu': 'México',   // Jugado, avanzó México
+    'eng-cod': 'Inglaterra', // Jugado, avanzó Inglaterra (2-1 ante RD Congo)
   };
 
   // Pre-calcular los resultados de 16avos de final
