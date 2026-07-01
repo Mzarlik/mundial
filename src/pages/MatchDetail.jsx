@@ -467,8 +467,12 @@ export default function MatchDetail() {
   const { matchId } = useParams();
   const match = getMatchById(matchId);
   const [prediction, setPrediction] = useState(null);
-  const [activeTab, setActiveTab] = useState('summary'); // 'summary', 'timeline', 'models', 'accuracy'
+  const [activeTab, setActiveTab] = useState('summary'); // 'summary', 'timeline', 'models', 'accuracy', 'live_calc'
   const [selectedModel, setSelectedModel] = useState('ensemble'); // 'ensemble', 'dixoncoles', 'dcnb', 'xgboost', 'catboost', 'mlp', 'mfa', 'mcmc'
+  
+  const [liveMinute, setLiveMinute] = useState(0);
+  const [liveScoreHome, setLiveScoreHome] = useState(0);
+  const [liveScoreAway, setLiveScoreAway] = useState(0);
   
   useEffect(() => {
     fetch('/data/predictions.json')
@@ -1018,6 +1022,9 @@ export default function MatchDetail() {
       <button className={`day-tab ${activeTab === 'accuracy' ? 'active' : ''}`} onClick={() => setActiveTab('accuracy')}>
         📊 Validación Científica
       </button>
+      <button className={`day-tab ${activeTab === 'live_calc' ? 'active' : ''}`} onClick={() => setActiveTab('live_calc')}>
+        ⚡ Calculadora En Vivo
+      </button>
     </div>
 
     {/* CONTENIDO DE PESTAÑAS */}
@@ -1048,7 +1055,7 @@ export default function MatchDetail() {
       <div className="graph-section" style={{ borderLeft: '4px solid var(--orange)' }}>
         <h2>Evolución Temporal (Expectativa Weibull)</h2>
         <p style={{color:'var(--text-secondary)',fontSize:'0.88rem',marginBottom:'1rem'}}>
-          Simulación dinámica minuto a minuto de la expectativa acumulada de goles. Incorpora <strong>pausas de hidratación</strong> a los minutos 30' y 75' (donde la intensidad de gol cae a cero) y el <strong>Efecto DT</strong> (ajustes tácticos defensivos automáticos de los entrenadores cuando van perdiendo).
+          Simulación dinámica minuto a minuto de la expectativa acumulada de goles. Incorpora <strong>pausas de hidratación oficiales</strong> a los minutos 22' y 67' (donde la intensidad de gol cae a cero) y el <strong>Efecto DT</strong> (ajustes tácticos defensivos automáticos de los entrenadores cuando van perdiendo).
         </p>
         
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
@@ -1116,10 +1123,10 @@ export default function MatchDetail() {
               <strong>Fatiga Física (Weibull $k=1.15$):</strong> A diferencia de una Poisson clásica de tasa constante, el proceso de Weibull con $k &gt; 1$ modela que la probabilidad de gol aumenta gradualmente a medida que avanza cada tiempo debido al cansancio acumulado.
             </li>
             <li style={{ marginBottom: '0.4rem' }}>
-              <strong>Pausas de Hidratación:</strong> Representan un cese total de juego (refrigerio táctico). En la gráfica se aprecian como mesetas planas alrededor de los minutos 30 y 75.
+              <strong>Pausas de Hidratación:</strong> Representan un cese total de juego (refrigerio táctico). En la gráfica se aprecian como mesetas planas alrededor de los minutos 22 y 67.
             </li>
             <li>
-              <strong>Recalibración del Coach (DT):</strong> Si un equipo va perdiendo tras una pausa, el entrenador reorganiza marcas y táctica, lo cual reduce la efectividad del ataque rival en un 15% (segundo tiempo) o 25% (cierre desesperado del partido).
+              <strong>Recalibración del Coach (DT):</strong> Si un equipo va perdiendo tras una pausa, el entrenador reorganiza marcas y táctica, lo cual reduce la efectividad del ataque rival en un 15% (tras min 24) o 25% (cierre desesperado del partido tras min 69).
             </li>
           </ul>
         </div>
@@ -1235,6 +1242,289 @@ export default function MatchDetail() {
         <GraphImage src={match.graphs.accuracy} alt={`Accuracy ${match.home} vs ${match.away}`} />
       </div>
     )}
+
+    {activeTab === 'live_calc' && (() => {
+      const baseLambdaH = prediction?.exp_goles_home !== undefined ? prediction.exp_goles_home : 1.30;
+      const baseLambdaA = prediction?.exp_goles_away !== undefined ? prediction.exp_goles_away : 1.10;
+
+      const remainingFraction = Math.max(0, (90 - liveMinute) / 90.0);
+      const lambdaHRem = baseLambdaH * remainingFraction;
+      const lambdaARem = baseLambdaA * remainingFraction;
+
+      const poissonProb = (k, l) => {
+        if (l === 0) return k === 0 ? 1.0 : 0.0;
+        let expVal = Math.exp(-l);
+        let term = 1.0;
+        for (let i = 1; i <= k; i++) {
+          term = (term * l) / i;
+        }
+        return term * expVal;
+      };
+
+      let pHomeWin = 0;
+      let pDraw = 0;
+      let pAwayWin = 0;
+      let pOver15 = 0;
+      let pOver25 = 0;
+      let pOver35 = 0;
+
+      for (let gh = 0; gh <= 8; gh++) {
+        const pH = poissonProb(gh, lambdaHRem);
+        for (let ga = 0; ga <= 8; ga++) {
+          const pA = poissonProb(ga, lambdaARem);
+          const pCell = pH * pA;
+
+          const finalH = liveScoreHome + gh;
+          const finalA = liveScoreAway + ga;
+          const totalGoals = finalH + finalA;
+
+          if (finalH > finalA) pHomeWin += pCell;
+          else if (finalH === finalA) pDraw += pCell;
+          else pAwayWin += pCell;
+
+          if (totalGoals > 1.5) pOver15 += pCell;
+          if (totalGoals > 2.5) pOver25 += pCell;
+          if (totalGoals > 3.5) pOver35 += pCell;
+        }
+      }
+
+      const totalP = pHomeWin + pDraw + pAwayWin;
+      const norm = totalP > 0 ? totalP : 1.0;
+      const pHW = (pHomeWin / norm) * 100;
+      const pDr = (pDraw / norm) * 100;
+      const pAW = (pAwayWin / norm) * 100;
+
+      const pOv15 = Math.min(100, (pOver15 / norm) * 100);
+      const pUn15 = Math.max(0, 100 - pOv15);
+      const pOv25 = Math.min(100, (pOver25 / norm) * 100);
+      const pUn25 = Math.max(0, 100 - pOv25);
+      const pOv35 = Math.min(100, (pOver35 / norm) * 100);
+      const pUn35 = Math.max(0, 100 - pOv35);
+
+      return (
+        <div className="card" style={{ padding: '2rem', background: 'rgba(30, 41, 59, 0.45)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', boxSizing: 'border-box' }}>
+          <h2 style={{ fontSize: '1.4rem', color: '#fff', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            ⚡ Simulador / Calculadora de Probabilidades En Vivo (In-Play)
+          </h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', marginBottom: '2rem', lineHeight: '1.4' }}>
+            Simula eventos en vivo (goles y tiempo transcurrido) y recalcula instantáneamente las probabilidades de 1X2, Over/Under y la matriz de marcadores exactos usando una distribución de Poisson escalada.
+          </p>
+
+          {/* Controls Layout */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '2rem', marginBottom: '1rem' }}>
+            
+            {/* Left Column: Controls */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              {/* Minute Slider */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: 'bold' }}>
+                  <span>⏱️ Minuto del Partido:</span>
+                  <span style={{ color: 'var(--orange)', fontFamily: 'monospace', fontSize: '1.15rem' }}>{liveMinute}'</span>
+                </div>
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="90" 
+                  value={liveMinute} 
+                  onChange={e => setLiveMinute(parseInt(e.target.value))}
+                  style={{ width: '100%', accentColor: 'var(--orange)', cursor: 'pointer' }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                  <span>Inicio (0')</span>
+                  <span>Medio Tiempo (45')</span>
+                  <span>Final (90')</span>
+                </div>
+              </div>
+
+              {/* Score Adjuster */}
+              <div>
+                <span style={{ display: 'block', fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '0.75rem' }}>⚽ Marcador En Vivo Actual:</span>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                  {/* Home Team */}
+                  <div style={{ textAlign: 'center' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.4rem', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{match.home}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <button onClick={() => setLiveScoreHome(Math.max(0, liveScoreHome - 1))} style={{ padding: '0.25rem 0.6rem', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer', fontWeight: 'bold' }}>-</button>
+                      <span style={{ fontSize: '1.5rem', fontWeight: 'bold', fontFamily: 'monospace', width: '25px', display: 'inline-block' }}>{liveScoreHome}</span>
+                      <button onClick={() => setLiveScoreHome(liveScoreHome + 1)} style={{ padding: '0.25rem 0.6rem', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer', fontWeight: 'bold' }}>+</button>
+                    </div>
+                  </div>
+
+                  <span style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-muted)' }}>-</span>
+
+                  {/* Away Team */}
+                  <div style={{ textAlign: 'center' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.4rem', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{match.away}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <button onClick={() => setLiveScoreAway(Math.max(0, liveScoreAway - 1))} style={{ padding: '0.25rem 0.6rem', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer', fontWeight: 'bold' }}>-</button>
+                      <span style={{ fontSize: '1.5rem', fontWeight: 'bold', fontFamily: 'monospace', width: '25px', display: 'inline-block' }}>{liveScoreAway}</span>
+                      <button onClick={() => setLiveScoreAway(liveScoreAway + 1)} style={{ padding: '0.25rem 0.6rem', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer', fontWeight: 'bold' }}>+</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Calculated Probabilities */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <span style={{ display: 'block', fontSize: '0.9rem', fontWeight: 'bold' }}>📊 Probabilidades Recalculadas en Vivo:</span>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  <span>1X2 En Vivo:</span>
+                  <span>{match.home}: <strong>{pHW.toFixed(0)}%</strong> | Empate: <strong>{pDr.toFixed(0)}%</strong> | {match.away}: <strong>{pAW.toFixed(0)}%</strong></span>
+                </div>
+                <div style={{ height: '24px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', overflow: 'hidden', display: 'flex' }}>
+                  <div style={{ width: `${pHW}%`, height: '100%', background: 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)', display: 'flex', alignItems: 'center', paddingLeft: '0.5rem', boxSizing: 'border-box' }}>
+                    {pHW > 10 && <span style={{ fontSize: '0.72rem', color: '#fff', fontWeight: 'bold' }}>{pHW.toFixed(0)}%</span>}
+                  </div>
+                  <div style={{ width: `${pDr}%`, height: '100%', background: 'rgba(148,163,184,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+                    {pDr > 10 && <span style={{ fontSize: '0.72rem', color: '#fff', fontWeight: 'bold' }}>{pDr.toFixed(0)}%</span>}
+                  </div>
+                  <div style={{ width: `${pAW}%`, height: '100%', background: 'rgba(59,130,246,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: '0.5rem', boxSizing: 'border-box' }}>
+                    {pAW > 10 && <span style={{ fontSize: '0.72rem', color: '#fff', fontWeight: 'bold' }}>{pAW.toFixed(0)}%</span>}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '1rem' }}>
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>MERCADO DE GOLES EN VIVO:</span>
+                
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginBottom: '0.2rem' }}>
+                    <span>Línea 1.5 Goles:</span>
+                    <span>+1.5 G: <strong>{pOv15.toFixed(0)}%</strong> | -1.5 G: <strong>{pUn15.toFixed(0)}%</strong></span>
+                  </div>
+                  <div style={{ height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', overflow: 'hidden', display: 'flex' }}>
+                    <div style={{ width: `${pOv15}%`, height: '100%', background: '#f59e0b' }}></div>
+                    <div style={{ width: `${pUn15}%`, height: '100%', background: '#10b981' }}></div>
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginBottom: '0.2rem' }}>
+                    <span>Línea 2.5 Goles:</span>
+                    <span>+2.5 G: <strong>{pOv25.toFixed(0)}%</strong> | -2.5 G: <strong>{pUn25.toFixed(0)}%</strong></span>
+                  </div>
+                  <div style={{ height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', overflow: 'hidden', display: 'flex' }}>
+                    <div style={{ width: `${pOv25}%`, height: '100%', background: '#f59e0b' }}></div>
+                    <div style={{ width: `${pUn25}%`, height: '100%', background: '#10b981' }}></div>
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginBottom: '0.2rem' }}>
+                    <span>Línea 3.5 Goles:</span>
+                    <span>+3.5 G: <strong>{pOv35.toFixed(0)}%</strong> | -3.5 G: <strong>{pUn35.toFixed(0)}%</strong></span>
+                  </div>
+                  <div style={{ height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', overflow: 'hidden', display: 'flex' }}>
+                    <div style={{ width: `${pOv35}%`, height: '100%', background: '#f59e0b' }}></div>
+                    <div style={{ width: `${pUn35}%`, height: '100%', background: '#10b981' }}></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          {/* Joint Probability Matrix Card */}
+          <div style={{ 
+            marginTop: '1.5rem', 
+            borderTop: '1px solid rgba(255,255,255,0.06)', 
+            paddingTop: '1.5rem'
+          }}>
+            <h3 style={{ fontSize: '1.05rem', color: '#fff', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              📊 Matriz de Marcadores Exactos En Vivo Proyectados (Heatmap)
+            </h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', marginBottom: '1.25rem' }}>
+              Calcula las probabilidades de los marcadores finales exactos a partir de la situación actual y el tiempo restante de juego.
+            </p>
+            
+            <div style={{ overflowX: 'auto', background: 'rgba(15,23,42,0.3)', padding: '1rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.03)' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'center', color: '#fff' }}>
+                <thead>
+                  <tr>
+                    <th style={{ padding: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-secondary)', fontSize: '0.75rem', textAlign: 'left' }}>
+                      {match.home} (Fila) \ {match.away} (Col)
+                    </th>
+                    {[0, 1, 2, 3, 4].map(ga => (
+                      <th key={ga} style={{ padding: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.08)', fontWeight: 'bold', color: 'var(--orange)' }}>
+                        {liveScoreAway + ga}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {[0, 1, 2, 3, 4].map(gh => {
+                    const pH = poissonProb(gh, lambdaHRem);
+                    return (
+                      <tr key={gh}>
+                        <td style={{ padding: '0.75rem', borderRight: '1px solid rgba(255,255,255,0.08)', fontWeight: 'bold', color: 'var(--orange)', textAlign: 'left' }}>
+                          {liveScoreHome + gh}
+                        </td>
+                        {[0, 1, 2, 3, 4].map(ga => {
+                          const pA = poissonProb(ga, lambdaARem);
+                          const pCell = pH * pA * 100;
+                          const alpha = Math.min(0.85, pCell / 20.0); 
+                          const bg = pCell > 0.05 ? `rgba(245, 158, 11, ${alpha})` : 'transparent';
+                          const isCurrent = gh === 0 && ga === 0;
+                          const textColor = alpha > 0.3 ? '#0f172a' : '#fff';
+                          const subTextColor = alpha > 0.3 ? 'rgba(15, 23, 42, 0.85)' : 'rgba(255,255,255,0.5)';
+
+                          return (
+                            <td 
+                              key={ga} 
+                              style={{ 
+                                padding: '0.8rem 0.5rem', 
+                                background: bg, 
+                                border: '1px solid rgba(255,255,255,0.04)',
+                                position: 'relative',
+                                transition: 'all 0.3s ease',
+                                fontWeight: pCell > 5 ? 'bold' : 'normal',
+                                color: textColor
+                              }}
+                            >
+                              <div style={{ fontSize: '0.85rem' }}>{liveScoreHome + gh} - {liveScoreAway + ga}</div>
+                              <div style={{ fontSize: '0.7rem', marginTop: '0.15rem', color: subTextColor }}>
+                                {pCell.toFixed(1)}%
+                              </div>
+                              {isCurrent && (
+                                <span style={{ 
+                                  position: 'absolute', 
+                                  top: '2px', 
+                                  right: '2px', 
+                                  fontSize: '0.55rem', 
+                                  background: alpha > 0.3 ? 'rgba(15, 23, 42, 0.15)' : 'rgba(16, 185, 129, 0.25)', 
+                                  color: alpha > 0.3 ? '#0f172a' : '#34d399', 
+                                  padding: '0.05rem 0.2rem', 
+                                  borderRadius: '2px',
+                                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                                  textTransform: 'uppercase',
+                                  fontSize: '0.52rem'
+                                }}>
+                                  Act.
+                                </span>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.04)', fontSize: '0.8rem', lineHeight: '1.4' }}>
+            <span>💡</span>
+            <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
+              <strong>Nota Matemática:</strong> Esta simulación se apoya en los valores base de goles esperados ($\lambda_H$ y $\lambda_A$) ajustados dinámicamente de forma lineal respecto al tiempo de juego remanente. Es una aproximación estadística estándar muy usada en mercados In-Play profesionales.
+            </p>
+          </div>
+        </div>
+      );
+    })()}
 
     <div className="match-disclaimer" style={{ marginTop: '2.5rem' }}><strong>Aviso:</strong> Las predicciones son estimaciones generadas por modelos estadísticos con fines exclusivamente académicos y de entretenimiento. La precisión es limitada debido a la aleatoriedad del fútbol. No utilizar para decisiones de riesgo.</div>
     <div className="data-note"><strong>Nota:</strong> Los datos se calculan dinámicamente con cortes temporales para simular precisión fuera de muestra.</div>

@@ -18,6 +18,8 @@ import warnings
 import time
 import pandas as pd
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.patches   # modificado para importar patches de forma explícita
 import matplotlib.patches as mpatches
@@ -1060,13 +1062,13 @@ def simulate_knockout_resolution(elo_h, elo_a, exp_goles_h, exp_goles_a, simulat
     )
 
 # --- SIMULACIÓN DE LÍNEA DE TIEMPO WEIBULL CON PAUSAS DE HIDRATACIÓN ---
-def simulate_match_timeline_weibull(l_h, l_a, h_name, a_name, out_path, simulations=2000):
+def simulate_match_timeline_weibull(l_h, l_a, h_name, a_name, out_path, simulations=2000, save_plot=True):
     """
     Simula el transcurso de un partido minuto a minuto mediante un proceso de Weibull.
-    Incorpora pausas de hidratación en los minutos [30-32] y [75-77] (tasa de gol = 0).
+    Incorpora pausas de hidratación oficiales en los minutos [22-24] y [67-69] (tasa de gol = 0).
     Aplica el 'Efecto DT' (recalibración táctica): si un equipo va perdiendo después de una pausa,
-    su defensa se incrementa, reduciendo la tasa de gol del rival en un 15% (tras min 32) o 25% (tras min 77).
-    Genera un gráfico acumulativo de la expectativa de goles y lo guarda en out_path.
+    su defensa se incrementa, reduciendo la tasa de gol del rival en un 15% (tras min 24) o 25% (tras min 69).
+    Genera un gráfico acumulativo de la expectativa de goles y lo guarda en out_path si save_plot=True.
     """
     k = 1.15
     t_grid = np.arange(1, 91)
@@ -1083,12 +1085,12 @@ def simulate_match_timeline_weibull(l_h, l_a, h_name, a_name, out_path, simulati
             adj_h = 1.0
             adj_a = 1.0
             
-            if t > 32 and t <= 77:
+            if t > 24 and t <= 69:
                 if g_h > g_a:
                     adj_h = 0.85
                 elif g_a > g_h:
                     adj_a = 0.85
-            elif t > 77:
+            elif t > 69:
                 if g_h > g_a:
                     adj_h = 0.75
                 elif g_a > g_h:
@@ -1097,7 +1099,7 @@ def simulate_match_timeline_weibull(l_h, l_a, h_name, a_name, out_path, simulati
             r_h = adj_h * (l_h * k / 90.0) * ((t / 90.0) ** (k - 1))
             r_a = adj_a * (l_a * k / 90.0) * ((t / 90.0) ** (k - 1))
             
-            if (t >= 30 and t <= 32) or (t >= 75 and t <= 77):
+            if (t >= 22 and t <= 24) or (t >= 67 and t <= 69):
                 r_h = 0.0
                 r_a = 0.0
                 
@@ -1115,34 +1117,35 @@ def simulate_match_timeline_weibull(l_h, l_a, h_name, a_name, out_path, simulati
     mean_h = np.mean(goals_h_timeline, axis=0)
     mean_a = np.mean(goals_a_timeline, axis=0)
     
-    fig, ax = plt.subplots(figsize=(8, 4.5))
-    ax.plot(t_grid, mean_h, label=f'Expectativa {h_name}', color='#f59e0b', linewidth=2.5)
-    ax.plot(t_grid, mean_a, label=f'Expectativa {a_name}', color='#3b82f6', linewidth=2.5)
-    
-    ax.axvspan(30, 32, color='#3b82f6', alpha=0.15)
-    ax.axvline(30, color='gray', linestyle='--', linewidth=0.8, alpha=0.7)
-    
-    max_val = max(max(mean_h), max(mean_a)) if len(mean_h) > 0 else 1.0
-    ax.text(31, max_val * 0.1, 'Pausa de\nHidratación', ha='center', fontsize=7, color='gray', fontweight='bold')
-    
-    ax.axvspan(75, 77, color='#3b82f6', alpha=0.15)
-    ax.axvline(75, color='gray', linestyle='--', linewidth=0.8, alpha=0.7)
-    ax.text(76, max_val * 0.1, 'Pausa de\nHidratación', ha='center', fontsize=7, color='gray', fontweight='bold')
-    
-    ax.annotate('Efecto DT (Ajuste)', xy=(33, mean_h[32]), xytext=(38, mean_h[32] + 0.15),
-                arrowprops=dict(facecolor='black', arrowstyle="->", lw=0.8), fontsize=7, color='gray')
-    
-    ax.set_title('Evolución Temporal del Partido (Modelo Weibull)', fontweight='bold', fontsize=11)
-    ax.set_xlabel('Minuto del Partido', fontweight='bold', fontsize=9)
-    ax.set_ylabel('Expectativa de Goles Acumulados', fontweight='bold', fontsize=9)
-    ax.set_xlim(1, 90)
-    ax.set_ylim(0, max_val * 1.25)
-    ax.legend(loc='upper left', fontsize=8)
-    sns.despine()
-    plt.tight_layout()
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    plt.savefig(out_path, dpi=120, bbox_inches='tight')
-    plt.close()
+    if save_plot:
+        fig, ax = plt.subplots(figsize=(8, 4.5))
+        ax.plot(t_grid, mean_h, label=f'Expectativa {h_name}', color='#f59e0b', linewidth=2.5)
+        ax.plot(t_grid, mean_a, label=f'Expectativa {a_name}', color='#3b82f6', linewidth=2.5)
+        
+        ax.axvspan(22, 24, color='#3b82f6', alpha=0.15)
+        ax.axvline(22, color='gray', linestyle='--', linewidth=0.8, alpha=0.7)
+        
+        max_val = max(max(mean_h), max(mean_a)) if len(mean_h) > 0 else 1.0
+        ax.text(23, max_val * 0.1, 'Pausa de\nHidratación', ha='center', fontsize=7, color='gray', fontweight='bold')
+        
+        ax.axvspan(67, 69, color='#3b82f6', alpha=0.15)
+        ax.axvline(67, color='gray', linestyle='--', linewidth=0.8, alpha=0.7)
+        ax.text(68, max_val * 0.1, 'Pausa de\nHidratación', ha='center', fontsize=7, color='gray', fontweight='bold')
+        
+        ax.annotate('Efecto DT (Ajuste)', xy=(25, mean_h[24]), xytext=(30, mean_h[24] + 0.15),
+                    arrowprops=dict(facecolor='black', arrowstyle="->", lw=0.8), fontsize=7, color='gray')
+        
+        ax.set_title('Evolución Temporal del Partido (Modelo Weibull)', fontweight='bold', fontsize=11)
+        ax.set_xlabel('Minuto del Partido', fontweight='bold', fontsize=9)
+        ax.set_ylabel('Expectativa de Goles Acumulados', fontweight='bold', fontsize=9)
+        ax.set_xlim(1, 90)
+        ax.set_ylim(0, max_val * 1.25)
+        ax.legend(loc='upper left', fontsize=8)
+        sns.despine()
+        plt.tight_layout()
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        plt.savefig(out_path, dpi=120, bbox_inches='tight')
+        plt.close()
     
     # Calcular frecuencias de marcadores al medio tiempo (minuto 45, índice 44)
     ht_scores = {}
@@ -1217,6 +1220,8 @@ if __name__ == '__main__':
         {'date': '2026-06-29', 'home_team': 'Brazil', 'away_team': 'Japan', 'home_score': 2, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-06-29', 'home_team': 'Germany', 'away_team': 'Paraguay', 'home_score': 1, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-06-29', 'home_team': 'Netherlands', 'away_team': 'Morocco', 'home_score': 1, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-06-30', 'home_team': 'Ivory Coast', 'away_team': 'Norway', 'home_score': 1, 'away_score': 2, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-06-30', 'home_team': 'France', 'away_team': 'Sweden', 'home_score': 3, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
     ])
     real_matches['date'] = pd.to_datetime(real_matches['date'])
     df_all = pd.concat([df_all, real_matches], ignore_index=True)
@@ -1597,9 +1602,29 @@ if __name__ == '__main__':
         # Definir rutas de salida físicas
         graphs_dir = os.path.join(script_dir, 'public', 'graphs', day)
         timeline_out = os.path.join(graphs_dir, f"{m_id}_timeline.png")
+        mcmc_out = os.path.join(graphs_dir, match['mcmc_file'])
+        xgb_out = os.path.join(graphs_dir, match['xgb_file'])
+        mlp_out = os.path.join(graphs_dir, f"{m_id}_mlp.png")
+        cb_out = os.path.join(graphs_dir, f"{m_id}_catboost.png")
+        dc_out = os.path.join(graphs_dir, f"{m_id}_dixoncoles.png")
+        dcnb_out = os.path.join(graphs_dir, f"{m_id}_dcnb.png")
+        mfa_out = os.path.join(graphs_dir, f"{m_id}_mfa.png")
+        ens_out = os.path.join(graphs_dir, f"{m_id}_ensemble.png")
+        acc_out = os.path.join(graphs_dir, match['accuracy_file'])
+        res_out = os.path.join(graphs_dir, match['resumen_file'])
+        
+        # Verificar si el partido ya concluyó (está registrado en los resultados reales)
+        is_played = False
+        for rm in real_matches.itertuples():
+            if (rm.home_team == h and rm.away_team == a) or (rm.home_team == a and rm.away_team == h):
+                is_played = True
+                break
+                
+        # Saltar renderizado de gráficos si ya se jugó y existen las imágenes en disco (caching)
+        skip_plotting = is_played and os.path.exists(timeline_out) and os.path.exists(ens_out)
         
         # Generar simulación de línea de tiempo Weibull
-        weibull_data = simulate_match_timeline_weibull(exp_goles_h, exp_goles_a, h, a, timeline_out)
+        weibull_data = simulate_match_timeline_weibull(exp_goles_h, exp_goles_a, h, a, timeline_out, save_plot=not skip_plotting)
 
         # Simulación de tanda de penaltis Beta-Binomial simple (compatibilidad)
         p_shoot_h, p_shoot_a = simulate_shootout_beta_binomial(float(elo_h), float(elo_a))
@@ -1645,36 +1670,32 @@ if __name__ == '__main__':
             }
         }
         
-        mcmc_out = os.path.join(graphs_dir, match['mcmc_file'])
-        xgb_out = os.path.join(graphs_dir, match['xgb_file'])
-        mlp_out = os.path.join(graphs_dir, f"{m_id}_mlp.png")
-        cb_out = os.path.join(graphs_dir, f"{m_id}_catboost.png")
-        dc_out = os.path.join(graphs_dir, f"{m_id}_dixoncoles.png")
-        dcnb_out = os.path.join(graphs_dir, f"{m_id}_dcnb.png")
-        mfa_out = os.path.join(graphs_dir, f"{m_id}_mfa.png")
-        ens_out = os.path.join(graphs_dir, f"{m_id}_ensemble.png")
-        acc_out = os.path.join(graphs_dir, match['accuracy_file'])
-        res_out = os.path.join(graphs_dir, match['resumen_file'])
-        
-        # Guardar gráficos de 3 paneles
-        plot_3panel(M_dc, top_dc, 'Dixon-Coles Dinámico (Poisson)', h, a, abbr_h, abbr_a, dc_out)
-        plot_3panel(M_dcnb, top_dcnb, 'Dixon-Coles NB (Binomial Negativa)', h, a, abbr_h, abbr_a, dcnb_out)
-        plot_3panel(M_mc, top_mc, 'MCMC Bayesiano (PyMC)', h, a, abbr_h, abbr_a, mcmc_out)
-        plot_3panel(M_xgb, top_xgb, 'XGBoost (Regresión de Goles + Pi-Ratings)', h, a, abbr_h, abbr_a, xgb_out)
-        plot_3panel(M_mlp, top_mlp, 'Red Neuronal (MLP)', h, a, abbr_h, abbr_a, mlp_out)
-        plot_3panel(M_cb, top_cb, 'CatBoost', h, a, abbr_h, abbr_a, cb_out)
-        plot_3panel(M_mfa, top_mfa, 'Simulación Montecarlo (MFA)', h, a, abbr_h, abbr_a, mfa_out)
-        plot_3panel(M_ens, top_ens, 'Ensemble (Promedio Ponderado)', h, a, abbr_h, abbr_a, ens_out)
-        
-        # Guardar gráfico resumen comparativo
-        plot_resumen(M_dc, M_dcnb, M_mc, M_xgb, M_mlp, M_cb, M_mfa, M_ens, h, a, res_out)
-        
-        # Copiar gráfico de Accuracy general
-        if os.path.exists(temp_acc_path):
-            import shutil
-            shutil.copy(temp_acc_path, acc_out)
+        if not skip_plotting:
+            # Guardar gráficos de 3 paneles
+            plot_3panel(M_dc, top_dc, 'Dixon-Coles Dinámico (Poisson)', h, a, abbr_h, abbr_a, dc_out)
+            plot_3panel(M_dcnb, top_dcnb, 'Dixon-Coles NB (Binomial Negativa)', h, a, abbr_h, abbr_a, dcnb_out)
+            plot_3panel(M_mc, top_mc, 'MCMC Bayesiano (PyMC)', h, a, abbr_h, abbr_a, mcmc_out)
+            plot_3panel(M_xgb, top_xgb, 'XGBoost (Regresión de Goles + Pi-Ratings)', h, a, abbr_h, abbr_a, xgb_out)
+            plot_3panel(M_mlp, top_mlp, 'Red Neuronal (MLP)', h, a, abbr_h, abbr_a, mlp_out)
+            plot_3panel(M_cb, top_cb, 'CatBoost', h, a, abbr_h, abbr_a, cb_out)
+            plot_3panel(M_mfa, top_mfa, 'Simulación Montecarlo (MFA)', h, a, abbr_h, abbr_a, mfa_out)
+            plot_3panel(M_ens, top_ens, 'Ensemble (Promedio Ponderado)', h, a, abbr_h, abbr_a, ens_out)
             
-        print(f"  [{idx+1}/{len(matches)}] Gráficas generadas para: {h} vs {a} ({m_id}) -> public/graphs/{day}/")
+            # Guardar gráfico resumen comparativo
+            plot_resumen(M_dc, M_dcnb, M_mc, M_xgb, M_mlp, M_cb, M_mfa, M_ens, h, a, res_out)
+            
+            # Copiar gráfico de Accuracy general
+            if os.path.exists(temp_acc_path):
+                import shutil
+                shutil.copy(temp_acc_path, acc_out)
+                
+            print(f"  [{idx+1}/{len(matches)}] Gráficas generadas para: {h} vs {a} ({m_id}) -> public/graphs/{day}/")
+        else:
+            # En caso de que se necesite copiar el gráfico de accuracy en la primera ejecución
+            if os.path.exists(temp_acc_path) and not os.path.exists(acc_out):
+                import shutil
+                shutil.copy(temp_acc_path, acc_out)
+            print(f"  [{idx+1}/{len(matches)}] Gráficas ya existen para: {h} vs {a} ({m_id}) -> SKIPPED (Caché)")
         
     # Eliminar gráfica temporal de accuracy
     if os.path.exists(temp_acc_path):

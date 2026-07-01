@@ -6,6 +6,9 @@ export default function Parlays() {
   const [predictions, setPredictions] = useState(null);
   const [activeTab, setActiveTab] = useState(DAYS[0]?.id || 'all');
   const [activeDate, setActiveDate] = useState('all');
+  const [bankroll, setBankroll] = useState(1000);
+  const [userOdds, setUserOdds] = useState('');
+  const [kellyFraction, setKellyFraction] = useState(0.25); // Quarter Kelly
 
   useEffect(() => {
     fetch('/data/predictions.json')
@@ -370,12 +373,90 @@ export default function Parlays() {
               </div>
 
               {/* Value warning */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginTop: '1.5rem', padding: '0.8rem 1rem', background: 'rgba(245, 158, 11, 0.05)', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.1)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginTop: '1.5rem', padding: '0.8rem 1rem', background: 'rgba(245, 158, 11, 0.05)', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.1)', marginBottom: '1.5rem' }}>
                 <span style={{ fontSize: '1.1rem' }}>💡</span>
                 <p style={{ margin: 0, fontSize: '0.82rem', color: 'rgba(255, 255, 255, 0.7)', lineHeight: '1.4' }}>
                   Si tu casa de apuestas ofrece una cuota combinada <strong>superior a {dailyParlay.odds}</strong>, estarás apostando con valor matemático a largo plazo (+EV).
                 </p>
               </div>
+
+              {/* Kelly Calculator Panel */}
+              {(() => {
+                const pCombined = dailyParlay.prob;
+                const fairOdds = dailyParlay.odds;
+                const currentOdds = parseFloat(userOdds) || parseFloat(fairOdds) || 1.0;
+                const ev = (pCombined * currentOdds) - 1;
+                const fullKelly = currentOdds > 1 ? (pCombined * currentOdds - 1) / (currentOdds - 1) : 0;
+                const suggestedFraction = Math.max(0, fullKelly) * kellyFraction;
+                const suggestedStake = bankroll * suggestedFraction;
+
+                return (
+                  <div style={{
+                    padding: '1.25rem 1.5rem',
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    border: '1px solid rgba(245, 158, 11, 0.15)',
+                    borderRadius: '12px',
+                    boxSizing: 'border-box'
+                  }}>
+                    <h4 style={{ margin: '0 0 1rem 0', color: '#f59e0b', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      💰 Calculadora de Gestión de Riesgo (Kelly)
+                    </h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.4rem', textTransform: 'uppercase' }}>Mi Bankroll ($)</label>
+                        <input 
+                          type="number" 
+                          value={bankroll} 
+                          onChange={e => setBankroll(parseFloat(e.target.value) || 0)}
+                          style={{ width: '100%', padding: '0.5rem', background: 'var(--bg-darker)', border: '1px solid var(--border-color)', borderRadius: '6px', color: '#fff', fontSize: '0.88rem', outline: 'none' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.4rem', textTransform: 'uppercase' }}>Cuota Ofrecida (Odds)</label>
+                        <input 
+                          type="number" 
+                          step="0.05"
+                          placeholder={fairOdds}
+                          value={userOdds} 
+                          onChange={e => setUserOdds(e.target.value)}
+                          style={{ width: '100%', padding: '0.5rem', background: 'var(--bg-darker)', border: '1px solid var(--border-color)', borderRadius: '6px', color: '#fff', fontSize: '0.88rem', outline: 'none' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.4rem', textTransform: 'uppercase' }}>Fracción de Kelly</label>
+                        <select 
+                          value={kellyFraction} 
+                          onChange={e => setKellyFraction(parseFloat(e.target.value))}
+                          style={{ width: '100%', padding: '0.5rem', background: 'var(--bg-darker)', border: '1px solid var(--border-color)', borderRadius: '6px', color: '#fff', fontSize: '0.88rem', outline: 'none', cursor: 'pointer' }}
+                        >
+                          <option value={1.0}>Full Kelly (100% - Riesgo Alto)</option>
+                          <option value={0.5}>Half Kelly (50% - Riesgo Medio)</option>
+                          <option value={0.25}>Quarter Kelly (25% - Recomendado)</option>
+                          <option value={0.125}>Eighth Kelly (12.5% - Conservador)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '1rem' }}>
+                      <div>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', display: 'block' }}>Valor Esperado (EV)</span>
+                        <span style={{ fontWeight: 'bold', fontSize: '1.2rem', color: ev > 0 ? '#10b981' : '#ef4444' }}>
+                          {ev > 0 ? `+${(ev * 100).toFixed(1)}% (+EV)` : `${(ev * 100).toFixed(1)}% (-EV)`}
+                        </span>
+                      </div>
+                      <div>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', display: 'block' }}>Inversión Sugerida ({kellyFraction * 100}%)</span>
+                        <span style={{ fontWeight: 'bold', fontSize: '1.2rem', color: ev > 0 ? '#f59e0b' : '#94a3b8' }}>
+                          {ev > 0 ? `$${suggestedStake.toFixed(2)} USD` : '$0.00 USD'}
+                        </span>
+                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block' }}>
+                          {ev > 0 ? `(${(suggestedFraction * 100).toFixed(2)}% del bankroll)` : '(Sin ventaja matemática)'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           ) : (
             /* Banner if not enough safe matches for a daily parlay */
