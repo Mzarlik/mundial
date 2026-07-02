@@ -1242,7 +1242,6 @@ if __name__ == '__main__':
     df_all['away_score'] = df_all['away_score'].astype(int)
     print(f"[INFO] {len(df_all):,} partidos históricos cargados ({df_all.date.min().date()} a {df_all.date.max().date()})")
     
-    # Inyectar resultados reales del Mundial 2026 para calibrar Modelos y ELO/Pi/Forma dinámicamente
     real_matches = pd.DataFrame([
         {'date': '2026-06-28', 'home_team': 'South Africa', 'away_team': 'Canada', 'home_score': 0, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-06-29', 'home_team': 'Brazil', 'away_team': 'Japan', 'home_score': 2, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
@@ -1251,6 +1250,9 @@ if __name__ == '__main__':
         {'date': '2026-06-30', 'home_team': 'Ivory Coast', 'away_team': 'Norway', 'home_score': 1, 'away_score': 2, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-06-30', 'home_team': 'France', 'away_team': 'Sweden', 'home_score': 3, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-06-30', 'home_team': 'Mexico', 'away_team': 'Ecuador', 'home_score': 2, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-01', 'home_team': 'USA', 'away_team': 'Bosnia', 'home_score': 2, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-01', 'home_team': 'Belgium', 'away_team': 'Senegal', 'home_score': 3, 'away_score': 2, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-01', 'home_team': 'England', 'away_team': 'DR Congo', 'home_score': 2, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
     ])
     real_matches['date'] = pd.to_datetime(real_matches['date'])
     df_all = pd.concat([df_all, real_matches], ignore_index=True)

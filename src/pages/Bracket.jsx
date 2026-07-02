@@ -91,6 +91,8 @@ export default function Bracket() {
     'civ-nor': 'Noruega',  // Jugado, avanzó Noruega
     'fra-swe': 'Francia',  // Jugado, avanzó Francia
     'mex-ecu': 'México',   // Jugado, avanzó México
+    'usa-bih': 'Estados Unidos', // Jugado, avanzó EE.UU.
+    'bel-sen': 'Bélgica',  // Jugado, avanzó Bélgica
     'eng-cod': 'Inglaterra', // Jugado, avanzó Inglaterra (2-1 ante RD Congo)
   };
 
