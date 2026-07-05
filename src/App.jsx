@@ -22,7 +22,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
   
-  const isWidePage = ['/cuadro', '/suizo', '/estadisticas-jugadores'].includes(location.pathname);
+  const isWidePage = ['/cuadro', '/suizo', '/estadisticas-jugadores'].includes(location.pathname) || location.pathname.startsWith('/partido/');
   
   function handleAccept() { 
     setAccepted(true); 

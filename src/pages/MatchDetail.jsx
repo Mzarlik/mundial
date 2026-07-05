@@ -393,21 +393,20 @@ function MatchIntelligenceCard({ prediction, home, away }) {
           <span className={`intel-chip ${xgClass}`}>xG {xgLabel}</span>
         </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '1.5rem 2rem', alignItems: 'start' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
-          <ConfidenceGauge value={conf} size={96} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', background: 'rgba(255,255,255,0.01)', padding: '0.75rem', borderRadius: '12px' }}>
+          <ConfidenceGauge value={conf} size={84} />
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.3rem' }}>Comparativa</div>
-            <RadarChart home={home} away={away} prediction={prediction} size={110} />
-            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', marginTop: '0.3rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.68rem', color: '#f59e0b' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />{home}</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.68rem', color: '#3b82f6' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#3b82f6', display: 'inline-block' }} />{away}</div>
+            <RadarChart home={home} away={away} prediction={prediction} size={90} />
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', marginTop: '0.2rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.62rem', color: '#f59e0b' }}><span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />{home}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.62rem', color: '#3b82f6' }}><span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#3b82f6', display: 'inline-block' }} />{away}</div>
             </div>
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.85rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem' }}>
           {metrics.map((m, i) => (
-            <div key={i} style={{ background: m.bg, border: `1px solid ${m.bc}`, borderRadius: '10px', padding: '0.9rem' }}>
+            <div key={i} style={{ background: m.bg, border: `1px solid ${m.bc}`, borderRadius: '10px', padding: '0.8rem' }}>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.3rem' }}>{m.label}</div>
               <div style={{ fontSize: typeof m.val === 'string' && m.val.length > 10 ? '0.9rem' : '1.25rem', fontWeight: '700', color: m.color, lineHeight: 1.2, wordBreak: 'break-word' }}>{m.val}</div>
               {m.sub && <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>{m.sub}</div>}
@@ -1511,22 +1510,16 @@ export default function MatchDetail() {
         )}
       </div>
 
-      <Top3ScoresBanner prediction={prediction} home={match.home} away={match.away} />
-      <SafeBetBanner prediction={prediction} home={match.home} away={match.away} />
-      <KnockoutAdvancePanel prediction={prediction} match={match} home={match.home} away={match.away} />
+      {/* DASHBOARD LAYOUT: Two columns on desktop */}
+      <div className="match-dashboard-grid" style={{ marginTop: '1.5rem' }}>
+        
+        {/* LEFT COLUMN: Main interactive charts and tabs */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <div className="day-tabs" style={{ marginBottom: 0 }}>
+            {TABS.map(t => <button key={t.id} className={`day-tab ${activeTab === t.id ? 'active' : ''}`} onClick={() => setActiveTab(t.id)}>{t.label}</button>)}
+          </div>
 
-      {prediction && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(340px,1fr))', gap: '1.5rem', marginBottom: '1rem' }}>
-          <MatchIntelligenceCard prediction={prediction} home={match.home} away={match.away} />
-          <BetThermometerPanel prediction={prediction} home={match.home} away={match.away} playerStats={playerStats} />
-        </div>
-      )}
-
-      <div className="day-tabs" style={{ marginBottom: '2rem' }}>
-        {TABS.map(t => <button key={t.id} className={`day-tab ${activeTab === t.id ? 'active' : ''}`} onClick={() => setActiveTab(t.id)}>{t.label}</button>)}
-      </div>
-
-      {activeTab === 'summary' && (
+          {activeTab === 'summary' && (
         <div>
           <StatsAndFormPanel prediction={prediction} home={match.home} away={match.away} />
           <OptaTacticComparisonPanel home={match.home} away={match.away} playerStats={playerStats} />
@@ -1890,6 +1883,22 @@ export default function MatchDetail() {
           </div>
         );
       })()}
+        </div>
+
+        {/* RIGHT COLUMN: AI Inferences side panels */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <KnockoutAdvancePanel prediction={prediction} match={match} home={match.home} away={match.away} />
+          <Top3ScoresBanner prediction={prediction} home={match.home} away={match.away} />
+          <SafeBetBanner prediction={prediction} home={match.home} away={match.away} />
+          {prediction && (
+            <>
+              <MatchIntelligenceCard prediction={prediction} home={match.home} away={match.away} />
+              <BetThermometerPanel prediction={prediction} home={match.home} away={match.away} playerStats={playerStats} />
+            </>
+          )}
+        </div>
+
+      </div>
 
       <div className="match-disclaimer" style={{ marginTop: '2.5rem' }}>Aviso: Predicciones con fines academicos y de entretenimiento. No utilizar para decisiones de riesgo.</div>
       <div className="data-note">Nota: Datos calculados dinamicamente con cortes temporales.</div>
