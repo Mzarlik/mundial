@@ -71,12 +71,145 @@ if os.path.exists(stadiums_climate_path):
     except Exception as e:
         pass
 
-# Configuración global de los modelos
+OPTA_ATT_MODIFIER = {}
+OPTA_DFN_MODIFIER = {}
+
+def load_opta_modifiers(script_dir):
+    global OPTA_ATT_MODIFIER, OPTA_DFN_MODIFIER
+    import json
+    
+    # 1. Cargar partidos_simulados.csv para saber goles reales del torneo
+    csv_sim_path = os.path.join(script_dir, 'partidos_simulados.csv')
+    played_goals = {} # (team_a, team_b) -> (goals_a, goals_b)
+    if os.path.exists(csv_sim_path):
+        try:
+            df_sim = pd.read_csv(csv_sim_path)
+            for _, row in df_sim.iterrows():
+                gh = row['Goles Local']
+                ga = row['Goles Visitante']
+                if pd.notna(gh) and pd.notna(ga) and str(gh).strip() != '' and str(ga).strip() != '':
+                    played_goals[(row['Local'].strip(), row['Visitante'].strip())] = (int(gh), int(ga))
+        except Exception as e:
+            print(f"[WARNING] Error al cargar partidos_simulados.csv en load_opta_modifiers: {e}")
+
+    # 2. Cargar player_stats.json
+    json_path = os.path.join(script_dir, 'public', 'data', 'player_stats.json')
+    if not os.path.exists(json_path):
+        print("[INFO] No se encontró player_stats.json. Se usarán multiplicadores base 1.0.")
+        return
+        
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception as e:
+        print(f"[WARNING] Error al cargar player_stats.json: {e}")
+        return
+
+    # Mapeo de nombres en inglés de player_stats.json a los nombres estándar en predict_matches.py
+    OPTA_TO_STANDARD_ENGLISH = {
+        "korea republic": "South Korea",
+        "korea rep": "South Korea",
+        "united states": "USA",
+        "united states of america": "USA",
+        "bosnia-herzegovina": "Bosnia",
+        "bosnia and herzegovina": "Bosnia",
+        "cote d'ivoire": "Ivory Coast",
+        "côte d'ivoire": "Ivory Coast",
+        "congo dr": "DR Congo",
+        "dr congo": "DR Congo",
+        "turkey": "Turkiye",
+        "turkiye": "Turkiye",
+        "türkiye": "Turkiye",
+        "curacao": "Curaçao",
+        "curaçao": "Curaçao",
+        "brazília": "Brazil",
+        "brazilia": "Brazil",
+        "ir_iran": "Iran",
+        "ir iran": "Iran"
+    }
+
+    # Acumular xG y goles reales
+    team_xg_scored = {}
+    team_xg_conceded = {}
+    team_goals_scored = {}
+    team_goals_conceded = {}
+
+    for match_key, match in data.items():
+        if not match or 'teams' not in match or 'players' not in match:
+            continue
+        
+        teams_list = match['teams']
+        if len(teams_list) < 2:
+            continue
+            
+        t0_eng = teams_list[0]
+        t1_eng = teams_list[1]
+        
+        t0_std = OPTA_TO_STANDARD_ENGLISH.get(t0_eng.lower().strip(), t0_eng.strip())
+        t1_std = OPTA_TO_STANDARD_ENGLISH.get(t1_eng.lower().strip(), t1_eng.strip())
+
+        # Buscar goles reales del partido en partidos_simulados.csv
+        goals = played_goals.get((t0_std, t1_std))
+        if not goals:
+            # Intentar reverso
+            goals = played_goals.get((t1_std, t0_std))
+            if goals:
+                goals = (goals[1], goals[0]) # invertir goles
+                
+        if not goals:
+            continue
+            
+        g0, g1 = goals
+        
+        # Calcular xG acumulado para cada equipo
+        xg0 = sum(p.get('expected_goals', 0.0) for p in match['players'] if p.get('team') == t0_eng)
+        xg1 = sum(p.get('expected_goals', 0.0) for p in match['players'] if p.get('team') == t1_eng)
+        
+        if xg0 == 0.0 and xg1 == 0.0:
+            continue
+
+        # Acumular
+        for t in [t0_std, t1_std]:
+            if t not in team_xg_scored:
+                team_xg_scored[t] = 0.0
+                team_xg_conceded[t] = 0.0
+                team_goals_scored[t] = 0.0
+                team_goals_conceded[t] = 0.0
+                
+        team_xg_scored[t0_std] += xg0
+        team_xg_conceded[t0_std] += xg1
+        team_goals_scored[t0_std] += g0
+        team_goals_conceded[t0_std] += g1
+        
+        team_xg_scored[t1_std] += xg1
+        team_xg_conceded[t1_std] += xg0
+        team_goals_scored[t1_std] += g1
+        team_goals_conceded[t1_std] += g0
+
+    # Calcular factores suavizados (Laplace +1.0)
+    for team in team_xg_scored:
+        att_factor = (team_xg_scored[team] + 1.0) / (team_goals_scored[team] + 1.0)
+        dfn_factor = (team_xg_conceded[team] + 1.0) / (team_goals_conceded[team] + 1.0)
+        
+        OPTA_ATT_MODIFIER[team] = att_factor
+        OPTA_DFN_MODIFIER[team] = dfn_factor
+        
+        print(f"[OPTA ADJUST] {team}: xG Scored = {team_xg_scored[team]:.2f}, Goals = {team_goals_scored[team]:.0f} -> Mod_Att = {att_factor:.3f}")
+        print(f"[OPTA ADJUST] {team}: xG Conceded = {team_xg_conceded[team]:.2f}, Goals Conceded = {team_goals_conceded[team]:.0f} -> Mod_Dfn = {dfn_factor:.3f}")
+
+# Configuración global de los modelos (Optimizados por Grid Search)
 DESDE = pd.Timestamp('2018-01-01')       # Ventana de datos históricos para Dixon-Coles, XGBoost, MLP y CatBoost
 DESDE_BAYES = pd.Timestamp('2021-01-01') # Ventana para MCMC Bayesiano (Ciclos mundialistas completos)
 VAL_CUTOFF = pd.Timestamp('2025-09-01')  # Fecha límite para separar el conjunto de entrenamiento y validación
 MATCH_DATE = pd.Timestamp('2026-06-22')  # Fecha base de las predicciones del Mundial
-HALF_LIFE = 400                           # Dixon-Coles Dinámico (Vida media de 400 días para mayor estabilidad en selecciones)
+
+HALF_LIFE = 300                          # Decaimiento dinámico Dixon-Coles óptimo
+THETA_KNOCKOUT = -0.40                   # Cópula Frank para fase de eliminación directa
+THETA_GROUPS = -0.20                     # Cópula Frank para fase de grupos
+ELO_SCALE_FACTOR = 1500.0                # Escala de prioris informadas en MCMC Bayesiano
+MCMC_DRAWS = 1500                        # Iteraciones NUTS optimizadas para MCMC
+MCMC_TUNE = 1500                         # Iteraciones de tuning NUTS optimizadas
+CB_DEPTH = 3                             # Profundidad de CatBoost optimizada
 MIN_PARTIDOS_BAYES = 10                  # Filtro mínimo de partidos para entrenar variables en MCMC
 MAXG = 7
 
@@ -374,6 +507,17 @@ def dc_matrix(dcm, h, a, host):
     att, dfn, home, rho = dcm['att'], dcm['dfn'], dcm['home'], dcm['rho']
     l = np.exp(att[idx[h]] - dfn[idx[a]] + (home if host else 0))
     m = np.exp(att[idx[a]] - dfn[idx[h]])
+    
+    # Aplicar modificadores de Opta
+    w = 0.35 # Peso de suavizado
+    h_att_mod = 1.0 - w + w * OPTA_ATT_MODIFIER.get(h, 1.0)
+    a_dfn_mod = 1.0 - w + w * OPTA_DFN_MODIFIER.get(a, 1.0)
+    a_att_mod = 1.0 - w + w * OPTA_ATT_MODIFIER.get(a, 1.0)
+    h_dfn_mod = 1.0 - w + w * OPTA_DFN_MODIFIER.get(h, 1.0)
+    
+    l = l * h_att_mod / a_dfn_mod
+    m = m * a_att_mod / h_dfn_mod
+    
     M = np.outer(poisson.pmf(range(MAXG), l), poisson.pmf(range(MAXG), m))
     M[0,0] *= 1 - l*m*rho; M[0,1] *= 1 + l*rho; M[1,0] *= 1 + m*rho; M[1,1] *= 1 - rho
     return M / M.sum()
@@ -443,6 +587,16 @@ def dc_nb_matrix(dcm, h, a, host):
     l = np.exp(att[idx[h]] - dfn[idx[a]] + (home if host else 0))
     m = np.exp(att[idx[a]] - dfn[idx[h]])
     
+    # Aplicar modificadores de Opta
+    w = 0.35 # Peso de suavizado
+    h_att_mod = 1.0 - w + w * OPTA_ATT_MODIFIER.get(h, 1.0)
+    a_dfn_mod = 1.0 - w + w * OPTA_DFN_MODIFIER.get(a, 1.0)
+    a_att_mod = 1.0 - w + w * OPTA_ATT_MODIFIER.get(a, 1.0)
+    h_dfn_mod = 1.0 - w + w * OPTA_DFN_MODIFIER.get(h, 1.0)
+    
+    l = l * h_att_mod / a_dfn_mod
+    m = m * a_att_mod / h_dfn_mod
+    
     n_h = 1.0 / alpha_h
     p_h = 1.0 / (1.0 + alpha_h * l)
     n_a = 1.0 / alpha_a
@@ -472,7 +626,7 @@ def fit_mcmc(train, final_elos, draws=1000, tune=1000, seed=1):
     elo_means = []
     for t in teams:
         current_elo = final_elos.get(t, 1500.0)
-        elo_means.append((current_elo - 1500.0) / 1200.0)
+        elo_means.append((current_elo - 1500.0) / ELO_SCALE_FACTOR)
     elo_means = np.array(elo_means)
     
     with pm.Model():
@@ -634,7 +788,7 @@ def train_xgb_goals(X, yh, ya):
     # Aumentamos reg_lambda a 4.0 y reducimos max_depth a 3 para forzar conservadurismo anti-sobreajuste
     params = dict(objective='count:poisson', n_estimators=1500, max_depth=3,
                   learning_rate=0.03, subsample=0.8, colsample_bytree=0.8, 
-                  min_child_weight=2, reg_lambda=4.0, random_state=42, early_stopping_rounds=50)
+                  min_child_weight=2, reg_lambda=4.0, random_state=42, early_stopping_rounds=50, n_jobs=-1)
     
     # Hacemos validación interna 85/15
     X_train_h, X_val_h, y_train_h, y_val_h = train_test_split(X, yh, test_size=0.15, random_state=42)
@@ -678,10 +832,10 @@ def train_catboost_goals(X, yh, ya, teams_h, teams_a):
     df_x['away'] = teams_a
     cat_features = ['home', 'away']
     
-    cb_h = CatBoostRegressor(iterations=300, depth=4, learning_rate=0.05, loss_function='Poisson',
-                             cat_features=cat_features, verbose=False, random_seed=42)
-    cb_a = CatBoostRegressor(iterations=300, depth=4, learning_rate=0.05, loss_function='Poisson',
-                             cat_features=cat_features, verbose=False, random_seed=42)
+    cb_h = CatBoostRegressor(iterations=300, depth=CB_DEPTH, learning_rate=0.05, loss_function='Poisson',
+                             cat_features=cat_features, verbose=False, random_seed=42, thread_count=-1)
+    cb_a = CatBoostRegressor(iterations=300, depth=CB_DEPTH, learning_rate=0.05, loss_function='Poisson',
+                             cat_features=cat_features, verbose=False, random_seed=42, thread_count=-1)
     
     cb_h.fit(df_x, yh)
     cb_a.fit(df_x, ya)
@@ -1062,26 +1216,29 @@ def simulate_knockout_resolution(elo_h, elo_a, exp_goles_h, exp_goles_a, simulat
     )
 
 # --- SIMULACIÓN DE LÍNEA DE TIEMPO WEIBULL CON PAUSAS DE HIDRATACIÓN ---
-def simulate_match_timeline_weibull(l_h, l_a, h_name, a_name, out_path, simulations=2000, save_plot=True):
+def simulate_match_timeline_weibull(l_h, l_a, h_name, a_name, out_path, simulations=2000, save_plot=True, is_knockout=False, elo_h=1500, elo_a=1500):
     """
     Simula el transcurso de un partido minuto a minuto mediante un proceso de Weibull.
     Incorpora pausas de hidratación oficiales en los minutos [22-24] y [67-69] (tasa de gol = 0).
     Aplica el 'Efecto DT' (recalibración táctica): si un equipo va perdiendo después de una pausa,
     su defensa se incrementa, reduciendo la tasa de gol del rival en un 15% (tras min 24) o 25% (tras min 69).
+    Si is_knockout=True, la simulación se extiende hasta los 120 minutos en caso de empate a los 90.
     Genera un gráfico acumulativo de la expectativa de goles y lo guarda en out_path si save_plot=True.
     """
     k = 1.15
-    t_grid = np.arange(1, 91)
+    max_min = 120 if is_knockout else 90
+    t_grid = np.arange(1, max_min + 1)
     
-    goals_h_timeline = np.zeros((simulations, 90))
-    goals_a_timeline = np.zeros((simulations, 90))
+    goals_h_timeline = np.zeros((simulations, max_min))
+    goals_a_timeline = np.zeros((simulations, max_min))
     
     for sim in range(simulations):
         g_h, g_a = 0, 0
         hist_h = []
         hist_a = []
         
-        for t in t_grid:
+        # Minutos 1 a 90
+        for t in range(1, 91):
             adj_h = 1.0
             adj_a = 1.0
             
@@ -1111,6 +1268,27 @@ def simulate_match_timeline_weibull(l_h, l_a, h_name, a_name, out_path, simulati
             hist_h.append(g_h)
             hist_a.append(g_a)
             
+        # Minutos 91 a 120 (Prórroga si hay empate y es eliminatoria)
+        if is_knockout:
+            if g_h == g_a:
+                for t in range(91, 121):
+                    # Penalización de fatiga de 30% en prórroga
+                    r_h_et = 0.7 * (l_h * k / 90.0) * ((t / 90.0) ** (k - 1))
+                    r_a_et = 0.7 * (l_a * k / 90.0) * ((t / 90.0) ** (k - 1))
+                    
+                    if np.random.rand() < r_h_et:
+                        g_h += 1
+                    if np.random.rand() < r_a_et:
+                        g_a += 1
+                    
+                    hist_h.append(g_h)
+                    hist_a.append(g_a)
+            else:
+                # El partido ya terminó, arrastramos marcador de minuto 90
+                for t in range(91, 121):
+                    hist_h.append(g_h)
+                    hist_a.append(g_a)
+                    
         goals_h_timeline[sim, :] = hist_h
         goals_a_timeline[sim, :] = hist_a
         
@@ -1135,10 +1313,20 @@ def simulate_match_timeline_weibull(l_h, l_a, h_name, a_name, out_path, simulati
         ax.annotate('Efecto DT (Ajuste)', xy=(25, mean_h[24]), xytext=(30, mean_h[24] + 0.15),
                     arrowprops=dict(facecolor='black', arrowstyle="->", lw=0.8), fontsize=7, color='gray')
         
+        if is_knockout:
+            ax.axvline(90, color='red', linestyle=':', linewidth=1.2)
+            ax.text(90.5, max_val * 0.85, 'Inicio Prórroga\n(Si hay empate)', color='red', fontsize=7, fontweight='bold')
+            ax.axvline(120, color='darkred', linestyle='--', linewidth=1.2)
+            ax.text(120.5, max_val * 0.5, 'Tanda de\nPenales', color='darkred', fontsize=7, fontweight='bold')
+            
+            # Annotate shootout probability
+            w_h = 1.0 / (1.0 + 10 ** ((elo_a - elo_h) / 400.0))
+            ax.text(105, max_val * 0.2, f"Prob. PK: {w_h*100:.1f}% vs {(1-w_h)*100:.1f}%", fontsize=7.5, color='darkred', bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8, edgecolor='darkred'))
+        
         ax.set_title('Evolución Temporal del Partido (Modelo Weibull)', fontweight='bold', fontsize=11)
         ax.set_xlabel('Minuto del Partido', fontweight='bold', fontsize=9)
         ax.set_ylabel('Expectativa de Goles Acumulados', fontweight='bold', fontsize=9)
-        ax.set_xlim(1, 90)
+        ax.set_xlim(1, max_min)
         ax.set_ylim(0, max_val * 1.25)
         ax.legend(loc='upper left', fontsize=8)
         sns.despine()
@@ -1228,6 +1416,10 @@ if __name__ == '__main__':
     # 1.5 Cargar datos financieros y scrapeados (Market Value, Edad, Plantilla)
     print(f"[INFO] Cargados valores scrapeados para {len(MARKET_VALUES)} selecciones (a nivel de módulo).")
     
+    # 1.6 Cargar modificadores tácticos de Opta
+    print("[INFO] Cargando y calculando multiplicadores xG de Opta...")
+    load_opta_modifiers(script_dir)
+    
     # 2. Cargar datos locales CSV
     csv_path = os.path.join(script_dir, 'international_results-master', 'international_results-master', 'results.csv')
     if not os.path.exists(csv_path):
@@ -1253,6 +1445,12 @@ if __name__ == '__main__':
         {'date': '2026-07-01', 'home_team': 'USA', 'away_team': 'Bosnia', 'home_score': 2, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-07-01', 'home_team': 'Belgium', 'away_team': 'Senegal', 'home_score': 3, 'away_score': 2, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-07-01', 'home_team': 'England', 'away_team': 'DR Congo', 'home_score': 2, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-02', 'home_team': 'Portugal', 'away_team': 'Croatia', 'home_score': 2, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-02', 'home_team': 'Spain', 'away_team': 'Austria', 'home_score': 3, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-02', 'home_team': 'Switzerland', 'away_team': 'Algeria', 'home_score': 2, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-03', 'home_team': 'Australia', 'away_team': 'Egypt', 'home_score': 1, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-03', 'home_team': 'Argentina', 'away_team': 'Cape Verde', 'home_score': 3, 'away_score': 2, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-03', 'home_team': 'Colombia', 'away_team': 'Ghana', 'home_score': 1, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
     ])
     real_matches['date'] = pd.to_datetime(real_matches['date'])
     df_all = pd.concat([df_all, real_matches], ignore_index=True)
@@ -1301,7 +1499,7 @@ if __name__ == '__main__':
     dc_nb_final = fit_dixon_coles_nb(df_all[(df_all.date >= DESDE) & (df_all.date < MATCH_DATE)], MATCH_DATE)
     
     print("[INFO] Muestreando MCMC Bayesiano global (PyMC)... Esto puede tardar ~2-4 min...")
-    mc_final = fit_mcmc(df_all[(df_all.date >= DESDE_BAYES) & (df_all.date < MATCH_DATE)], final_elos, draws=3000, tune=3000)
+    mc_final = fit_mcmc(df_all[(df_all.date >= DESDE_BAYES) & (df_all.date < MATCH_DATE)], final_elos, draws=MCMC_DRAWS, tune=MCMC_TUNE)
     
     print("[INFO] Entrenando regresores XGBoost globales...")
     X_f, yh_f, ya_f, th_f, ta_f = build_dataset(dc_final, MATCH_DATE, df_all, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis)
@@ -1550,7 +1748,7 @@ if __name__ == '__main__':
         
         # Identificar si es eliminación directa (Cópula Dinámica)
         is_knockout = 'jornada' not in day.lower()
-        theta_param = -0.40 if is_knockout else -0.20
+        theta_param = THETA_KNOCKOUT if is_knockout else THETA_GROUPS
         
         # Sin Poda Computacional: Generar todas las matrices siempre para que el frontend (React) 
         # tenga las imágenes de los modelos individuales para mostrar en la pestaña "Detalle de Modelos",
@@ -1651,11 +1849,12 @@ if __name__ == '__main__':
                 is_played = True
                 break
                 
-        # Saltar renderizado de gráficos si ya se jugó y existen las imágenes en disco (caching)
-        skip_plotting = is_played and os.path.exists(timeline_out) and os.path.exists(ens_out)
+        # Saltar renderizado de gráficos si es fase de grupos para optimizar velocidad, o si ya se jugó y existen las imágenes
+        is_group_stage = 'jornada' in day.lower()
+        skip_plotting = is_group_stage or (is_played and os.path.exists(timeline_out) and os.path.exists(ens_out))
         
         # Generar simulación de línea de tiempo Weibull
-        weibull_data = simulate_match_timeline_weibull(exp_goles_h, exp_goles_a, h, a, timeline_out, save_plot=not skip_plotting)
+        weibull_data = simulate_match_timeline_weibull(exp_goles_h, exp_goles_a, h, a, timeline_out, save_plot=not skip_plotting, is_knockout=not is_group_stage, elo_h=elo_h, elo_a=elo_a)
 
         # Simulación de tanda de penaltis Beta-Binomial simple (compatibilidad)
         p_shoot_h, p_shoot_a = simulate_shootout_beta_binomial(float(elo_h), float(elo_a))

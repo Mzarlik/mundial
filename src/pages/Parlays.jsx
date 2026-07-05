@@ -2,8 +2,143 @@ import React, { useState, useEffect } from 'react';
 import { MATCHES, flagUrl, DAYS } from '../config/matches';
 import { Link } from 'react-router-dom';
 
+const SPANISH_TO_ENGLISH = {
+  "México": "Mexico", "Sudáfrica": "South Africa", "Corea del Sur": "Korea Republic", "Chequia": "Czechia",
+  "Canadá": "Canada", "Bosnia": "Bosnia-Herzegovina", "Bosnia y Herzegovina": "Bosnia-Herzegovina", "Catar": "Qatar", "Suiza": "Switzerland",
+  "Brasil": "Brazil", "Marruecos": "Morocco", "Haití": "Haiti", "Escocia": "Scotland", "Estados Unidos": "USA", "USA": "USA",
+  "Paraguay": "Paraguay", "Australia": "Australia", "Turquía": "Turkiye", "Alemania": "Germany", "Curazao": "Curaçao",
+  "Costa de Marfil": "Ivory Coast", "Ecuador": "Ecuador", "Países Bajos": "Netherlands", "Japón": "Japan", "Suecia": "Sweden", "Túnez": "Tunisia",
+  "Bélgica": "Belgium", "Egipto": "Egypt", "Irán": "Iran", "Nueva Zelanda": "New Zealand", "España": "Spain", "Cabo Verde": "Cape Verde",
+  "Arabia Saudita": "Saudi Arabia", "Uruguay": "Uruguay", "Francia": "France", "Senegal": "Senegal", "Irak": "Iraq", "Noruega": "Norway",
+  "Argentina": "Argentina", "Argelia": "Algeria", "Austria": "Austria", "Jordania": "Jordan", "Portugal": "Portugal", "RD Congo": "DR Congo",
+  "Uzbekistán": "Uzbekistan", "Colombia": "Colombia", "Inglaterra": "England", "Croacia": "Croatia", "Ghana": "Ghana", "Panamá": "Panama"
+};
+
+const TEAM_SYNONYMS = {
+  "estados unidos": ["united states", "usa"],
+  "usa": ["united states", "usa"],
+  "corea del sur": ["korea republic", "korea rep", "south korea", "korea"],
+  "bosnia": ["bosnia", "bosnia-herzegovina", "bosnia and herzegovina"],
+  "bosnia y herzegovina": ["bosnia", "bosnia-herzegovina", "bosnia and herzegovina"],
+  "turquia": ["turkey", "turkiye", "türkiye"],
+  "turquía": ["turkey", "turkiye", "türkiye"],
+  "costa de marfil": ["cote d'ivoire", "côte d'ivoire", "ivory coast"],
+  "iran": ["iran", "ir iran"],
+  "irán": ["iran", "ir iran"],
+  "curazao": ["curacao", "curaçao"],
+  "rd congo": ["congo dr", "dr congo", "congo"],
+  "paises bajos": ["netherlands", "holland"],
+  "países bajos": ["netherlands", "holland"],
+  "cabo verde": ["cape verde", "cabo verde"],
+  "brasil": ["brazil", "brazilia", "brazília", "brasil"],
+  "inglaterra": ["england"],
+  "españa": ["spain"],
+  "alemania": ["germany"],
+  "belgica": ["belgium"],
+  "bélgica": ["belgium"],
+  "croacia": ["croatia"],
+  "argelia": ["algeria"],
+  "jordania": ["jordan"],
+  "uzbekistan": ["uzbekistan"],
+  "uzbekistán": ["uzbekistan"],
+  "panama": ["panama"],
+  "panamá": ["panama"]
+};
+
+const getKeywords = (teamName) => {
+  if (!teamName) return [];
+  const norm = teamName.toLowerCase().trim();
+  const englishName = SPANISH_TO_ENGLISH[teamName] || teamName;
+  const engNorm = englishName.toLowerCase().trim();
+  const synonyms1 = TEAM_SYNONYMS[norm] || [];
+  const synonyms2 = TEAM_SYNONYMS[engNorm] || [];
+  const result = new Set([norm, engNorm, ...synonyms1, ...synonyms2]);
+  return Array.from(result);
+};
+
+const getTeamOptaStats = (teamName, playerStatsData) => {
+  if (!playerStatsData || !teamName) return null;
+  const keywords = getKeywords(teamName);
+  
+  let matchesPlayed = 0;
+  let totalXG = 0;
+  let totalXGConceded = 0;
+  let totalCorners = 0;
+  let totalPasses = 0;
+  let totalTackles = 0;
+  let totalSCA = 0;
+  let totalDuels = 0;
+  let totalShots = 0;
+
+  Object.keys(playerStatsData).forEach(matchKey => {
+    const match = playerStatsData[matchKey];
+    if (!match || !match.teams || !match.players) return;
+
+    const homeKeywords = getKeywords(match.teams[0]);
+    const awayKeywords = getKeywords(match.teams[1]);
+    
+    const isHome = homeKeywords.some(kw => keywords.includes(kw));
+    const isAway = awayKeywords.some(kw => keywords.includes(kw));
+    
+    if (!isHome && !isAway) return;
+
+    matchesPlayed++;
+    const teamNameInStats = isHome ? match.teams[0] : match.teams[1];
+    const oppNameInStats = isHome ? match.teams[1] : match.teams[0];
+
+    let matchXG = 0;
+    let matchCorners = 0;
+    let matchPasses = 0;
+    let matchTackles = 0;
+    let matchSCA = 0;
+    let matchDuels = 0;
+    let matchShots = 0;
+    let oppXG = 0;
+
+    match.players.forEach(p => {
+      if (p.team === teamNameInStats) {
+        matchXG += p.expected_goals || 0;
+        matchCorners += p.corner_kicks || 0;
+        matchPasses += p.accurate_passes || 0;
+        matchTackles += p.tackles || 0;
+        matchSCA += p.shot_creating_actions || 0;
+        matchDuels += p.duels_won || 0;
+        matchShots += (p.shots_inside_box || 0) + (p.shots_outside_box || 0);
+      } else if (p.team === oppNameInStats) {
+        oppXG += p.expected_goals || 0;
+      }
+    });
+
+    totalXG += matchXG;
+    totalXGConceded += oppXG;
+    totalCorners += matchCorners;
+    totalPasses += matchPasses;
+    totalTackles += matchTackles;
+    totalSCA += matchSCA;
+    totalDuels += matchDuels;
+    totalShots += matchShots;
+  });
+
+  if (matchesPlayed === 0) return null;
+
+  return {
+    avgXG: totalXG / matchesPlayed,
+    avgXGConceded: totalXGConceded / matchesPlayed,
+    avgCorners: totalCorners / matchesPlayed,
+    avgPasses: totalPasses / matchesPlayed,
+    avgTackles: totalTackles / matchesPlayed,
+    avgSCA: totalSCA / matchesPlayed,
+    avgDuels: totalDuels / matchesPlayed,
+    avgShots: totalShots / matchesPlayed,
+    matchesPlayed
+  };
+};
+
+
+
 export default function Parlays() {
   const [predictions, setPredictions] = useState(null);
+  const [playerStats, setPlayerStats] = useState(null);
   const [activeTab, setActiveTab] = useState(DAYS[0]?.id || 'all');
   const [activeDate, setActiveDate] = useState('all');
   const [bankroll, setBankroll] = useState(1000);
@@ -15,6 +150,11 @@ export default function Parlays() {
       .then(res => res.json())
       .then(data => setPredictions(data))
       .catch(e => console.error("Error loading predictions for parlays", e));
+
+    fetch('/data/player_stats.json')
+      .then(res => res.json())
+      .then(data => setPlayerStats(data))
+      .catch(e => console.error("Error loading player stats for parlays", e));
   }, []);
 
   if (!predictions) {
@@ -93,6 +233,45 @@ export default function Parlays() {
     }
     if (pred.under35 !== undefined && pred.under35 > 0.75) {
       candidates.push({ pick: 'Menos de 3.5 Goles', prob: pred.under35, type: 'Total Goles', shortType: '-3.5 G', color: '#10b981', bg: 'rgba(16, 185, 129, 0.15)' });
+    }
+
+    // Córners (Total / Equipo) y Combos Tácticos (Opta)
+    if (playerStats) {
+      const homeAvg = getTeamOptaStats(match.home, playerStats);
+      const awayAvg = getTeamOptaStats(match.away, playerStats);
+      
+      if (homeAvg && awayAvg) {
+        const totC = homeAvg.avgCorners + awayAvg.avgCorners;
+        
+        // Córners Totales
+        if (totC > 8.5) {
+          candidates.push({ pick: 'Total: Más de 8.5 Córners', prob: 0.78, type: 'Córners Totales', shortType: '+8.5 Corners', color: '#fbbf24', bg: 'rgba(251, 191, 36, 0.15)' });
+        } else if (totC < 8.0) {
+          candidates.push({ pick: 'Total: Menos de 9.5 Córners', prob: 0.70, type: 'Córners Totales', shortType: '-9.5 Corners', color: '#10b981', bg: 'rgba(16, 185, 129, 0.15)' });
+        }
+        
+        // Córners por Equipo
+        if (homeAvg.avgCorners > 4.5) {
+          candidates.push({ pick: `Córners ${match.home}: Más de 3.5`, prob: 0.76, type: 'Córners Equipo', shortType: `${match.home} +3.5 C`, color: '#60a5fa', bg: 'rgba(96, 165, 250, 0.15)' });
+        }
+        if (awayAvg.avgCorners > 4.5) {
+          candidates.push({ pick: `Córners ${match.away}: Más de 3.5`, prob: 0.76, type: 'Córners Equipo', shortType: `${match.away} +3.5 C`, color: '#fb7185', bg: 'rgba(251, 113, 133, 0.15)' });
+        }
+
+        // Combo: Pases + Remates
+        const totPasses = homeAvg.avgPasses + awayAvg.avgPasses;
+        const totShots = homeAvg.avgShots + awayAvg.avgShots;
+        if (totPasses > 600 && totShots > 16) {
+          candidates.push({ 
+            pick: `Combo: +600 Pases e +16 Remates`, 
+            prob: 0.82, 
+            type: 'Pases y Remates', 
+            shortType: 'Combo Opta', 
+            color: '#a78bfa', 
+            bg: 'rgba(167, 139, 250, 0.15)' 
+          });
+        }
+      }
     }
 
     if (candidates.length === 0) return null;

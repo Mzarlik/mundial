@@ -92,12 +92,52 @@ def run_knockout_montecarlo():
     df_all, elo_by_team, final_elos = compute_elo_ratings(df_all)
     
     teams = {}
-    real_results = {
-        'rsa-can': 'away', # Canadá
-        'bra-jpn': 'home', # Brasil
-        'ger-par': 'away', # Paraguay
-        'ned-mar': 'away', # Marruecos
-    }
+    real_results = {}
+    csv_sim_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'partidos_simulados.csv')
+    if os.path.exists(csv_sim_path):
+        try:
+            df_sim = pd.read_csv(csv_sim_path)
+            # Los equipos de octavos están en las filas 88 a 95 (rango de 8 partidos)
+            r16_teams = set()
+            if len(df_sim) >= 96:
+                for idx in range(88, 96):
+                    loc = df_sim.iloc[idx]['Local']
+                    vis = df_sim.iloc[idx]['Visitante']
+                    if pd.notna(loc): r16_teams.add(loc.strip())
+                    if pd.notna(vis): r16_teams.add(vis.strip())
+            
+            # Map de nombres a abreviación de ID
+            TEAM_TO_ID_ABBR = {
+                'Mexico': 'mex', 'South Africa': 'rsa', 'South Korea': 'kor', 'Czechia': 'cze',
+                'Canada': 'can', 'Bosnia': 'bih', 'Qatar': 'qat', 'Switzerland': 'sui',
+                'Brazil': 'bra', 'Morocco': 'mar', 'Haiti': 'hai', 'Scotland': 'sco', 'USA': 'usa',
+                'Paraguay': 'par', 'Australia': 'aus', 'Turkiye': 'tur', 'Germany': 'ger', 'Curaçao': 'cur',
+                'Ivory Coast': 'civ', 'Ecuador': 'ecu', 'Netherlands': 'ned', 'Japan': 'jpn', 'Sweden': 'swe', 'Tunisia': 'tun',
+                'Belgium': 'bel', 'Egypt': 'egy', 'Iran': 'irn', 'New Zealand': 'nzl', 'Spain': 'esp', 'Cape Verde': 'cpv',
+                'Saudi Arabia': 'sau', 'Uruguay': 'uru', 'France': 'fra', 'Senegal': 'sen', 'Iraq': 'irq', 'Norway': 'nor',
+                'Argentina': 'arg', 'Algeria': 'alg', 'Austria': 'aut', 'Jordan': 'jor', 'Portugal': 'por', 'DR Congo': 'cod',
+                'Uzbekistan': 'uzb', 'Colombia': 'col', 'England': 'eng', 'Croatia': 'cro', 'Ghana': 'gha', 'Panama': 'pan'
+            }
+            
+            for idx in range(72, 88):
+                loc = df_sim.iloc[idx]['Local']
+                vis = df_sim.iloc[idx]['Visitante']
+                if pd.isna(loc) or pd.isna(vis):
+                    continue
+                loc_s, vis_s = loc.strip(), vis.strip()
+                
+                h_abbr = TEAM_TO_ID_ABBR.get(loc_s, loc_s[:3].lower())
+                a_abbr = TEAM_TO_ID_ABBR.get(vis_s, vis_s[:3].lower())
+                m_id = f"{h_abbr}-{a_abbr}"
+                
+                if loc_s in r16_teams:
+                    real_results[m_id] = 'home'
+                elif vis_s in r16_teams:
+                    real_results[m_id] = 'away'
+            
+            print(f"[INFO] Detectados {len(real_results)} partidos de dieciseisavos finalizados y bloqueados en el cuadro.")
+        except Exception as e:
+            print(f"[WARNING] Error al detectar ganadores reales en simulate_knockout.py: {e}")
     
     # Exactly matching Bracket.jsx tree structure
     bracket_tree = [

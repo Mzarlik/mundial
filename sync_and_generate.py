@@ -161,6 +161,11 @@ export const DAYS = [
   { id: "jornada2", label: "Jornada 2", full: "Segunda Jornada - Fase de Grupos" },
   { id: "jornada3", label: "Jornada 3", full: "Tercera Jornada - Fase de Grupos" },
   { id: "dieciseisavos", label: "16avos de Final", full: "Dieciseisavos de Final - Eliminatorias" },
+  { id: "octavos", label: "Octavos de Final", full: "Octavos de Final - Eliminatorias" },
+  { id: "cuartos", label: "Cuartos de Final", full: "Cuartos de Final - Eliminatorias" },
+  { id: "semis", label: "Semifinales", full: "Semifinales - Eliminatorias" },
+  { id: "tercer_lugar", label: "Tercer Lugar", full: "Partido por el Tercer Lugar" },
+  { id: "final", label: "Gran Final", full: "Gran Final del Mundial" }
 ];
 
 export function flagUrl(code) { return `https://flagcdn.com/w80/${code.toLowerCase()}.png`; }
@@ -206,28 +211,58 @@ export const MATCHES = [
                     if mask_date_rev.sum() > 0:
                         match_date = df_results[mask_date_rev]['date'].values[0]
         else:
-            group_name = "16avos de Final"
-            day_id = "dieciseisavos"
-            
-            knockout_dates = {
-                ('South Africa', 'Canada'): '2026-06-28',
-                ('Brazil', 'Japan'): '2026-06-29',
-                ('Germany', 'Paraguay'): '2026-06-29',
-                ('Netherlands', 'Morocco'): '2026-06-29',
-                ('Ivory Coast', 'Norway'): '2026-06-30',
-                ('France', 'Sweden'): '2026-06-30',
-                ('Mexico', 'Ecuador'): '2026-06-30',
-                ('England', 'DR Congo'): '2026-07-01',
-                ('Belgium', 'Senegal'): '2026-07-01',
-                ('USA', 'Bosnia'): '2026-07-01',
-                ('Portugal', 'Croatia'): '2026-07-02',
-                ('Spain', 'Austria'): '2026-07-02',
-                ('Switzerland', 'Algeria'): '2026-07-02',
-                ('Australia', 'Egypt'): '2026-07-03',
-                ('Argentina', 'Cape Verde'): '2026-07-03',
-                ('Colombia', 'Ghana'): '2026-07-03',
-            }
-            match_date = knockout_dates.get((loc, vis), '2026-06-28')
+            if idx < 88: # 72 group matches + 16 (16avos)
+                group_name = "16avos de Final"
+                day_id = "dieciseisavos"
+                knockout_dates = {
+                    ('South Africa', 'Canada'): '2026-06-28',
+                    ('Brazil', 'Japan'): '2026-06-29',
+                    ('Germany', 'Paraguay'): '2026-06-29',
+                    ('Netherlands', 'Morocco'): '2026-06-29',
+                    ('Ivory Coast', 'Norway'): '2026-06-30',
+                    ('France', 'Sweden'): '2026-06-30',
+                    ('Mexico', 'Ecuador'): '2026-06-30',
+                    ('England', 'DR Congo'): '2026-07-01',
+                    ('Belgium', 'Senegal'): '2026-07-01',
+                    ('USA', 'Bosnia'): '2026-07-01',
+                    ('Portugal', 'Croatia'): '2026-07-02',
+                    ('Spain', 'Austria'): '2026-07-02',
+                    ('Switzerland', 'Algeria'): '2026-07-02',
+                    ('Australia', 'Egypt'): '2026-07-03',
+                    ('Argentina', 'Cape Verde'): '2026-07-03',
+                    ('Colombia', 'Ghana'): '2026-07-03',
+                }
+                match_date = knockout_dates.get((loc, vis), '2026-06-28')
+            elif idx < 96: # 88 + 8 (octavos)
+                group_name = "Octavos de Final"
+                day_id = "octavos"
+                octavos_dates = {
+                    ('Paraguay', 'France'): '2026-07-04',
+                    ('Canada', 'Morocco'): '2026-07-04',
+                    ('Brazil', 'Norway'): '2026-07-05',
+                    ('Mexico', 'England'): '2026-07-05',
+                    ('Portugal', 'Spain'): '2026-07-06',
+                    ('USA', 'Belgium'): '2026-07-06',
+                    ('Argentina', 'Egypt'): '2026-07-07',
+                    ('Switzerland', 'Colombia'): '2026-07-07'
+                }
+                match_date = octavos_dates.get((loc, vis), '2026-07-04')
+            elif idx < 100: # 96 + 4 (cuartos)
+                group_name = "Cuartos de Final"
+                day_id = "cuartos"
+                match_date = '2026-07-10'
+            elif idx < 102: # 100 + 2 (semis)
+                group_name = "Semifinales"
+                day_id = "semis"
+                match_date = '2026-07-14'
+            elif idx == 102:
+                group_name = "Tercer Lugar"
+                day_id = "tercer_lugar"
+                match_date = '2026-07-18'
+            else:
+                group_name = "Gran Final"
+                day_id = "final"
+                match_date = '2026-07-19'
 
         # Rotar Estadios e Instantes
         venue = VENUES[idx % len(VENUES)]

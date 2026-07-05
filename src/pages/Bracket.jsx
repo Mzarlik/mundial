@@ -84,16 +84,22 @@ export default function Bracket() {
   };
 
   const realResults = {
-    'rsa-can': 'Canadá', // Jugado, avanzó Canadá
-    'bra-jpn': 'Brasil',  // Jugado, avanzó Brasil
-    'ger-par': 'Paraguay', // Jugado, avanzó Paraguay
-    'ned-mar': 'Marruecos', // Jugado, avanzó Marruecos
-    'civ-nor': 'Noruega',  // Jugado, avanzó Noruega
-    'fra-swe': 'Francia',  // Jugado, avanzó Francia
-    'mex-ecu': 'México',   // Jugado, avanzó México
-    'usa-bih': 'Estados Unidos', // Jugado, avanzó EE.UU.
-    'bel-sen': 'Bélgica',  // Jugado, avanzó Bélgica
-    'eng-cod': 'Inglaterra', // Jugado, avanzó Inglaterra (2-1 ante RD Congo)
+    'rsa-can': 'Canadá',         // Jugado, avanzó Canadá
+    'bra-jpn': 'Brasil',          // Jugado, avanzó Brasil
+    'ger-par': 'Paraguay',        // Jugado, avanzó Paraguay
+    'ned-mar': 'Marruecos',       // Jugado, avanzó Marruecos
+    'civ-nor': 'Noruega',         // Jugado, avanzó Noruega
+    'fra-swe': 'Francia',         // Jugado, avanzó Francia
+    'mex-ecu': 'México',          // Jugado, avanzó México
+    'usa-bih': 'Estados Unidos',  // Jugado, avanzó EE.UU.
+    'bel-sen': 'Bélgica',         // Jugado, avanzó Bélgica
+    'eng-cod': 'Inglaterra',      // Jugado, avanzó Inglaterra
+    'por-cro': 'Portugal',        // Jugado, avanzó Portugal (2-1 vs Croacia)
+    'esp-aut': 'España',          // Jugado, avanzó España (3-0 vs Austria)
+    'sui-alg': 'Suiza',           // Jugado, avanzó Suiza (2-0 vs Argelia)
+    'aus-egy': 'Egipto',          // Jugado, avanzó Egipto (1-1 en regulatorio, ganó en penales)
+    'arg-cpv': 'Argentina',       // Jugado, avanzó Argentina (3-2 vs Cabo Verde)
+    'col-gha': 'Colombia',        // Jugado, avanzó Colombia (1-0 vs Ghana)
   };
 
   // Pre-calcular los resultados de 16avos de final
@@ -178,10 +184,16 @@ export default function Bracket() {
     const probB = isR32 ? r32Results[r32MatchObj.id]?.awayAdv : resultObj.probB;
     const winner = isR32 ? r32Results[r32MatchObj.id]?.winner : resultObj.winner;
 
+    // Buscar si existe un partido en la lista precalculada (MATCHES) para esta combinación
+    const matchObj = r32MatchObj || MATCHES.find(m => 
+      (m.home === teamA && m.away === teamB) || 
+      (m.home === teamB && m.away === teamA)
+    );
+
     return (
-      <div className="bracket-match-card">
-        {r32MatchObj && (
-          <Link to={`/partido/${r32MatchObj.id}`} className="bracket-match-link-overlay" title="Ver análisis de IAs" />
+      <div className="bracket-match-card" style={{ position: 'relative' }}>
+        {matchObj && (
+          <Link to={`/partido/${matchObj.id}`} className="bracket-match-link-overlay" title="Ver análisis de IAs" />
         )}
         <div className={`bracket-team-row ${winner === teamA ? 'winner' : ''}`}>
           <img src={flagUrl(codeA || "un")} alt={teamA} className="bracket-flag" />

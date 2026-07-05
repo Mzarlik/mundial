@@ -8,7 +8,12 @@ export default function Sidebar({ open, onClose }) {
     jornada1: false,
     jornada2: false,
     jornada3: false,
-    dieciseisavos: false
+    dieciseisavos: false,
+    octavos: false,
+    cuartos: false,
+    semis: false,
+    tercer_lugar: false,
+    final: false
   });
   const [expandedDates, setExpandedDates] = useState({});
 
@@ -42,7 +47,7 @@ export default function Sidebar({ open, onClose }) {
         
         <div className="sidebar-section-label">Resultados por día</div>
         <button className="sidebar-toggle-btn" onClick={() => setDaysOpen(!daysOpen)}>
-          Fase de grupos <span style={{marginLeft: 'auto'}}>{daysOpen ? '▾' : '▸'}</span>
+          Partidos por Fase <span style={{marginLeft: 'auto'}}>{daysOpen ? '▾' : '▸'}</span>
         </button>
         
         {daysOpen && DAYS.map(d => {

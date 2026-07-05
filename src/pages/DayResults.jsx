@@ -8,7 +8,7 @@ export default function DayResults() {
   const matches = getMatchesByDay(day.id);
   return (<div>
     <h1 style={{marginBottom:'0.3rem'}}>Predicciones</h1>
-    <p style={{color:'var(--text-secondary)',marginBottom:'1rem'}}>Fase de grupos · {day.full}</p>
+    <p style={{color:'var(--text-secondary)',marginBottom:'1rem'}}>{day.full}</p>
     <div className="data-note">
       <strong>Nota:</strong> Los datos y predicciones pueden variar según los resultados de los partidos anteriores. Se recomienda ejecutar el notebook al inicio de cada día para obtener las estimaciones más actualizadas, ya que el modelo incorpora automáticamente los resultados más recientes del repositorio de datos.
     </div>
