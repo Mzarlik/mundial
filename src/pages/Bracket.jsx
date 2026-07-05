@@ -100,6 +100,8 @@ export default function Bracket() {
     'aus-egy': 'Egipto',          // Jugado, avanzó Egipto (1-1 en regulatorio, ganó en penales)
     'arg-cpv': 'Argentina',       // Jugado, avanzó Argentina (3-2 vs Cabo Verde)
     'col-gha': 'Colombia',        // Jugado, avanzó Colombia (1-0 vs Ghana)
+    'par-fra': 'Francia',         // Jugado, avanzó Francia (0-1 vs Paraguay)
+    'can-mar': 'Marruecos',       // Jugado, avanzó Marruecos (0-3 vs Canadá)
   };
 
   // Pre-calcular los resultados de 16avos de final
@@ -120,9 +122,20 @@ export default function Bracket() {
   });
 
   // Simulación de una llave por ELO
-  const simulateEloMatch = (teamA, teamB) => {
+  const simulateEloMatch = (teamA, teamB, matchId = null) => {
     if (teamA === 'TBD' || !teamA) return { winner: teamB || 'TBD', probA: 0, probB: 100 };
     if (teamB === 'TBD' || !teamB) return { winner: teamA, probA: 100, probB: 0 };
+    
+    if (matchId && realResults[matchId]) {
+      const winner = realResults[matchId];
+      return {
+        winner,
+        probA: winner === teamA ? 100 : 0,
+        probB: winner === teamB ? 100 : 0,
+        eloA: getTeamElo(teamA),
+        eloB: getTeamElo(teamB)
+      };
+    }
     
     const eloA = getTeamElo(teamA);
     const eloB = getTeamElo(teamB);
@@ -140,28 +153,28 @@ export default function Bracket() {
   // --- SIMULAR TODO EL TORNEO ---
   
   // 1. Octavos de Final (Round of 16)
-  const octL1 = simulateEloMatch(r32Results['ger-par']?.winner, r32Results['fra-swe']?.winner);
-  const octL2 = simulateEloMatch(r32Results['rsa-can']?.winner, r32Results['ned-mar']?.winner);
-  const octL3 = simulateEloMatch(r32Results['por-cro']?.winner, r32Results['esp-aut']?.winner);
-  const octL4 = simulateEloMatch(r32Results['usa-bih']?.winner, r32Results['bel-sen']?.winner);
+  const octL1 = simulateEloMatch(r32Results['ger-par']?.winner, r32Results['fra-swe']?.winner, 'par-fra');
+  const octL2 = simulateEloMatch(r32Results['rsa-can']?.winner, r32Results['ned-mar']?.winner, 'can-mar');
+  const octL3 = simulateEloMatch(r32Results['por-cro']?.winner, r32Results['esp-aut']?.winner, 'por-esp');
+  const octL4 = simulateEloMatch(r32Results['usa-bih']?.winner, r32Results['bel-sen']?.winner, 'usa-bel');
   
-  const octR1 = simulateEloMatch(r32Results['bra-jpn']?.winner, r32Results['civ-nor']?.winner);
-  const octR2 = simulateEloMatch(r32Results['mex-ecu']?.winner, r32Results['eng-cod']?.winner);
-  const octR3 = simulateEloMatch(r32Results['arg-cpv']?.winner, r32Results['aus-egy']?.winner);
-  const octR4 = simulateEloMatch(r32Results['sui-alg']?.winner, r32Results['col-gha']?.winner);
+  const octR1 = simulateEloMatch(r32Results['bra-jpn']?.winner, r32Results['civ-nor']?.winner, 'bra-nor');
+  const octR2 = simulateEloMatch(r32Results['mex-ecu']?.winner, r32Results['eng-cod']?.winner, 'mex-eng');
+  const octR3 = simulateEloMatch(r32Results['arg-cpv']?.winner, r32Results['aus-egy']?.winner, 'arg-egy');
+  const octR4 = simulateEloMatch(r32Results['sui-alg']?.winner, r32Results['col-gha']?.winner, 'sui-col');
 
   // 2. Cuartos de Final (Quarterfinals)
-  const qL1 = simulateEloMatch(octL1.winner, octL2.winner);
-  const qL2 = simulateEloMatch(octL3.winner, octL4.winner);
-  const qR1 = simulateEloMatch(octR1.winner, octR2.winner);
-  const qR2 = simulateEloMatch(octR3.winner, octR4.winner);
+  const qL1 = simulateEloMatch(octL1.winner, octL2.winner, 'q-L1');
+  const qL2 = simulateEloMatch(octL3.winner, octL4.winner, 'q-L2');
+  const qR1 = simulateEloMatch(octR1.winner, octR2.winner, 'q-R1');
+  const qR2 = simulateEloMatch(octR3.winner, octR4.winner, 'q-R2');
 
   // 3. Semifinales
-  const semiL = simulateEloMatch(qL1.winner, qL2.winner);
-  const semiR = simulateEloMatch(qR1.winner, qR2.winner);
+  const semiL = simulateEloMatch(qL1.winner, qL2.winner, 'semi-L');
+  const semiR = simulateEloMatch(qR1.winner, qR2.winner, 'semi-R');
 
   // 4. Gran Final
-  const grandFinal = simulateEloMatch(semiL.winner, semiR.winner);
+  const grandFinal = simulateEloMatch(semiL.winner, semiR.winner, 'final');
 
   const getMatchBySlugId = (slugId) => {
     return r32Matches.find(m => m.id === slugId) || {
