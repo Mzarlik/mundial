@@ -102,6 +102,8 @@ export default function Bracket() {
     'col-gha': 'Colombia',        // Jugado, avanzó Colombia (1-0 vs Ghana)
     'par-fra': 'Francia',         // Jugado, avanzó Francia (0-1 vs Paraguay)
     'can-mar': 'Marruecos',       // Jugado, avanzó Marruecos (0-3 vs Canadá)
+    'bra-nor': 'Noruega',         // Jugado, avanzó Noruega (1-2 vs Brasil)
+    'mex-eng': 'Inglaterra',      // Jugado, avanzó Inglaterra (2-3 vs México)
   };
 
   // Pre-calcular los resultados de 16avos de final

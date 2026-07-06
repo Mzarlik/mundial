@@ -85,6 +85,22 @@ def run_knockout_montecarlo():
         {'date': '2026-06-29', 'home_team': 'Brazil', 'away_team': 'Japan', 'home_score': 2, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-06-29', 'home_team': 'Germany', 'away_team': 'Paraguay', 'home_score': 1, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-06-29', 'home_team': 'Netherlands', 'away_team': 'Morocco', 'home_score': 1, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-06-30', 'home_team': 'Ivory Coast', 'away_team': 'Norway', 'home_score': 1, 'away_score': 2, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-06-30', 'home_team': 'France', 'away_team': 'Sweden', 'home_score': 3, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-06-30', 'home_team': 'Mexico', 'away_team': 'Ecuador', 'home_score': 2, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-01', 'home_team': 'USA', 'away_team': 'Bosnia', 'home_score': 2, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-01', 'home_team': 'Belgium', 'away_team': 'Senegal', 'home_score': 3, 'away_score': 2, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-01', 'home_team': 'England', 'away_team': 'DR Congo', 'home_score': 2, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-02', 'home_team': 'Portugal', 'away_team': 'Croatia', 'home_score': 2, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-02', 'home_team': 'Spain', 'away_team': 'Austria', 'home_score': 3, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-02', 'home_team': 'Switzerland', 'away_team': 'Algeria', 'home_score': 2, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-03', 'home_team': 'Australia', 'away_team': 'Egypt', 'home_score': 1, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-03', 'home_team': 'Argentina', 'away_team': 'Cape Verde', 'home_score': 3, 'away_score': 2, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-03', 'home_team': 'Colombia', 'away_team': 'Ghana', 'home_score': 1, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-04', 'home_team': 'Paraguay', 'away_team': 'France', 'home_score': 0, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-04', 'home_team': 'Canada', 'away_team': 'Morocco', 'home_score': 0, 'away_score': 3, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-05', 'home_team': 'Brazil', 'away_team': 'Norway', 'home_score': 1, 'away_score': 2, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-05', 'home_team': 'Mexico', 'away_team': 'England', 'home_score': 2, 'away_score': 3, 'tournament': 'FIFA World Cup', 'neutral': True},
     ])
     real_matches['date'] = pd.to_datetime(real_matches['date'])
     df_all = pd.concat([df_all, real_matches], ignore_index=True)
@@ -185,26 +201,106 @@ def run_knockout_montecarlo():
         for match1_id, match2_id in bracket_tree:
             w1 = r32_winners[match1_id]
             w2 = r32_winners[match2_id]
-            qf_winner = simulate_knockout_match(w1, w2, teams[w1]['elo'], teams[w2]['elo'])
+            
+            real_winner = None
+            mask = ((df_sim['Local'] == w1) & (df_sim['Visitante'] == w2)) | ((df_sim['Local'] == w2) & (df_sim['Visitante'] == w1))
+            match_rows = df_sim[mask]
+            if len(match_rows) > 0:
+                row = match_rows.iloc[0]
+                gl = row['Goles Local']
+                gv = row['Goles Visitante']
+                if pd.notna(gl) and pd.notna(gv) and str(gl).strip() != '' and str(gv).strip() != '':
+                    gl = int(gl)
+                    gv = int(gv)
+                    if row['Local'] == w1:
+                        real_winner = w1 if gl > gv else w2
+                    else:
+                        real_winner = w2 if gl > gv else w1
+            
+            if real_winner:
+                qf_winner = real_winner
+            else:
+                qf_winner = simulate_knockout_match(w1, w2, teams[w1]['elo'], teams[w2]['elo'])
+                
             qf_teams.append(qf_winner)
             teams[qf_winner]['qf'] += 1
             
         # Quarterfinals (Cuartos -> Semis)
         sf_teams = []
         for i in range(0, len(qf_teams), 2):
-            winner = simulate_knockout_match(qf_teams[i], qf_teams[i+1], teams[qf_teams[i]]['elo'], teams[qf_teams[i+1]]['elo'])
+            w1 = qf_teams[i]
+            w2 = qf_teams[i+1]
+            real_winner = None
+            mask = ((df_sim['Local'] == w1) & (df_sim['Visitante'] == w2)) | ((df_sim['Local'] == w2) & (df_sim['Visitante'] == w1))
+            match_rows = df_sim[mask]
+            if len(match_rows) > 0:
+                row = match_rows.iloc[0]
+                gl = row['Goles Local']
+                gv = row['Goles Visitante']
+                if pd.notna(gl) and pd.notna(gv) and str(gl).strip() != '' and str(gv).strip() != '':
+                    gl = int(gl)
+                    gv = int(gv)
+                    if row['Local'] == w1:
+                        real_winner = w1 if gl > gv else w2
+                    else:
+                        real_winner = w2 if gl > gv else w1
+            
+            if real_winner:
+                winner = real_winner
+            else:
+                winner = simulate_knockout_match(w1, w2, teams[w1]['elo'], teams[w2]['elo'])
             sf_teams.append(winner)
             teams[winner]['sf'] += 1
                 
         # Semifinals (Semis -> Final)
         final_teams = []
         for i in range(0, len(sf_teams), 2):
-            winner = simulate_knockout_match(sf_teams[i], sf_teams[i+1], teams[sf_teams[i]]['elo'], teams[sf_teams[i+1]]['elo'])
+            w1 = sf_teams[i]
+            w2 = sf_teams[i+1]
+            real_winner = None
+            mask = ((df_sim['Local'] == w1) & (df_sim['Visitante'] == w2)) | ((df_sim['Local'] == w2) & (df_sim['Visitante'] == w1))
+            match_rows = df_sim[mask]
+            if len(match_rows) > 0:
+                row = match_rows.iloc[0]
+                gl = row['Goles Local']
+                gv = row['Goles Visitante']
+                if pd.notna(gl) and pd.notna(gv) and str(gl).strip() != '' and str(gv).strip() != '':
+                    gl = int(gl)
+                    gv = int(gv)
+                    if row['Local'] == w1:
+                        real_winner = w1 if gl > gv else w2
+                    else:
+                        real_winner = w2 if gl > gv else w1
+            
+            if real_winner:
+                winner = real_winner
+            else:
+                winner = simulate_knockout_match(w1, w2, teams[w1]['elo'], teams[w2]['elo'])
             final_teams.append(winner)
             teams[winner]['final'] += 1
                 
         # Final
-        champion = simulate_knockout_match(final_teams[0], final_teams[1], teams[final_teams[0]]['elo'], teams[final_teams[1]]['elo'])
+        w1 = final_teams[0]
+        w2 = final_teams[1]
+        real_winner = None
+        mask = ((df_sim['Local'] == w1) & (df_sim['Visitante'] == w2)) | ((df_sim['Local'] == w2) & (df_sim['Visitante'] == w1))
+        match_rows = df_sim[mask]
+        if len(match_rows) > 0:
+            row = match_rows.iloc[0]
+            gl = row['Goles Local']
+            gv = row['Goles Visitante']
+            if pd.notna(gl) and pd.notna(gv) and str(gl).strip() != '' and str(gv).strip() != '':
+                gl = int(gl)
+                gv = int(gv)
+                if row['Local'] == w1:
+                    real_winner = w1 if gl > gv else w2
+                else:
+                    real_winner = w2 if gl > gv else w1
+        
+        if real_winner:
+            champion = real_winner
+        else:
+            champion = simulate_knockout_match(w1, w2, teams[w1]['elo'], teams[w2]['elo'])
         teams[champion]['champion'] += 1
             
     print(f"[INFO] Monte Carlo completado en {round(time.time() - start_t, 2)} segundos.")
