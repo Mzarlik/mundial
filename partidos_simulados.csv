@@ -91,7 +91,11 @@ Paraguay,France,0,1
 Canada,Morocco,0,3
 Brazil,Norway,1,2
 Mexico,England,2,3
-Portugal,Spain,,
-USA,Belgium,,
-Argentina,Egypt,,
+Portugal,Spain,0,1
+USA,Belgium,1,4
+Argentina,Egypt,3,2
 Switzerland,Colombia,,
+France,Morocco,,
+Spain,Belgium,,
+Norway,England,,
+Argentina,Colombia,,

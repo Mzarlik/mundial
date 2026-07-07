@@ -11,6 +11,13 @@ from predict_matches import (
     SPANISH_TO_ENGLISH
 )
 
+RESULTS_TO_CSV = {
+    'Czech Republic': 'Czechia',
+    'Bosnia and Herzegovina': 'Bosnia',
+    'United States': 'USA',
+    'Turkey': 'Turkiye'
+}
+
 def extract_r32_matches():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     js_path = os.path.join(script_dir, 'src', 'config', 'matches.js')
@@ -101,6 +108,9 @@ def run_knockout_montecarlo():
         {'date': '2026-07-04', 'home_team': 'Canada', 'away_team': 'Morocco', 'home_score': 0, 'away_score': 3, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-07-05', 'home_team': 'Brazil', 'away_team': 'Norway', 'home_score': 1, 'away_score': 2, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-07-05', 'home_team': 'Mexico', 'away_team': 'England', 'home_score': 2, 'away_score': 3, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-06', 'home_team': 'Portugal', 'away_team': 'Spain', 'home_score': 0, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-06', 'home_team': 'USA', 'away_team': 'Belgium', 'home_score': 1, 'away_score': 4, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-07', 'home_team': 'Argentina', 'away_team': 'Egypt', 'home_score': 3, 'away_score': 2, 'tournament': 'FIFA World Cup', 'neutral': True},
     ])
     real_matches['date'] = pd.to_datetime(real_matches['date'])
     df_all = pd.concat([df_all, real_matches], ignore_index=True)
@@ -202,8 +212,13 @@ def run_knockout_montecarlo():
             w1 = r32_winners[match1_id]
             w2 = r32_winners[match2_id]
             
+            w1_eng = SPANISH_TO_ENGLISH.get(w1, w1)
+            w2_eng = SPANISH_TO_ENGLISH.get(w2, w2)
+            w1_csv = RESULTS_TO_CSV.get(w1_eng, w1_eng)
+            w2_csv = RESULTS_TO_CSV.get(w2_eng, w2_eng)
+            
             real_winner = None
-            mask = ((df_sim['Local'] == w1) & (df_sim['Visitante'] == w2)) | ((df_sim['Local'] == w2) & (df_sim['Visitante'] == w1))
+            mask = ((df_sim['Local'] == w1_csv) & (df_sim['Visitante'] == w2_csv)) | ((df_sim['Local'] == w2_csv) & (df_sim['Visitante'] == w1_csv))
             match_rows = df_sim[mask]
             if len(match_rows) > 0:
                 row = match_rows.iloc[0]
@@ -212,7 +227,7 @@ def run_knockout_montecarlo():
                 if pd.notna(gl) and pd.notna(gv) and str(gl).strip() != '' and str(gv).strip() != '':
                     gl = int(gl)
                     gv = int(gv)
-                    if row['Local'] == w1:
+                    if row['Local'] == w1_csv:
                         real_winner = w1 if gl > gv else w2
                     else:
                         real_winner = w2 if gl > gv else w1
@@ -230,8 +245,13 @@ def run_knockout_montecarlo():
         for i in range(0, len(qf_teams), 2):
             w1 = qf_teams[i]
             w2 = qf_teams[i+1]
+            w1_eng = SPANISH_TO_ENGLISH.get(w1, w1)
+            w2_eng = SPANISH_TO_ENGLISH.get(w2, w2)
+            w1_csv = RESULTS_TO_CSV.get(w1_eng, w1_eng)
+            w2_csv = RESULTS_TO_CSV.get(w2_eng, w2_eng)
+            
             real_winner = None
-            mask = ((df_sim['Local'] == w1) & (df_sim['Visitante'] == w2)) | ((df_sim['Local'] == w2) & (df_sim['Visitante'] == w1))
+            mask = ((df_sim['Local'] == w1_csv) & (df_sim['Visitante'] == w2_csv)) | ((df_sim['Local'] == w2_csv) & (df_sim['Visitante'] == w1_csv))
             match_rows = df_sim[mask]
             if len(match_rows) > 0:
                 row = match_rows.iloc[0]
@@ -240,7 +260,7 @@ def run_knockout_montecarlo():
                 if pd.notna(gl) and pd.notna(gv) and str(gl).strip() != '' and str(gv).strip() != '':
                     gl = int(gl)
                     gv = int(gv)
-                    if row['Local'] == w1:
+                    if row['Local'] == w1_csv:
                         real_winner = w1 if gl > gv else w2
                     else:
                         real_winner = w2 if gl > gv else w1
@@ -257,8 +277,13 @@ def run_knockout_montecarlo():
         for i in range(0, len(sf_teams), 2):
             w1 = sf_teams[i]
             w2 = sf_teams[i+1]
+            w1_eng = SPANISH_TO_ENGLISH.get(w1, w1)
+            w2_eng = SPANISH_TO_ENGLISH.get(w2, w2)
+            w1_csv = RESULTS_TO_CSV.get(w1_eng, w1_eng)
+            w2_csv = RESULTS_TO_CSV.get(w2_eng, w2_eng)
+            
             real_winner = None
-            mask = ((df_sim['Local'] == w1) & (df_sim['Visitante'] == w2)) | ((df_sim['Local'] == w2) & (df_sim['Visitante'] == w1))
+            mask = ((df_sim['Local'] == w1_csv) & (df_sim['Visitante'] == w2_csv)) | ((df_sim['Local'] == w2_csv) & (df_sim['Visitante'] == w1_csv))
             match_rows = df_sim[mask]
             if len(match_rows) > 0:
                 row = match_rows.iloc[0]
@@ -267,7 +292,7 @@ def run_knockout_montecarlo():
                 if pd.notna(gl) and pd.notna(gv) and str(gl).strip() != '' and str(gv).strip() != '':
                     gl = int(gl)
                     gv = int(gv)
-                    if row['Local'] == w1:
+                    if row['Local'] == w1_csv:
                         real_winner = w1 if gl > gv else w2
                     else:
                         real_winner = w2 if gl > gv else w1
@@ -282,8 +307,13 @@ def run_knockout_montecarlo():
         # Final
         w1 = final_teams[0]
         w2 = final_teams[1]
+        w1_eng = SPANISH_TO_ENGLISH.get(w1, w1)
+        w2_eng = SPANISH_TO_ENGLISH.get(w2, w2)
+        w1_csv = RESULTS_TO_CSV.get(w1_eng, w1_eng)
+        w2_csv = RESULTS_TO_CSV.get(w2_eng, w2_eng)
+        
         real_winner = None
-        mask = ((df_sim['Local'] == w1) & (df_sim['Visitante'] == w2)) | ((df_sim['Local'] == w2) & (df_sim['Visitante'] == w1))
+        mask = ((df_sim['Local'] == w1_csv) & (df_sim['Visitante'] == w2_csv)) | ((df_sim['Local'] == w2_csv) & (df_sim['Visitante'] == w1_csv))
         match_rows = df_sim[mask]
         if len(match_rows) > 0:
             row = match_rows.iloc[0]
@@ -292,7 +322,7 @@ def run_knockout_montecarlo():
             if pd.notna(gl) and pd.notna(gv) and str(gl).strip() != '' and str(gv).strip() != '':
                 gl = int(gl)
                 gv = int(gv)
-                if row['Local'] == w1:
+                if row['Local'] == w1_csv:
                     real_winner = w1 if gl > gv else w2
                 else:
                     real_winner = w2 if gl > gv else w1

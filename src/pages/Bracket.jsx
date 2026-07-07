@@ -104,6 +104,9 @@ export default function Bracket() {
     'can-mar': 'Marruecos',       // Jugado, avanzó Marruecos (0-3 vs Canadá)
     'bra-nor': 'Noruega',         // Jugado, avanzó Noruega (1-2 vs Brasil)
     'mex-eng': 'Inglaterra',      // Jugado, avanzó Inglaterra (2-3 vs México)
+    'por-esp': 'España',          // Jugado, avanzó España (0-1 vs Portugal)
+    'usa-bel': 'Bélgica',         // Jugado, avanzó Bélgica (1-4 vs EE.UU.)
+    'arg-egy': 'Argentina',       // Jugado, avanzó Argentina (3-2 vs Egipto)
   };
 
   // Pre-calcular los resultados de 16avos de final
