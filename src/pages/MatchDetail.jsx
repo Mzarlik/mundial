@@ -617,6 +617,127 @@ function StatsAndFormPanel({ prediction, home, away }) {
   );
 }
 
+function PlayerProjectionsPanel({ home, away, playerStats, prediction }) {
+  if (!playerStats) return null;
+  
+  const getProjections = (teamName, expectedGoals) => {
+    const engTeam = SPANISH_TO_ENGLISH[teamName] || teamName;
+    const teamKeyLower = engTeam.toLowerCase();
+    const playersMap = {};
+    let teamMatchesPlayed = 0;
+    
+    Object.keys(playerStats).forEach(matchKey => {
+      const entry = playerStats[matchKey];
+      const isHome = entry.teams[0].toLowerCase() === teamKeyLower;
+      const isAway = entry.teams[1].toLowerCase() === teamKeyLower;
+      if (isHome || isAway) {
+        teamMatchesPlayed++;
+        entry.players.forEach(p => {
+          if (p.team.toLowerCase() === teamKeyLower) {
+            const name = p.name;
+            if (!playersMap[name]) {
+              playersMap[name] = {
+                name: p.name,
+                position: p.position || 'MF',
+                totalShots: 0,
+                totalXG: 0,
+                matches: 0
+              };
+            }
+            playersMap[name].totalShots += (p.shots_inside_box || 0) + (p.shots_outside_box || 0);
+            playersMap[name].totalXG += p.expected_goals || 0.0;
+            playersMap[name].matches++;
+          }
+        });
+      }
+    });
+    
+    if (teamMatchesPlayed === 0) return [];
+    
+    const list = Object.keys(playersMap).map(name => {
+      const p = playersMap[name];
+      const avgShots = p.totalShots / p.matches;
+      const avgXG = p.totalXG / p.matches;
+      
+      const playerExpectedGoals = expectedGoals ? avgXG * (expectedGoals / 1.5) : avgXG;
+      const goalProb = 1 - Math.exp(-playerExpectedGoals);
+      
+      return {
+        name: p.name,
+        position: p.position,
+        avgShots: avgShots,
+        projectedShots: expectedGoals ? avgShots * (expectedGoals / 1.5) + (avgShots * 0.2) : avgShots,
+        goalProb: Math.min(0.99, Math.max(0.01, goalProb)) * 100
+      };
+    });
+    
+    return list.sort((a, b) => b.goalProb - a.goalProb).slice(0, 4);
+  };
+  
+  const expGolesHome = prediction ? prediction.exp_goles_home || 1.3 : 1.3;
+  const expGolesAway = prediction ? prediction.exp_goles_away || 1.1 : 1.1;
+  
+  const homeProjections = getProjections(home, expGolesHome);
+  const awayProjections = getProjections(away, expGolesAway);
+  
+  if (homeProjections.length === 0 && awayProjections.length === 0) return null;
+  
+  return (
+    <div className="card" style={{ padding: '1.5rem 1.75rem', background: 'rgba(30,41,59,0.4)', marginBottom: '1.5rem', boxSizing: 'border-box' }}>
+      <h3 style={{ fontSize: '1.05rem', color: '#fff', marginBottom: '0.4rem', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.5rem' }}>
+        🎯 Proyección de Remates y Goleadores (Opta Engine)
+      </h3>
+      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1.25rem', lineHeight: 1.3 }}>
+        Expectativa individual calculada a partir de tiros y xG acumulados en partidos previos, escalada a las proyecciones del Ensemble.
+      </p>
+      
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
+        <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', borderRadius: '12px', padding: '1rem' }}>
+          <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem', color: '#f59e0b', display: 'flex', justifyContent: 'space-between' }}>
+            <span>{home}</span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 'normal' }}>Exp Goles: {expGolesHome.toFixed(2)}</span>
+          </h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+            {homeProjections.map((p, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '0.6rem 0.75rem', borderRadius: '8px', fontSize: '0.82rem' }}>
+                <div>
+                  <div style={{ color: '#fff', fontWeight: 'bold' }}>{p.name}</div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Posición: {p.position}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ color: '#fff' }}>Remates: <strong>{p.projectedShots.toFixed(1)}</strong></div>
+                  <div style={{ color: '#f59e0b', fontSize: '0.76rem', fontWeight: '600' }}>Prob. Gol: {p.goalProb.toFixed(0)}%</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        
+        <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', borderRadius: '12px', padding: '1rem' }}>
+          <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem', color: '#3b82f6', display: 'flex', justifyContent: 'space-between' }}>
+            <span>{away}</span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 'normal' }}>Exp Goles: {expGolesAway.toFixed(2)}</span>
+          </h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+            {awayProjections.map((p, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '0.6rem 0.75rem', borderRadius: '8px', fontSize: '0.82rem' }}>
+                <div>
+                  <div style={{ color: '#fff', fontWeight: 'bold' }}>{p.name}</div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Posición: {p.position}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ color: '#fff' }}>Remates: <strong>{p.projectedShots.toFixed(1)}</strong></div>
+                  <div style={{ color: '#3b82f6', fontSize: '0.76rem', fontWeight: '600' }}>Prob. Gol: {p.goalProb.toFixed(0)}%</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OverUnderPanel({ prediction }) {
   if (!prediction || prediction.over25 === undefined) return null;
   const lH = prediction.exp_goles_home || 1.3, lA = prediction.exp_goles_away || 1.1;
@@ -1405,6 +1526,70 @@ export default function MatchDetail() {
         doc.text('Medias Opta insuficientes para calcular la eficiencia tactica del DT.', 18, y + 6);
       }
       y += 32;
+
+      // SECTION 7: PROYECCIONES INDIVIDUALES DE JUGADORES (OPTA)
+      y += 2;
+      bar(y); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...pc);
+      doc.text('7. PROYECCIONES INDIVIDUALES DE GOLEADORES Y REMATES', 21, y);
+      doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5); 
+      y += 10;
+      
+      card(y - 2, 28); doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...tc);
+      if (playerStats) {
+        const getTopPlayers = (teamName, expectedGoals) => {
+          const engTeam = SPANISH_TO_ENGLISH[teamName] || teamName;
+          const teamKeyLower = engTeam.toLowerCase();
+          const playersMap = {};
+          let teamMatchesPlayed = 0;
+          Object.keys(playerStats).forEach(matchKey => {
+            const entry = playerStats[matchKey];
+            const isHome = entry.teams[0].toLowerCase() === teamKeyLower;
+            const isAway = entry.teams[1].toLowerCase() === teamKeyLower;
+            if (isHome || isAway) {
+              teamMatchesPlayed++;
+              entry.players.forEach(p => {
+                if (p.team.toLowerCase() === teamKeyLower) {
+                  const name = p.name;
+                  if (!playersMap[name]) {
+                    playersMap[name] = { name: p.name, position: p.position || 'MF', totalShots: 0, totalXG: 0, matches: 0 };
+                  }
+                  playersMap[name].totalShots += (p.shots_inside_box || 0) + (p.shots_outside_box || 0);
+                  playersMap[name].totalXG += p.expected_goals || 0.0;
+                  playersMap[name].matches++;
+                }
+              });
+            }
+          });
+          if (teamMatchesPlayed === 0) return [];
+          const list = Object.keys(playersMap).map(name => {
+            const p = playersMap[name];
+            const avgShots = p.totalShots / p.matches;
+            const avgXG = p.totalXG / p.matches;
+            const playerExpectedGoals = expectedGoals ? avgXG * (expectedGoals / 1.5) : avgXG;
+            const goalProb = 1 - Math.exp(-playerExpectedGoals);
+            return { name: p.name, position: p.position, projectedShots: expectedGoals ? avgShots * (expectedGoals / 1.5) + (avgShots * 0.2) : avgShots, goalProb: Math.min(0.99, Math.max(0.01, goalProb)) * 100 };
+          });
+          return list.sort((a, b) => b.goalProb - a.goalProb).slice(0, 2);
+        };
+
+        const homeP = getTopPlayers(match.home, prediction ? prediction.exp_goles_home : 1.3);
+        const awayP = getTopPlayers(match.away, prediction ? prediction.exp_goles_away : 1.1);
+
+        let colText = "";
+        if (homeP.length > 0) {
+          colText += `${match.home}: ${homeP[0].name} (${homeP[0].goalProb.toFixed(0)}% Gol, ${homeP[0].projectedShots.toFixed(1)} remates)`;
+          if (homeP[1]) colText += `, ${homeP[1].name} (${homeP[1].goalProb.toFixed(0)}% Gol, ${homeP[1].projectedShots.toFixed(1)} remates)`;
+        }
+        if (awayP.length > 0) {
+          if (colText) colText += "  |  ";
+          colText += `${match.away}: ${awayP[0].name} (${awayP[0].goalProb.toFixed(0)}% Gol, ${awayP[0].projectedShots.toFixed(1)} remates)`;
+          if (awayP[1]) colText += `, ${awayP[1].name} (${awayP[1].goalProb.toFixed(0)}% Gol, ${awayP[1].projectedShots.toFixed(1)} remates)`;
+        }
+        doc.text(colText, 18, y + 4, { maxWidth: dw - 36 });
+      } else {
+        doc.text('Estadísticas de jugadores insuficientes para calcular las proyecciones individuales.', 18, y + 4);
+      }
+      y += 36;
       
       // Methodology text box
       doc.setFillColor(241, 245, 249); doc.roundedRect(15, y, dw - 30, 24, 2, 2, 'F');
@@ -1524,10 +1709,6 @@ export default function MatchDetail() {
           <StatsAndFormPanel prediction={prediction} home={match.home} away={match.away} />
           <OptaTacticComparisonPanel home={match.home} away={match.away} playerStats={playerStats} />
           <StadiumEnvironmentPanel venue={match.venue} stadiumsClimate={stadiumsClimate} />
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
-            <OverUnderPanel prediction={prediction} />
-            <WeibullSummaryPanel prediction={prediction} />
-          </div>
           <div className="graph-section">
             <h2>Consenso Comparativo de Modelos</h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', marginBottom: '1rem' }}>Comparacion directa de probabilidades para los 90 minutos reglamentarios.</p>
@@ -1536,7 +1717,17 @@ export default function MatchDetail() {
         </div>
       )}
 
-      {activeTab === 'scenarios' && <ScenariosPanel prediction={prediction} home={match.home} away={match.away} />}
+      {activeTab === 'scenarios' && (
+        <div>
+          <ScenariosPanel prediction={prediction} home={match.home} away={match.away} />
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))', gap: '1.5rem', marginBottom: '1.5rem', marginTop: '1.5rem' }}>
+            <OverUnderPanel prediction={prediction} />
+            <WeibullSummaryPanel prediction={prediction} />
+          </div>
+          <PlayerProjectionsPanel home={match.home} away={match.away} playerStats={playerStats} prediction={prediction} />
+        </div>
+      )}
 
       {activeTab === 'timeline' && (
         <div className="graph-section" style={{ borderLeft: '4px solid var(--orange)' }}>

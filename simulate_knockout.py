@@ -71,7 +71,7 @@ def simulate_knockout_match(h, a, elo_h, elo_a):
     return h if goals_h > goals_a else a
 
 def run_knockout_montecarlo():
-    ITERATIONS = 2000
+    ITERATIONS = 10000
     print("[INFO] Cargando emparejamientos de Dieciseisavos...")
     r32_matches = extract_r32_matches()
     
@@ -111,6 +111,7 @@ def run_knockout_montecarlo():
         {'date': '2026-07-06', 'home_team': 'Portugal', 'away_team': 'Spain', 'home_score': 0, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-07-06', 'home_team': 'USA', 'away_team': 'Belgium', 'home_score': 1, 'away_score': 4, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-07-07', 'home_team': 'Argentina', 'away_team': 'Egypt', 'home_score': 3, 'away_score': 2, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-07', 'home_team': 'Switzerland', 'away_team': 'Colombia', 'home_score': 0, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
     ])
     real_matches['date'] = pd.to_datetime(real_matches['date'])
     df_all = pd.concat([df_all, real_matches], ignore_index=True)
@@ -227,10 +228,27 @@ def run_knockout_montecarlo():
                 if pd.notna(gl) and pd.notna(gv) and str(gl).strip() != '' and str(gv).strip() != '':
                     gl = int(gl)
                     gv = int(gv)
-                    if row['Local'] == w1_csv:
-                        real_winner = w1 if gl > gv else w2
+                    if gl > gv:
+                        real_winner = w1 if row['Local'] == w1_csv else w2
+                    elif gv > gl:
+                        real_winner = w2 if row['Local'] == w1_csv else w1
                     else:
-                        real_winner = w2 if gl > gv else w1
+                        # Draw/Shootout: check which team is scheduled in the subsequent rows of the CSV
+                        subsequent_teams = set()
+                        # idx is the index of the row in df_sim
+                        for idx_sub in range(idx + 1, len(df_sim)):
+                            loc_sub = df_sim.iloc[idx_sub]['Local']
+                            vis_sub = df_sim.iloc[idx_sub]['Visitante']
+                            if pd.notna(loc_sub): subsequent_teams.add(loc_sub.strip())
+                            if pd.notna(vis_sub): subsequent_teams.add(vis_sub.strip())
+                        
+                        if w1_csv in subsequent_teams:
+                            real_winner = w1
+                        elif w2_csv in subsequent_teams:
+                            real_winner = w2
+                        else:
+                            # fallback
+                            real_winner = w1 if teams[w1]['elo'] > teams[w2]['elo'] else w2
             
             if real_winner:
                 qf_winner = real_winner
@@ -260,10 +278,27 @@ def run_knockout_montecarlo():
                 if pd.notna(gl) and pd.notna(gv) and str(gl).strip() != '' and str(gv).strip() != '':
                     gl = int(gl)
                     gv = int(gv)
-                    if row['Local'] == w1_csv:
-                        real_winner = w1 if gl > gv else w2
+                    if gl > gv:
+                        real_winner = w1 if row['Local'] == w1_csv else w2
+                    elif gv > gl:
+                        real_winner = w2 if row['Local'] == w1_csv else w1
                     else:
-                        real_winner = w2 if gl > gv else w1
+                        # Draw/Shootout: check which team is scheduled in the subsequent rows of the CSV
+                        subsequent_teams = set()
+                        # idx is the index of the row in df_sim
+                        for idx_sub in range(idx + 1, len(df_sim)):
+                            loc_sub = df_sim.iloc[idx_sub]['Local']
+                            vis_sub = df_sim.iloc[idx_sub]['Visitante']
+                            if pd.notna(loc_sub): subsequent_teams.add(loc_sub.strip())
+                            if pd.notna(vis_sub): subsequent_teams.add(vis_sub.strip())
+                        
+                        if w1_csv in subsequent_teams:
+                            real_winner = w1
+                        elif w2_csv in subsequent_teams:
+                            real_winner = w2
+                        else:
+                            # fallback
+                            real_winner = w1 if teams[w1]['elo'] > teams[w2]['elo'] else w2
             
             if real_winner:
                 winner = real_winner
@@ -292,10 +327,27 @@ def run_knockout_montecarlo():
                 if pd.notna(gl) and pd.notna(gv) and str(gl).strip() != '' and str(gv).strip() != '':
                     gl = int(gl)
                     gv = int(gv)
-                    if row['Local'] == w1_csv:
-                        real_winner = w1 if gl > gv else w2
+                    if gl > gv:
+                        real_winner = w1 if row['Local'] == w1_csv else w2
+                    elif gv > gl:
+                        real_winner = w2 if row['Local'] == w1_csv else w1
                     else:
-                        real_winner = w2 if gl > gv else w1
+                        # Draw/Shootout: check which team is scheduled in the subsequent rows of the CSV
+                        subsequent_teams = set()
+                        # idx is the index of the row in df_sim
+                        for idx_sub in range(idx + 1, len(df_sim)):
+                            loc_sub = df_sim.iloc[idx_sub]['Local']
+                            vis_sub = df_sim.iloc[idx_sub]['Visitante']
+                            if pd.notna(loc_sub): subsequent_teams.add(loc_sub.strip())
+                            if pd.notna(vis_sub): subsequent_teams.add(vis_sub.strip())
+                        
+                        if w1_csv in subsequent_teams:
+                            real_winner = w1
+                        elif w2_csv in subsequent_teams:
+                            real_winner = w2
+                        else:
+                            # fallback
+                            real_winner = w1 if teams[w1]['elo'] > teams[w2]['elo'] else w2
             
             if real_winner:
                 winner = real_winner

@@ -2,6 +2,68 @@ import React, { useState, useEffect } from 'react';
 import { MATCHES, flagUrl, DAYS } from '../config/matches';
 import { Link } from 'react-router-dom';
 
+// Helper to calculate top player props for a match
+const getPlayerProps = (match, playerStats, predictions) => {
+  if (!playerStats || !predictions) return null;
+  const pred = predictions[match.id];
+  if (!pred) return null;
+  
+  const calculateTopPlayer = (teamName, expectedGoals) => {
+    const engTeam = SPANISH_TO_ENGLISH[teamName] || teamName;
+    const teamKeyLower = engTeam.toLowerCase();
+    const playersMap = {};
+    let teamMatchesPlayed = 0;
+    
+    Object.keys(playerStats).forEach(matchKey => {
+      const entry = playerStats[matchKey];
+      const isHome = entry.teams[0].toLowerCase() === teamKeyLower;
+      const isAway = entry.teams[1].toLowerCase() === teamKeyLower;
+      if (isHome || isAway) {
+        teamMatchesPlayed++;
+        entry.players.forEach(p => {
+          if (p.team.toLowerCase() === teamKeyLower) {
+            const name = p.name;
+            if (!playersMap[name]) {
+              playersMap[name] = {
+                name: p.name,
+                totalShots: 0,
+                totalXG: 0,
+                matches: 0
+              };
+            }
+            playersMap[name].totalShots += (p.shots_inside_box || 0) + (p.shots_outside_box || 0);
+            playersMap[name].totalXG += p.expected_goals || 0.0;
+            playersMap[name].matches++;
+          }
+        });
+      }
+    });
+    
+    if (teamMatchesPlayed === 0) return null;
+    
+    const list = Object.keys(playersMap).map(name => {
+      const p = playersMap[name];
+      const avgShots = p.totalShots / p.matches;
+      const avgXG = p.totalXG / p.matches;
+      const playerExpectedGoals = expectedGoals ? avgXG * (expectedGoals / 1.5) : avgXG;
+      const goalProb = 1 - Math.exp(-playerExpectedGoals);
+      return {
+        name: p.name,
+        projectedShots: expectedGoals ? avgShots * (expectedGoals / 1.5) + (avgShots * 0.2) : avgShots,
+        goalProb: Math.min(0.99, Math.max(0.01, goalProb)) * 100
+      };
+    });
+    
+    return list.sort((a, b) => b.goalProb - a.goalProb)[0];
+  };
+  
+  const topH = calculateTopPlayer(match.home, pred.exp_goles_home || 1.3);
+  const topA = calculateTopPlayer(match.away, pred.exp_goles_away || 1.1);
+  
+  return { topH, topA };
+};
+
+
 const SPANISH_TO_ENGLISH = {
   "México": "Mexico", "Sudáfrica": "South Africa", "Corea del Sur": "Korea Republic", "Chequia": "Czechia",
   "Canadá": "Canada", "Bosnia": "Bosnia-Herzegovina", "Bosnia y Herzegovina": "Bosnia-Herzegovina", "Catar": "Qatar", "Suiza": "Switzerland",
@@ -703,6 +765,27 @@ export default function Parlays() {
                           ⚠️ Sin ventaja estadística clara (Juego muy equilibrado)
                         </div>
                       )}
+
+                      {/* Player Props Projections */}
+                      {(() => {
+                        const props = getPlayerProps(match, playerStats, predictions);
+                        if (!props || (!props.topH && !props.topA)) return null;
+                        const bestPlayer = (props.topH && props.topA) 
+                          ? (props.topH.goalProb > props.topA.goalProb ? props.topH : props.topA)
+                          : (props.topH || props.topA);
+                        
+                        return (
+                          <div style={{ marginTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '0.6rem', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span>🔥 Prop: <strong style={{ color: '#fff' }}>{bestPlayer.name}</strong></span>
+                              <span style={{ color: '#f59e0b', fontWeight: 'bold' }}>{bestPlayer.goalProb.toFixed(0)}% Gol</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.68rem', marginTop: '0.15rem' }}>
+                              <span>Remates Esperados: {bestPlayer.projectedShots.toFixed(1)}</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       <div style={{ textAlign: 'right', fontSize: '0.75rem', color: '#f59e0b', marginTop: '0.8rem', fontWeight: 'bold' }}>
                         Ver Análisis Completo &rarr;

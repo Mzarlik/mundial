@@ -107,7 +107,7 @@ export default function Bracket() {
     'por-esp': 'España',          // Jugado, avanzó España (0-1 vs Portugal)
     'usa-bel': 'Bélgica',         // Jugado, avanzó Bélgica (1-4 vs EE.UU.)
     'arg-egy': 'Argentina',       // Jugado, avanzó Argentina (3-2 vs Egipto)
-    'sui-col': 'Colombia',        // Jugado, avanzó Colombia (0-0, ganó penales vs Suiza)
+    'sui-col': 'Suiza',        // Jugado, avanzó Colombia (0-0, ganó penales vs Suiza)
   };
 
   // Pre-calcular los resultados de 16avos de final

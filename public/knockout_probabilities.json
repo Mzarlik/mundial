@@ -1,5 +1,5 @@
 {
-  "iterations": 2000,
+  "iterations": 10000,
   "probabilities": [
     {
       "team": "España",
@@ -7,9 +7,9 @@
       "elo": 2120.6156204030112,
       "r16": 100.0,
       "qf": 100.0,
-      "sf": 69.4,
-      "final": 42.5,
-      "champion": 26.5
+      "sf": 69.1,
+      "final": 42.7,
+      "champion": 26.3
     },
     {
       "team": "Argentina",
@@ -17,9 +17,9 @@
       "elo": 2110.219784691209,
       "r16": 100.0,
       "qf": 100.0,
-      "sf": 67.7,
-      "final": 45.0,
-      "champion": 25.1
+      "sf": 67.6,
+      "final": 46.4,
+      "champion": 24.9
     },
     {
       "team": "Francia",
@@ -27,9 +27,9 @@
       "elo": 2114.2891349060474,
       "r16": 100.0,
       "qf": 100.0,
-      "sf": 66.6,
-      "final": 33.3,
-      "champion": 20.9
+      "sf": 64.5,
+      "final": 32.0,
+      "champion": 20.6
     },
     {
       "team": "Inglaterra",
@@ -37,29 +37,9 @@
       "elo": 2054.6166577084214,
       "r16": 100.0,
       "qf": 100.0,
-      "sf": 48.1,
-      "final": 18.9,
-      "champion": 7.0
-    },
-    {
-      "team": "Noruega",
-      "code": "no",
-      "elo": 2005.0243679579164,
-      "r16": 100.0,
-      "qf": 100.0,
-      "sf": 51.9,
-      "final": 21.2,
-      "champion": 5.5
-    },
-    {
-      "team": "Bélgica",
-      "code": "be",
-      "elo": 1948.3709195237861,
-      "r16": 100.0,
-      "qf": 100.0,
-      "sf": 30.6,
-      "final": 11.4,
-      "champion": 5.0
+      "sf": 49.4,
+      "final": 18.8,
+      "champion": 7.4
     },
     {
       "team": "Marruecos",
@@ -67,29 +47,39 @@
       "elo": 1988.9578647418498,
       "r16": 100.0,
       "qf": 100.0,
-      "sf": 33.4,
-      "final": 12.8,
-      "champion": 4.5
-    },
-    {
-      "team": "Colombia",
-      "code": "co",
-      "elo": 1981.2759271301288,
-      "r16": 100.0,
-      "qf": 52.9,
-      "sf": 16.8,
-      "final": 8.2,
-      "champion": 2.9
+      "sf": 35.5,
+      "final": 13.3,
+      "champion": 5.6
     },
     {
       "team": "Suiza",
       "code": "ch",
-      "elo": 1946.3382132228935,
+      "elo": 1949.3448503206153,
       "r16": 100.0,
-      "qf": 47.0,
-      "sf": 15.5,
-      "final": 6.6,
-      "champion": 2.6
+      "qf": 100.0,
+      "sf": 32.4,
+      "final": 15.4,
+      "champion": 5.4
+    },
+    {
+      "team": "Noruega",
+      "code": "no",
+      "elo": 2005.0243679579164,
+      "r16": 100.0,
+      "qf": 100.0,
+      "sf": 50.6,
+      "final": 19.4,
+      "champion": 5.0
+    },
+    {
+      "team": "Bélgica",
+      "code": "be",
+      "elo": 1948.3709195237861,
+      "r16": 100.0,
+      "qf": 100.0,
+      "sf": 30.9,
+      "final": 12.0,
+      "champion": 4.9
     },
     {
       "team": "Canadá",
@@ -155,6 +145,16 @@
       "team": "Egipto",
       "code": "eg",
       "elo": 1796.7051473220288,
+      "r16": 100.0,
+      "qf": 0.0,
+      "sf": 0.0,
+      "final": 0.0,
+      "champion": 0.0
+    },
+    {
+      "team": "Colombia",
+      "code": "co",
+      "elo": 1978.269290032407,
       "r16": 100.0,
       "qf": 0.0,
       "sf": 0.0,
