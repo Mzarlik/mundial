@@ -106,7 +106,8 @@ export default function Bracket() {
     'mex-eng': 'Inglaterra',      // Jugado, avanzó Inglaterra (2-3 vs México)
     'por-esp': 'España',          // Jugado, avanzó España (0-1 vs Portugal)
     'usa-bel': 'Bélgica',         // Jugado, avanzó Bélgica (1-4 vs EE.UU.)
-    'arg-egy': 'Argentina',       // Jugado, avanzó Argentina (3-2 vs Egipto)
+    'arg-egy': 'Argentina',
+    'fra-mar': 'Francia',         // Jugado, avanzó Francia (2-0 vs Marruecos)       // Jugado, avanzó Argentina (3-2 vs Egipto)
     'sui-col': 'Suiza',        // Jugado, avanzó Colombia (0-0, ganó penales vs Suiza)
   };
 
@@ -170,10 +171,10 @@ export default function Bracket() {
   const octR4 = simulateEloMatch(r32Results['sui-alg']?.winner, r32Results['col-gha']?.winner, 'sui-col');
 
   // 2. Cuartos de Final (Quarterfinals)
-  const qL1 = simulateEloMatch(octL1.winner, octL2.winner, 'q-L1');
-  const qL2 = simulateEloMatch(octL3.winner, octL4.winner, 'q-L2');
-  const qR1 = simulateEloMatch(octR1.winner, octR2.winner, 'q-R1');
-  const qR2 = simulateEloMatch(octR3.winner, octR4.winner, 'q-R2');
+  const qL1 = simulateEloMatch(octL1.winner, octL2.winner, 'fra-mar');
+  const qL2 = simulateEloMatch(octL3.winner, octL4.winner, 'esp-bel');
+  const qR1 = simulateEloMatch(octR1.winner, octR2.winner, 'nor-eng');
+  const qR2 = simulateEloMatch(octR3.winner, octR4.winner, 'arg-sui');
 
   // 3. Semifinales
   const semiL = simulateEloMatch(qL1.winner, qL2.winner, 'semi-L');

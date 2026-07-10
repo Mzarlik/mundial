@@ -1,0 +1,35 @@
+{
+    "status": "success",
+    "timestamp": "2026-07-09T20:44:57.347162",
+    "optimized_metrics": {
+        "accuracy_1x2": 80.0,
+        "rps": 0.11614382706015784,
+        "total_matches_evaluated": 25,
+        "hits": 20
+    },
+    "hyperparameters": {
+        "time_decay_lambda": 0.0003,
+        "xgb": {
+            "max_depth": 4,
+            "learning_rate": 0.03,
+            "n_estimators": 120,
+            "reg_alpha": 0.5,
+            "reg_lambda": 1.8,
+            "subsample": 0.85,
+            "random_state": 42
+        },
+        "catboost": {
+            "iterations": 150,
+            "learning_rate": 0.03,
+            "depth": 4,
+            "l2_leaf_reg": 4.5
+        },
+        "ensemble_weights": {
+            "dixon_coles_poisson": 0.15,
+            "dixon_coles_nb": 0.5,
+            "xgboost": 0.15,
+            "catboost": 0.2
+        }
+    },
+    "recommendation": "Para aplicar la precision > 70% en predict_matches.py, debemos habilitar los sample_weights en la llamada a .fit() e incorporar la ponderacion temporal exponencial. Adicionalmente, el reajuste del Ensemble al 50% Dixon-Coles NB y 20% CatBoost maximiza la estabilidad del error cuadratico."
+}

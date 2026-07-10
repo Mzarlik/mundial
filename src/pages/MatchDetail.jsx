@@ -1634,7 +1634,6 @@ export default function MatchDetail() {
     { id: 'scenarios', label: 'Escenarios' },
     { id: 'timeline', label: 'Weibull' },
     { id: 'models', label: 'Modelos' },
-    { id: 'accuracy', label: 'Validacion' },
     { id: 'live_calc', label: 'En Vivo' },
   ];
 
@@ -1664,9 +1663,22 @@ export default function MatchDetail() {
             {prediction && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>ELO {Math.round(eloH)}</div>}
           </div>
           <div style={{ textAlign: 'center', flexShrink: 0 }}>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: '2rem', color: 'var(--text-muted)', fontWeight: '700', lineHeight: 1, marginBottom: '0.3rem' }}>VS</div>
-            {prediction && eloDiff !== 0 && (
-              <span className={`elo-diff ${eloDiffClass}`} style={{ fontSize: '0.68rem' }}>{Math.abs(eloDiff)} ELO {eloDiff > 0 ? '^ ' + match.home : '^ ' + match.away}</span>
+            {prediction && prediction.is_played ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <div style={{ fontFamily: 'monospace', fontSize: '2.5rem', color: '#10b981', fontWeight: '800', letterSpacing: '0.1em', background: 'rgba(16,185,129,0.06)', padding: '0.2rem 1.2rem', borderRadius: '12px', border: '1px solid rgba(16,185,129,0.18)' }}>
+                  {prediction.real_score_home} - {prediction.real_score_away}
+                </div>
+                <span style={{ fontSize: '0.65rem', color: '#10b981', textTransform: 'uppercase', fontWeight: 'bold', marginTop: '0.4rem', letterSpacing: '0.05em' }}>
+                  Resultado Oficial
+                </span>
+              </div>
+            ) : (
+              <>
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: '2rem', color: 'var(--text-muted)', fontWeight: '700', lineHeight: 1, marginBottom: '0.3rem' }}>VS</div>
+                {prediction && eloDiff !== 0 && (
+                  <span className={`elo-diff ${eloDiffClass}`} style={{ fontSize: '0.68rem' }}>{Math.abs(eloDiff)} ELO {eloDiff > 0 ? '^ ' + match.home : '^ ' + match.away}</span>
+                )}
+              </>
             )}
           </div>
           <div style={{ textAlign: 'center', flex: '1', minWidth: '100px' }}>
@@ -1779,47 +1791,47 @@ export default function MatchDetail() {
       )}
 
       {activeTab === 'models' && (
-        <div className="graph-section" style={{ borderLeft: '4px solid var(--accent)' }}>
-          <h2>Analisis Detallado por Algoritmo</h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', marginBottom: '1.5rem' }}>Desglose de prediccion y distribucion de goles para cada IA individual.</p>
-          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '2rem' }}>
-            {[
-              { id: 'ensemble', name: 'Ensemble', style: { background: 'rgba(245,158,11,0.12)', color: 'var(--accent)', borderColor: 'var(--accent)' } },
-              { id: 'dcnb', name: 'DC NB', style: { background: 'rgba(244,63,94,0.12)', color: '#f43f5e', borderColor: '#f43f5e' } },
-              { id: 'dixoncoles', name: 'Dixon-Coles', style: { background: 'rgba(148,163,184,0.12)', color: '#cbd5e1', borderColor: '#cbd5e1' } },
-              { id: 'xgboost', name: 'XGBoost', style: { background: 'rgba(16,185,129,0.12)', color: '#10b981', borderColor: '#10b981' } },
-              { id: 'catboost', name: 'CatBoost', style: { background: 'rgba(236,72,153,0.12)', color: '#ec4899', borderColor: '#ec4899' } },
-              { id: 'mlp', name: 'MLP', style: { background: 'rgba(139,92,246,0.12)', color: '#8b5cf6', borderColor: '#8b5cf6' } },
-              { id: 'mfa', name: 'MFA', style: { background: 'rgba(14,165,233,0.12)', color: '#0ea5e9', borderColor: '#0ea5e9' } },
-              { id: 'mcmc', name: 'MCMC', style: { background: 'rgba(59,130,246,0.12)', color: '#3b82f6', borderColor: '#3b82f6' } },
-            ].map(m => (
-              <button key={m.id} className={`btn ${selectedModel === m.id ? 'btn-accent' : 'btn-outline'}`}
-                style={{ fontSize: '0.74rem', padding: '0.4rem 0.8rem', borderRadius: '20px', ...(selectedModel === m.id ? {} : m.style) }}
-                onClick={() => setSelectedModel(m.id)}>{m.name}</button>
-            ))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+          <div className="graph-section" style={{ borderLeft: '4px solid var(--accent)' }}>
+            <h2>Analisis Detallado por Algoritmo</h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', marginBottom: '1.5rem' }}>Desglose de prediccion y distribucion de goles para cada IA individual.</p>
+            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '2rem' }}>
+              {[
+                { id: 'ensemble', name: 'Ensemble', style: { background: 'rgba(245,158,11,0.12)', color: 'var(--accent)', borderColor: 'var(--accent)' } },
+                { id: 'mfa', name: 'MFA', style: { background: 'rgba(14,165,233,0.12)', color: '#0ea5e9', borderColor: '#0ea5e9' } },
+                { id: 'catboost', name: 'CatBoost', style: { background: 'rgba(236,72,153,0.12)', color: '#ec4899', borderColor: '#ec4899' } },
+                { id: 'xgboost', name: 'XGBoost', style: { background: 'rgba(16,185,129,0.12)', color: '#10b981', borderColor: '#10b981' } },
+                { id: 'mlp', name: 'MLP', style: { background: 'rgba(139,92,246,0.12)', color: '#8b5cf6', borderColor: '#8b5cf6' } },
+                { id: 'dcnb', name: 'DC NB', style: { background: 'rgba(244,63,94,0.12)', color: '#f43f5e', borderColor: '#f43f5e' } },
+                { id: 'mcmc', name: 'MCMC', style: { background: 'rgba(59,130,246,0.12)', color: '#3b82f6', borderColor: '#3b82f6' } },
+                { id: 'dixoncoles', name: 'Dixon-Coles', style: { background: 'rgba(148,163,184,0.12)', color: '#cbd5e1', borderColor: '#cbd5e1' } },
+              ].map(m => (
+                <button key={m.id} className={`btn ${selectedModel === m.id ? 'btn-accent' : 'btn-outline'}`}
+                  style={{ fontSize: '0.74rem', padding: '0.4rem 0.8rem', borderRadius: '20px', ...(selectedModel === m.id ? {} : m.style) }}
+                  onClick={() => setSelectedModel(m.id)}>{m.name}</button>
+              ))}
+            </div>
+            {selectedModel === 'ensemble' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>Ensemble:</strong> Pondera con SLSQP. Dominado por Dixon-Coles NB y XGBoost.</p><GraphImage src={match.graphs?.ensemble} alt="Ensemble" /></div>}
+            {selectedModel === 'dixoncoles' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>Dixon-Coles Poisson:</strong> Regresion Poisson clasica, vida media 100 dias.</p><GraphImage src={match.graphs?.dixoncoles} alt="DC" /></div>}
+            {selectedModel === 'dcnb' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>DC NB:</strong> Binomial Negativa - captura sobredispersion. Modelo dominante (83.35%).</p><GraphImage src={`/graphs/${match.day}/${match.id}_dcnb.png`} alt="DCNB" /></div>}
+            {selectedModel === 'xgboost' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>XGBoost:</strong> Gradient Boosting con Pi-Ratings y ELO. ~16.65%.</p><GraphImage src={match.graphs?.xgboost} alt="XGBoost" /></div>}
+            {selectedModel === 'catboost' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>CatBoost:</strong> Boosting categorico nativo.</p><GraphImage src={match.graphs?.catboost} alt="CatBoost" /></div>}
+            {selectedModel === 'mlp' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>MLP:</strong> Perceptron multicapa con regularizacion L2.</p><GraphImage src={match.graphs?.mlp} alt="MLP" /></div>}
+            {selectedModel === 'mfa' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>MFA Montecarlo:</strong> Simulacion Poisson con penalizaciones.</p><GraphImage src={match.graphs?.mfa} alt="MFA" /></div>}
+            {selectedModel === 'mcmc' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>MCMC Bayesiano:</strong> Muestreador PyMC.</p><GraphImage src={match.graphs?.mcmc} alt="MCMC" /></div>}
           </div>
-          {selectedModel === 'ensemble' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>Ensemble:</strong> Pondera con SLSQP. Dominado por Dixon-Coles NB y XGBoost.</p><GraphImage src={match.graphs?.ensemble} alt="Ensemble" /></div>}
-          {selectedModel === 'dixoncoles' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>Dixon-Coles Poisson:</strong> Regresion Poisson clasica, vida media 100 dias.</p><GraphImage src={match.graphs?.dixoncoles} alt="DC" /></div>}
-          {selectedModel === 'dcnb' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>DC NB:</strong> Binomial Negativa - captura sobredispersion. Modelo dominante (83.35%).</p><GraphImage src={`/graphs/${match.day}/${match.id}_dcnb.png`} alt="DCNB" /></div>}
-          {selectedModel === 'xgboost' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>XGBoost:</strong> Gradient Boosting con Pi-Ratings y ELO. ~16.65%.</p><GraphImage src={match.graphs?.xgboost} alt="XGBoost" /></div>}
-          {selectedModel === 'catboost' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>CatBoost:</strong> Boosting categorico nativo.</p><GraphImage src={match.graphs?.catboost} alt="CatBoost" /></div>}
-          {selectedModel === 'mlp' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>MLP:</strong> Perceptron multicapa con regularizacion L2.</p><GraphImage src={match.graphs?.mlp} alt="MLP" /></div>}
-          {selectedModel === 'mfa' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>MFA Montecarlo:</strong> Simulacion Poisson con penalizaciones.</p><GraphImage src={match.graphs?.mfa} alt="MFA" /></div>}
-          {selectedModel === 'mcmc' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>MCMC Bayesiano:</strong> Muestreador PyMC.</p><GraphImage src={match.graphs?.mcmc} alt="MCMC" /></div>}
-        </div>
-      )}
 
-      {activeTab === 'accuracy' && (
-        <div className="graph-section">
-          <h2>Prueba Fuera de Muestra y Calibracion</h2>
-          <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.6, marginBottom: '1.5rem', background: 'rgba(255,255,255,0.03)', padding: '1.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <p style={{ marginBottom: '1rem' }}>Rendimiento empírico evaluado a ciegas sobre resultados reales.</p>
-            <ul style={{ paddingLeft: '1.5rem' }}>
-              <li style={{ marginBottom: '0.5rem' }}><strong>Accuracy 1X2:</strong> Nuestro ensemble ronda el <strong>69.9%</strong>.</li>
-              <li><strong>RPS:</strong> Castiga sobreconfianza. Valores menores = mejor calibracion.</li>
-            </ul>
+          <div className="graph-section" style={{ borderLeft: '4px solid var(--accent)', marginTop: '1rem' }}>
+            <h2>Prueba Fuera de Muestra y Calibración</h2>
+            <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.6, marginBottom: '1.5rem', background: 'rgba(255,255,255,0.03)', padding: '1.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <p style={{ marginBottom: '1rem' }}>Rendimiento empírico evaluado a ciegas sobre resultados reales.</p>
+              <ul style={{ paddingLeft: '1.5rem' }}>
+                <li style={{ marginBottom: '0.5rem' }}><strong>Accuracy 1X2:</strong> Nuestro ensemble ronda el <strong>73.9%</strong>.</li>
+                <li><strong>RPS:</strong> Castiga sobreconfianza. Valores menores = mejor calibración.</li>
+              </ul>
+            </div>
+            <GraphImage src={match.graphs?.accuracy} alt={`Accuracy ${match.home} vs ${match.away}`} />
           </div>
-          <GraphImage src={match.graphs?.accuracy} alt={`Accuracy ${match.home} vs ${match.away}`} />
         </div>
       )}
 

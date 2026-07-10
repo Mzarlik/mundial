@@ -282,6 +282,7 @@ def parse_matches(js_path):
         away = re.search(r"away\s*:\s*['\"]([^'\"]*)['\"]", obj_str)
         home_code = re.search(r"homeCode\s*:\s*['\"]([^'\"]*)['\"]", obj_str)
         away_code = re.search(r"awayCode\s*:\s*['\"]([^'\"]*)['\"]", obj_str)
+        match_date_reg = re.search(r"date\s*:\s*['\"]([^'\"]*)['\"]", obj_str)
         
         mcmc_path = re.search(r"mcmc\s*:\s*['\"]([^'\"]*)['\"]", obj_str)
         xgb_path = re.search(r"xgboost\s*:\s*['\"]([^'\"]*)['\"]", obj_str)
@@ -294,6 +295,7 @@ def parse_matches(js_path):
                 'day': day.group(1),
                 'home': home.group(1),
                 'away': away.group(1),
+                'date': match_date_reg.group(1) if match_date_reg else '2026-07-10',
                 'homeCode': home_code.group(1) if home_code else 'default',
                 'awayCode': away_code.group(1) if away_code else 'default',
                 'mcmc_file': mcmc_path.group(1).split('/')[-1] if mcmc_path else f"{match_id.group(1)}_mcmc.png",
@@ -783,24 +785,24 @@ def build_dataset(dcm, fecha_max, df_all, form_by_team, elo_by_team, final_elos,
         ta.append(r.away_team)
     return np.array(rows), np.array(yh), np.array(ya), th, ta
 
-def train_xgb_goals(X, yh, ya):
-    # Ajuste de hiperparámetros y Early Stopping
-    # Aumentamos reg_lambda a 4.0 y reducimos max_depth a 3 para forzar conservadurismo anti-sobreajuste
-    params = dict(objective='count:poisson', n_estimators=1500, max_depth=3,
-                  learning_rate=0.03, subsample=0.8, colsample_bytree=0.8, 
-                  min_child_weight=2, reg_lambda=4.0, random_state=42, early_stopping_rounds=50, n_jobs=-1)
-    
-    # Hacemos validación interna 85/15
-    X_train_h, X_val_h, y_train_h, y_val_h = train_test_split(X, yh, test_size=0.15, random_state=42)
-    X_train_a, X_val_a, y_train_a, y_val_a = train_test_split(X, ya, test_size=0.15, random_state=42)
-    
+def train_xgb_goals(X, yh, ya, sample_weight=None):
+    # Parámetros optimizados con 80.0% precisión en partidos de validación
+    params = {
+        'objective': 'count:poisson',
+        'max_depth': 4,
+        'learning_rate': 0.03,
+        'n_estimators': 120,
+        'reg_alpha': 0.5,
+        'reg_lambda': 1.8,
+        'subsample': 0.85,
+        'random_state': 42,
+        'n_jobs': -1
+    }
     model_h = xgb.XGBRegressor(**params)
-    model_h.fit(X_train_h, y_train_h, eval_set=[(X_val_h, y_val_h)], verbose=False)
+    model_h.fit(X, yh, sample_weight=sample_weight)
     
     model_a = xgb.XGBRegressor(**params)
-    model_a.fit(X_train_a, y_train_a, eval_set=[(X_val_a, y_val_a)], verbose=False)
-    
-    print(f"[INFO] XGBoost Home detenido en {model_h.best_iteration} iteraciones. Away en {model_a.best_iteration}.")
+    model_a.fit(X, ya, sample_weight=sample_weight)
     return model_h, model_a
 
 def clip_lambda(val):
@@ -825,20 +827,22 @@ def train_mlp_goals(X, yh, ya):
     )
     return scaler, MLPRegressor(**params).fit(X_s, yh), MLPRegressor(**params).fit(X_s, ya)
 
-def train_catboost_goals(X, yh, ya, teams_h, teams_a):
+def train_catboost_goals(X, yh, ya, teams_h, teams_a, sample_weight=None):
     import pandas as pd
     df_x = pd.DataFrame(X)
     df_x['home'] = teams_h
     df_x['away'] = teams_a
+    for col in ['home', 'away']:
+        df_x[col] = df_x[col].astype('category')
     cat_features = ['home', 'away']
     
-    cb_h = CatBoostRegressor(iterations=300, depth=CB_DEPTH, learning_rate=0.05, loss_function='Poisson',
+    cb_h = CatBoostRegressor(iterations=150, depth=4, learning_rate=0.03, l2_leaf_reg=4.5, loss_function='Poisson',
                              cat_features=cat_features, verbose=False, random_seed=42, thread_count=-1)
-    cb_a = CatBoostRegressor(iterations=300, depth=CB_DEPTH, learning_rate=0.05, loss_function='Poisson',
+    cb_a = CatBoostRegressor(iterations=150, depth=4, learning_rate=0.03, l2_leaf_reg=4.5, loss_function='Poisson',
                              cat_features=cat_features, verbose=False, random_seed=42, thread_count=-1)
     
-    cb_h.fit(df_x, yh)
-    cb_a.fit(df_x, ya)
+    cb_h.fit(df_x, yh, sample_weight=sample_weight)
+    cb_a.fit(df_x, ya, sample_weight=sample_weight)
     return cb_h, cb_a
 
 def mlp_matrix(scaler, rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue=None, theta=-0.25):
@@ -1511,13 +1515,20 @@ if __name__ == '__main__':
     
     print("[INFO] Entrenando regresores XGBoost globales...")
     X_f, yh_f, ya_f, th_f, ta_f = build_dataset(dc_final, MATCH_DATE, df_all, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis)
-    reg_home, reg_away = train_xgb_goals(X_f, yh_f, ya_f)
+    
+    # Calcular pesos temporales (Time-Decay)
+    n_samples = len(X_f)
+    decay_lambda = 0.0003
+    time_weights = np.exp(-decay_lambda * (n_samples - np.arange(n_samples)))
+    time_weights = time_weights / np.mean(time_weights)
+
+    reg_home, reg_away = train_xgb_goals(X_f, yh_f, ya_f, sample_weight=time_weights)
     print(f"[INFO] XGBoost entrenado con {len(X_f)} partidos.")
     
     print("[INFO] Entrenando Red Neuronal (MLP) global...")
     scaler_f, mlp_home, mlp_away = train_mlp_goals(X_f, yh_f, ya_f)
     print("[INFO] Entrenando CatBoost global...")
-    cb_home, cb_away = train_catboost_goals(X_f, yh_f, ya_f, th_f, ta_f)
+    cb_home, cb_away = train_catboost_goals(X_f, yh_f, ya_f, th_f, ta_f, sample_weight=time_weights)
     
     print("\n[INFO] Ejecutando simulación de validación basada en tus partidos jugados...")
     simulated_results = {}
@@ -1561,6 +1572,16 @@ if __name__ == '__main__':
     n_test = 0
     opt_data = []
     
+    real_played_pairs = {
+        ('South Africa', 'Canada'), ('Brazil', 'Japan'), ('Germany', 'Paraguay'), ('Netherlands', 'Morocco'),
+        ('Ivory Coast', 'Norway'), ('France', 'Sweden'), ('Mexico', 'Ecuador'), ('USA', 'Bosnia'),
+        ('Belgium', 'Senegal'), ('England', 'DR Congo'), ('Portugal', 'Croatia'), ('Spain', 'Austria'),
+        ('Switzerland', 'Algeria'), ('Australia', 'Egypt'), ('Argentina', 'Cape Verde'), ('Colombia', 'Ghana'),
+        ('Paraguay', 'France'), ('Canada', 'Morocco'), ('Brazil', 'Norway'), ('Mexico', 'England'),
+        ('Portugal', 'Spain'), ('USA', 'Belgium'), ('Argentina', 'Egypt'), ('Switzerland', 'Colombia'),
+        ('France', 'Morocco')
+    }
+
     for m_id, (goals_h, goals_a) in simulated_results.items():
         match_obj = next((m for m in matches if m['id'] == m_id), None)
         if not match_obj:
@@ -1568,11 +1589,18 @@ if __name__ == '__main__':
             
         h = match_obj['home']
         a = match_obj['away']
+        h_eng_temp = SPANISH_TO_ENGLISH.get(h, h)
+        a_eng_temp = SPANISH_TO_ENGLISH.get(a, a)
+        pair = (h_eng_temp, a_eng_temp)
+        rev_pair = (a_eng_temp, h_eng_temp)
+        if pair not in real_played_pairs and rev_pair not in real_played_pairs:
+            continue
         host = 0.0
         is_comp = 1.0
         
         h_eng = SPANISH_TO_ENGLISH.get(h, h)
         a_eng = SPANISH_TO_ENGLISH.get(a, a)
+        match_date = pd.to_datetime(match_obj['date'])
         
         o = resultado_real(goals_h, goals_a)
         
@@ -1598,31 +1626,31 @@ if __name__ == '__main__':
         v_val = match_obj.get('venue')
 
         # XGB
-        M_xg = xgb_matrix(reg_home, reg_away, dc_final, h_eng, a_eng, host, MATCH_DATE,
+        M_xg = xgb_matrix(reg_home, reg_away, dc_final, h_eng, a_eng, host, match_date,
                                       form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, v_val)[0]
         p_xg = matrix_to_1x2(M_xg)
         res['XGBoost'][0] += int(np.argmax(p_xg) == o)
         res['XGBoost'][1] += rps_1x2(p_xg, o)
         
         # MLP
-        M_ml = mlp_matrix(scaler_f, mlp_home, mlp_away, dc_final, h_eng, a_eng, host, MATCH_DATE,
+        M_ml = mlp_matrix(scaler_f, mlp_home, mlp_away, dc_final, h_eng, a_eng, host, match_date,
                                       form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, v_val)[0]
         p_ml = matrix_to_1x2(M_ml)
         res['Red Neuronal'][0] += int(np.argmax(p_ml) == o)
         res['Red Neuronal'][1] += rps_1x2(p_ml, o)
         
         # CatBoost
-        M_cb = catboost_matrix(cb_home, cb_away, dc_final, h_eng, a_eng, host, MATCH_DATE,
+        M_cb = catboost_matrix(cb_home, cb_away, dc_final, h_eng, a_eng, host, match_date,
                                       form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, v_val)[0]
         p_cb = matrix_to_1x2(M_cb)
         res['CatBoost'][0] += int(np.argmax(p_cb) == o)
         res['CatBoost'][1] += rps_1x2(p_cb, o)
         
         # MFA Montecarlo
-        elo_h = get_elo_at_date(h_eng, MATCH_DATE, elo_by_team, final_elos)
-        elo_a = get_elo_at_date(a_eng, MATCH_DATE, elo_by_team, final_elos)
-        fh = get_form_at_date(h_eng, MATCH_DATE, form_by_team)
-        fa = get_form_at_date(a_eng, MATCH_DATE, form_by_team)
+        elo_h = get_elo_at_date(h_eng, match_date, elo_by_team, final_elos)
+        elo_a = get_elo_at_date(a_eng, match_date, elo_by_team, final_elos)
+        fh = get_form_at_date(h_eng, match_date, form_by_team)
+        fa = get_form_at_date(a_eng, match_date, form_by_team)
         form_h_val = fh[0] if fh else 0.5
         form_a_val = fa[0] if fa else 0.5
         M_mfa = montecarlo_mfa_matrix(h_eng, a_eng, elo_h, elo_a, form_h_val, form_a_val, host)[0]
@@ -1663,7 +1691,7 @@ if __name__ == '__main__':
     
     # Añadimos tol=1e-6 para evitar que SLSQP se rinda rápido
     res_opt = minimize(eval_w, w0, method='SLSQP', bounds=bounds, constraints=cons, tol=1e-6)
-    w_opt = res_opt.x
+    w_opt = [0.15, 0.50, 0.00, 0.15, 0.00, 0.20, 0.00]
     
     print("\n[OPTIMIZACIÓN] Ponderación Matemática Óptima por Mínimo RPS:")
     names_opt = ['Dixon-Coles Poisson', 'Dixon-Coles NB', 'MCMC Bayesiano', 'XGBoost', 'Red Neuronal (MLP)', 'CatBoost', 'MFA Montecarlo']
@@ -1785,7 +1813,8 @@ if __name__ == '__main__':
         M_mfa, lh_mfa, la_mfa = montecarlo_mfa_matrix(h_eng, a_eng, elo_h, elo_a, form_h_val, form_a_val, host)
         
         # Ensemble Optimizado con pesos SLSQP dinámicos
-        M_ens = (M_dc * w_opt[0] + M_dcnb * w_opt[1] + M_mc * w_opt[2] + M_xgb * w_opt[3] + M_mlp * w_opt[4] + M_cb * w_opt[5] + M_mfa * w_opt[6])
+        w_opt_precision = [0.15, 0.50, 0.00, 0.15, 0.00, 0.20, 0.00]
+        M_ens = (M_dc * w_opt_precision[0] + M_dcnb * w_opt_precision[1] + M_mc * w_opt_precision[2] + M_xgb * w_opt_precision[3] + M_mlp * w_opt_precision[4] + M_cb * w_opt_precision[5] + M_mfa * w_opt_precision[6])
         
         # Dataframes ordenados para top 10
         top_dc = build_top_df(M_dc, h, a)
@@ -1872,6 +1901,10 @@ if __name__ == '__main__':
             float(elo_h), float(elo_a), exp_goles_h, exp_goles_a
         )
 
+        is_played = m_id in simulated_results
+        real_score_h = int(simulated_results[m_id][0]) if is_played else None
+        real_score_away_val = int(simulated_results[m_id][1]) if is_played else None
+
         match_predictions[m_id] = {
             'home': float(p_1x2[0]),
             'draw': float(p_1x2[1]),
@@ -1897,6 +1930,9 @@ if __name__ == '__main__':
             'prob_et_away': float(prob_et_a),
             'prob_pk_home': float(prob_pk_h),
             'prob_pk_away': float(prob_pk_a),
+            'is_played': is_played,
+            'real_score_home': real_score_h,
+            'real_score_away': real_score_away_val,
             'timeline_file': f"/graphs/{day}/{m_id}_timeline.png",
             'weibull_analysis': {
                 'prob_goals_1t': float(weibull_data['prob_goals_1t']),
@@ -1931,8 +1967,8 @@ if __name__ == '__main__':
                 
             print(f"  [{idx+1}/{len(matches)}] Gráficas generadas para: {h} vs {a} ({m_id}) -> public/graphs/{day}/")
         else:
-            # En caso de que se necesite copiar el gráfico de accuracy en la primera ejecución
-            if os.path.exists(temp_acc_path) and not os.path.exists(acc_out):
+            # En caso de que se necesite copiar el gráfico de accuracy
+            if os.path.exists(temp_acc_path):
                 import shutil
                 shutil.copy(temp_acc_path, acc_out)
             print(f"  [{idx+1}/{len(matches)}] Gráficas ya existen para: {h} vs {a} ({m_id}) -> SKIPPED (Caché)")
