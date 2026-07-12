@@ -188,8 +188,8 @@ def load_opta_modifiers(script_dir):
 
     # Calcular factores suavizados (Laplace +1.0)
     for team in team_xg_scored:
-        att_factor = (team_xg_scored[team] + 1.0) / (team_goals_scored[team] + 1.0)
-        dfn_factor = (team_xg_conceded[team] + 1.0) / (team_goals_conceded[team] + 1.0)
+        att_factor = (team_goals_scored[team] + 1.0) / (team_xg_scored[team] + 1.0)
+        dfn_factor = (team_goals_conceded[team] + 1.0) / (team_xg_conceded[team] + 1.0)
         
         OPTA_ATT_MODIFIER[team] = att_factor
         OPTA_DFN_MODIFIER[team] = dfn_factor
@@ -511,14 +511,14 @@ def dc_matrix(dcm, h, a, host):
     m = np.exp(att[idx[a]] - dfn[idx[h]])
     
     # Aplicar modificadores de Opta
-    w = 0.35 # Peso de suavizado
+    w = 0.50 # Peso de suavizado
     h_att_mod = 1.0 - w + w * OPTA_ATT_MODIFIER.get(h, 1.0)
     a_dfn_mod = 1.0 - w + w * OPTA_DFN_MODIFIER.get(a, 1.0)
     a_att_mod = 1.0 - w + w * OPTA_ATT_MODIFIER.get(a, 1.0)
     h_dfn_mod = 1.0 - w + w * OPTA_DFN_MODIFIER.get(h, 1.0)
     
-    l = l * h_att_mod / a_dfn_mod
-    m = m * a_att_mod / h_dfn_mod
+    l = l * h_att_mod * a_dfn_mod
+    m = m * a_att_mod * h_dfn_mod
     
     M = np.outer(poisson.pmf(range(MAXG), l), poisson.pmf(range(MAXG), m))
     M[0,0] *= 1 - l*m*rho; M[0,1] *= 1 + l*rho; M[1,0] *= 1 + m*rho; M[1,1] *= 1 - rho
@@ -590,14 +590,14 @@ def dc_nb_matrix(dcm, h, a, host):
     m = np.exp(att[idx[a]] - dfn[idx[h]])
     
     # Aplicar modificadores de Opta
-    w = 0.35 # Peso de suavizado
+    w = 0.50 # Peso de suavizado
     h_att_mod = 1.0 - w + w * OPTA_ATT_MODIFIER.get(h, 1.0)
     a_dfn_mod = 1.0 - w + w * OPTA_DFN_MODIFIER.get(a, 1.0)
     a_att_mod = 1.0 - w + w * OPTA_ATT_MODIFIER.get(a, 1.0)
     h_dfn_mod = 1.0 - w + w * OPTA_DFN_MODIFIER.get(h, 1.0)
     
-    l = l * h_att_mod / a_dfn_mod
-    m = m * a_att_mod / h_dfn_mod
+    l = l * h_att_mod * a_dfn_mod
+    m = m * a_att_mod * h_dfn_mod
     
     n_h = 1.0 / alpha_h
     p_h = 1.0 / (1.0 + alpha_h * l)
@@ -1463,6 +1463,7 @@ if __name__ == '__main__':
         {'date': '2026-07-06', 'home_team': 'USA', 'away_team': 'Belgium', 'home_score': 1, 'away_score': 4, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-07-07', 'home_team': 'Argentina', 'away_team': 'Egypt', 'home_score': 3, 'away_score': 2, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-07-07', 'home_team': 'Switzerland', 'away_team': 'Colombia', 'home_score': 0, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-09', 'home_team': 'France', 'away_team': 'Morocco', 'home_score': 2, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
     ])
     real_matches['date'] = pd.to_datetime(real_matches['date'])
     df_all = pd.concat([df_all, real_matches], ignore_index=True)
@@ -1520,6 +1521,12 @@ if __name__ == '__main__':
     n_samples = len(X_f)
     decay_lambda = 0.0003
     time_weights = np.exp(-decay_lambda * (n_samples - np.arange(n_samples)))
+    
+    # Aplicar peso x3 a los partidos reales del Mundial
+    for idx_train in range(len(X_f)):
+        if idx_train >= (len(X_f) - 25):
+            time_weights[idx_train] *= 3.0
+            
     time_weights = time_weights / np.mean(time_weights)
 
     reg_home, reg_away = train_xgb_goals(X_f, yh_f, ya_f, sample_weight=time_weights)
