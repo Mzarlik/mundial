@@ -112,6 +112,10 @@ def run_knockout_montecarlo():
         {'date': '2026-07-06', 'home_team': 'USA', 'away_team': 'Belgium', 'home_score': 1, 'away_score': 4, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-07-07', 'home_team': 'Argentina', 'away_team': 'Egypt', 'home_score': 3, 'away_score': 2, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-07-07', 'home_team': 'Switzerland', 'away_team': 'Colombia', 'home_score': 0, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-09', 'home_team': 'France', 'away_team': 'Morocco', 'home_score': 2, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-10', 'home_team': 'Spain', 'away_team': 'Belgium', 'home_score': 2, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-11', 'home_team': 'Norway', 'away_team': 'England', 'home_score': 1, 'away_score': 2, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-11', 'home_team': 'Argentina', 'away_team': 'Switzerland', 'home_score': 3, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
     ])
     real_matches['date'] = pd.to_datetime(real_matches['date'])
     df_all = pd.concat([df_all, real_matches], ignore_index=True)

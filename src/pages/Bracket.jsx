@@ -6,6 +6,7 @@ export default function Bracket() {
   const [predictions, setPredictions] = useState(null);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('tree'); // 'tree' o 'list'
+  const [hoveredTeam, setHoveredTeam] = useState(null);
 
   useEffect(() => {
     fetch('/data/predictions.json')
@@ -109,6 +110,9 @@ export default function Bracket() {
     'arg-egy': 'Argentina',
     'fra-mar': 'Francia',         // Jugado, avanzó Francia (2-0 vs Marruecos)       // Jugado, avanzó Argentina (3-2 vs Egipto)
     'sui-col': 'Suiza',        // Jugado, avanzó Colombia (0-0, ganó penales vs Suiza)
+    'esp-bel': 'España',          // Jugado, avanzó España (2-1 vs Bélgica)
+    'nor-eng': 'Inglaterra',      // Jugado, avanzó Inglaterra (1-2 AET vs Noruega)
+    'arg-sui': 'Argentina',       // Jugado, avanzó Argentina (3-1 AET vs Suiza)
   };
 
   // Pre-calcular los resultados de 16avos de final
@@ -210,21 +214,64 @@ export default function Bracket() {
       (m.home === teamB && m.away === teamA)
     );
 
+    const hasHoveredTeam = hoveredTeam && (teamA === hoveredTeam || teamB === hoveredTeam);
+    const isHoveredA = hoveredTeam && teamA === hoveredTeam;
+    const isHoveredB = hoveredTeam && teamB === hoveredTeam;
+
+    const cardStyle = {
+      position: 'relative',
+      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    };
+
+    if (hoveredTeam) {
+      if (hasHoveredTeam) {
+        cardStyle.borderColor = 'var(--accent)';
+        cardStyle.boxShadow = '0 0 16px rgba(245, 158, 11, 0.4)';
+        cardStyle.transform = 'translateY(-2px) scale(1.02)';
+        cardStyle.zIndex = 10;
+      } else {
+        cardStyle.opacity = 0.25;
+        cardStyle.filter = 'grayscale(50%) blur(0.2px)';
+      }
+    }
+
     return (
-      <div className="bracket-match-card" style={{ position: 'relative' }}>
+      <div className="bracket-match-card" style={cardStyle}>
         {matchObj && (
           <Link to={`/partido/${matchObj.id}`} className="bracket-match-link-overlay" title="Ver análisis de IAs" />
         )}
-        <div className={`bracket-team-row ${winner === teamA ? 'winner' : ''}`}>
+        <div 
+          className={`bracket-team-row ${winner === teamA ? 'winner' : ''}`}
+          onMouseEnter={() => teamA && teamA !== 'TBD' && setHoveredTeam(teamA)}
+          onMouseLeave={() => setHoveredTeam(null)}
+          style={{
+            cursor: teamA && teamA !== 'TBD' ? 'pointer' : 'default',
+            color: isHoveredA ? '#fff' : undefined,
+            fontWeight: isHoveredA ? 'bold' : undefined,
+            opacity: hoveredTeam ? (isHoveredA ? 1 : 0.45) : undefined,
+            transition: 'all 0.2s ease'
+          }}
+        >
           <img src={flagUrl(codeA || "un")} alt={teamA} className="bracket-flag" />
           <span className="bracket-team-name">{teamA}</span>
-          <span className="bracket-prob">{probA ? `${probA.toFixed(0)}%` : '--'}</span>
+          <span className="bracket-prob" style={{ color: isHoveredA ? 'var(--accent)' : undefined, fontWeight: isHoveredA ? 'bold' : undefined }}>{probA ? `${probA.toFixed(0)}%` : '--'}</span>
         </div>
         <div className="bracket-divider" />
-        <div className={`bracket-team-row ${winner === teamB ? 'winner' : ''}`}>
+        <div 
+          className={`bracket-team-row ${winner === teamB ? 'winner' : ''}`}
+          onMouseEnter={() => teamB && teamB !== 'TBD' && setHoveredTeam(teamB)}
+          onMouseLeave={() => setHoveredTeam(null)}
+          style={{
+            cursor: teamB && teamB !== 'TBD' ? 'pointer' : 'default',
+            color: isHoveredB ? '#fff' : undefined,
+            fontWeight: isHoveredB ? 'bold' : undefined,
+            opacity: hoveredTeam ? (isHoveredB ? 1 : 0.45) : undefined,
+            transition: 'all 0.2s ease'
+          }}
+        >
           <img src={flagUrl(codeB || "un")} alt={teamB} className="bracket-flag" />
           <span className="bracket-team-name">{teamB}</span>
-          <span className="bracket-prob">{probB ? `${probB.toFixed(0)}%` : '--'}</span>
+          <span className="bracket-prob" style={{ color: isHoveredB ? 'var(--accent)' : undefined, fontWeight: isHoveredB ? 'bold' : undefined }}>{probB ? `${probB.toFixed(0)}%` : '--'}</span>
         </div>
       </div>
     );
@@ -305,12 +352,18 @@ export default function Bracket() {
           <div className="bracket-column center-column">
             <div className="bracket-round-title" style={{ color: '#f59e0b' }}>🏆 CAMPEÓN PREDICTIVO</div>
             
-            <div className="champion-display-card">
-              <span className="trophy-icon">🏆</span>
-              <h3 style={{ fontSize: '1.2rem', margin: '0.2rem 0' }}>{grandFinal.winner}</h3>
-              <div className="champion-badge">CAMPEÓN ML</div>
-              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.5rem', lineHeight: '1.3' }}>
-                Simulación: {grandFinal.winner} gana la final con un <strong>{grandFinal.winner === semiL.winner ? grandFinal.probA.toFixed(0) : grandFinal.probB.toFixed(0)}%</strong> de probabilidad.
+            <div className="champion-display-card" style={{ 
+              padding: '2rem 1.75rem', 
+              maxWidth: '280px', 
+              boxShadow: '0 0 35px rgba(245, 158, 11, 0.12)', 
+              border: '1px solid rgba(245, 158, 11, 0.45)',
+              background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(217, 119, 6, 0.04) 100%)'
+            }}>
+              <span className="trophy-icon" style={{ fontSize: '3rem', display: 'block', marginBottom: '0.4rem' }}>🏆</span>
+              <h3 style={{ fontSize: '1.6rem', margin: '0.2rem 0', fontWeight: '800', letterSpacing: '0.03em', color: '#fff', fontFamily: 'var(--font-display)' }}>{grandFinal.winner}</h3>
+              <div className="champion-badge" style={{ fontSize: '0.8rem', padding: '0.3rem 0.8rem' }}>CAMPEÓN ML</div>
+              <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginTop: '0.75rem', lineHeight: '1.4' }}>
+                Simulación: {grandFinal.winner} gana la final con un <strong>{grandFinal.winner === semiL.winner ? grandFinal.probA.toFixed(0) : grandFinal.probB.toFixed(0)}%</strong> de probabilidad acumulada.
               </p>
             </div>
 

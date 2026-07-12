@@ -23,6 +23,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.patches   # modificado para importar patches de forma explícita
 import matplotlib.patches as mpatches
+import matplotlib.colors as mcolors
 import seaborn as sns
 from scipy.optimize import minimize
 from scipy.stats import poisson, nbinom
@@ -105,7 +106,6 @@ def load_opta_modifiers(script_dir):
         print(f"[WARNING] Error al cargar player_stats.json: {e}")
         return
 
-    # Mapeo de nombres en inglés de player_stats.json a los nombres estándar en predict_matches.py
     OPTA_TO_STANDARD_ENGLISH = {
         "korea republic": "South Korea",
         "korea rep": "South Korea",
@@ -115,17 +115,26 @@ def load_opta_modifiers(script_dir):
         "bosnia and herzegovina": "Bosnia",
         "cote d'ivoire": "Ivory Coast",
         "côte d'ivoire": "Ivory Coast",
+        "cte d'ivoire": "Ivory Coast",
         "congo dr": "DR Congo",
         "dr congo": "DR Congo",
         "turkey": "Turkiye",
         "turkiye": "Turkiye",
         "türkiye": "Turkiye",
+        "trkiye": "Turkiye",
         "curacao": "Curaçao",
         "curaçao": "Curaçao",
+        "curaao": "Curaçao",
         "brazília": "Brazil",
         "brazilia": "Brazil",
+        "brazlia": "Brazil",
         "ir_iran": "Iran",
-        "ir iran": "Iran"
+        "ir iran": "Iran",
+        "cabo verde": "Cape Verde",
+        "españa": "Spain",
+        "espaa": "Spain",
+        "noruega": "Norway",
+        "inglaterra": "England"
     }
 
     # Acumular xG y goles reales
@@ -203,7 +212,7 @@ DESDE_BAYES = pd.Timestamp('2021-01-01') # Ventana para MCMC Bayesiano (Ciclos m
 VAL_CUTOFF = pd.Timestamp('2025-09-01')  # Fecha límite para separar el conjunto de entrenamiento y validación
 MATCH_DATE = pd.Timestamp('2026-06-22')  # Fecha base de las predicciones del Mundial
 
-HALF_LIFE = 300                          # Decaimiento dinámico Dixon-Coles óptimo
+HALF_LIFE = 180                          # Decaimiento dinámico Dixon-Coles óptimo
 THETA_KNOCKOUT = -0.40                   # Cópula Frank para fase de eliminación directa
 THETA_GROUPS = -0.20                     # Cópula Frank para fase de grupos
 ELO_SCALE_FACTOR = 1500.0                # Escala de prioris informadas en MCMC Bayesiano
@@ -511,14 +520,14 @@ def dc_matrix(dcm, h, a, host):
     m = np.exp(att[idx[a]] - dfn[idx[h]])
     
     # Aplicar modificadores de Opta
-    w = 0.50 # Peso de suavizado
+    w = 0.30 # Peso de suavizado
     h_att_mod = 1.0 - w + w * OPTA_ATT_MODIFIER.get(h, 1.0)
     a_dfn_mod = 1.0 - w + w * OPTA_DFN_MODIFIER.get(a, 1.0)
     a_att_mod = 1.0 - w + w * OPTA_ATT_MODIFIER.get(a, 1.0)
     h_dfn_mod = 1.0 - w + w * OPTA_DFN_MODIFIER.get(h, 1.0)
     
-    l = l * h_att_mod * a_dfn_mod
-    m = m * a_att_mod * h_dfn_mod
+    l = l * np.sqrt(h_att_mod * a_dfn_mod)
+    m = m * np.sqrt(a_att_mod * h_dfn_mod)
     
     M = np.outer(poisson.pmf(range(MAXG), l), poisson.pmf(range(MAXG), m))
     M[0,0] *= 1 - l*m*rho; M[0,1] *= 1 + l*rho; M[1,0] *= 1 + m*rho; M[1,1] *= 1 - rho
@@ -567,7 +576,16 @@ def fit_dixon_coles_nb(train, cutoff, half_life=HALF_LIFE):
         logpmf_h = nbinom.logpmf(hs, n_h, p_h)
         logpmf_a = nbinom.logpmf(as_, n_a, p_a)
         
-        return -(w * (np.log(t) + logpmf_h + logpmf_a)).sum()
+        # Calcular constante de normalización S para corregir la verosimilitud NB bivariada
+        p0_h = (1.0 + alpha_h * l) ** (-1.0 / alpha_h)
+        p1_h = l * (1.0 + alpha_h * l) ** (-(1.0 + 1.0 / alpha_h))
+        p0_a = (1.0 + alpha_a * m) ** (-1.0 / alpha_a)
+        p1_a = m * (1.0 + alpha_a * m) ** (-(1.0 + 1.0 / alpha_a))
+        
+        S = 1.0 + r * (-l*m*p0_h*p0_a + m*p1_h*p0_a + l*p0_h*p1_a - p1_h*p1_a)
+        S = np.clip(S, 1e-10, None)
+        
+        return -(w * (np.log(t) + logpmf_h + logpmf_a - np.log(S))).sum()
         
     init_p = np.concatenate([np.zeros(n), np.zeros(n), [.25, -.05, -1.0, -1.0]])
     r = minimize(nll, init_p, method='L-BFGS-B')
@@ -590,14 +608,14 @@ def dc_nb_matrix(dcm, h, a, host):
     m = np.exp(att[idx[a]] - dfn[idx[h]])
     
     # Aplicar modificadores de Opta
-    w = 0.50 # Peso de suavizado
+    w = 0.30 # Peso de suavizado
     h_att_mod = 1.0 - w + w * OPTA_ATT_MODIFIER.get(h, 1.0)
     a_dfn_mod = 1.0 - w + w * OPTA_DFN_MODIFIER.get(a, 1.0)
     a_att_mod = 1.0 - w + w * OPTA_ATT_MODIFIER.get(a, 1.0)
     h_dfn_mod = 1.0 - w + w * OPTA_DFN_MODIFIER.get(h, 1.0)
     
-    l = l * h_att_mod * a_dfn_mod
-    m = m * a_att_mod * h_dfn_mod
+    l = l * np.sqrt(h_att_mod * a_dfn_mod)
+    m = m * np.sqrt(a_att_mod * h_dfn_mod)
     
     n_h = 1.0 / alpha_h
     p_h = 1.0 / (1.0 + alpha_h * l)
@@ -935,15 +953,45 @@ def plot_3panel(M, top_df, nombre, home, away, abbr_home, abbr_away, out_path):
     pH, pD, pA = matrix_to_1x2(M)
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     fig.suptitle(f'Predicción: {home} vs {away} | Mundial FIFA 2026\nModelo: {nombre}',
-                 fontsize=13, fontweight='bold')
+                 fontsize=13, fontweight='bold', color='white')
     
-    # 1. Heatmap
+    # Force transparent backgrounds
+    fig.patch.set_facecolor('none')
+    for ax in axes:
+        ax.patch.set_facecolor('none')
+        ax.spines['bottom'].set_color((1, 1, 1, 0.2))
+        ax.spines['left'].set_color((1, 1, 1, 0.2))
+        ax.tick_params(colors='white')
+        ax.xaxis.label.set_color('white')
+        ax.yaxis.label.set_color('white')
+        ax.title.set_color('white')
+
+    # 1. Heatmap with adaptive annotation colors
     ax = axes[0]
     hd = pd.DataFrame(M[:6,:6]*100, index=[f'{abbr_home} {i}' for i in range(6)],
                     columns=[f'{abbr_away} {j}' for j in range(6)])
-    sns.heatmap(hd, annot=True, fmt='.1f', cmap='YlOrRd', ax=ax, cbar_kws={'label': 'Probabilidad (%)'})
-    ax.set_title('Probabilidad por marcador (%)', fontweight='bold')
-    ax.set_xlabel(f'Goles {away}'); ax.set_ylabel(f'Goles {home}')
+    
+    # Draw heatmap without built-in annot, then add custom-colored text
+    sns.heatmap(hd, annot=False, cmap='YlOrRd', ax=ax, cbar_kws={'label': 'Probabilidad (%)'})
+    # Adaptive annotation: dark text on bright cells, white on dark
+    cmap_obj = plt.cm.YlOrRd
+    vmin, vmax = hd.values.min(), hd.values.max()
+    norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
+    for i_row in range(hd.shape[0]):
+        for j_col in range(hd.shape[1]):
+            val = hd.iloc[i_row, j_col]
+            rgba = cmap_obj(norm(val))
+            lum = 0.299 * rgba[0] + 0.587 * rgba[1] + 0.114 * rgba[2]
+            txt_color = 'black' if lum > 0.55 else 'white'
+            ax.text(j_col + 0.5, i_row + 0.5, f'{val:.1f}', ha='center', va='center',
+                    fontsize=8, fontweight='bold', color=txt_color)
+    # Style colorbar for dark mode
+    cbar = ax.collections[0].colorbar
+    if cbar:
+        cbar.ax.yaxis.label.set_color('white')
+        cbar.ax.tick_params(colors='white')
+    ax.set_title('Probabilidad por marcador (%)', fontweight='bold', color='white')
+    ax.set_xlabel(f'Goles {away}', color='white'); ax.set_ylabel(f'Goles {home}', color='white')
     
     # 2. Resultado 1X2
     ax = axes[1]
@@ -951,10 +999,10 @@ def plot_3panel(M, top_df, nombre, home, away, abbr_home, abbr_away, out_path):
     vals = [pH*100, pD*100, pA*100]
     bars = ax.bar(labs, vals, color=[C_HOME, C_DRAW, C_AWAY], width=0.5, edgecolor='white', linewidth=1.5)
     for b, v in zip(bars, vals):
-        ax.text(b.get_x() + b.get_width()/2, v + 0.5, f'{v:.1f}%', ha='center', fontweight='bold', fontsize=12)
+        ax.text(b.get_x() + b.get_width()/2, v + 0.5, f'{v:.1f}%', ha='center', fontweight='bold', fontsize=12, color='white')
     ax.set_ylim(0, max(vals)*1.2)
-    ax.set_title('Probabilidad de resultado', fontweight='bold')
-    ax.set_ylabel('Probabilidad (%)')
+    ax.set_title('Probabilidad de resultado', fontweight='bold', color='white')
+    ax.set_ylabel('Probabilidad (%)', color='white')
     ax.spines[['top', 'right']].set_visible(False)
     
     # 3. Top 10 Marcadores
@@ -965,17 +1013,21 @@ def plot_3panel(M, top_df, nombre, home, away, abbr_home, abbr_away, out_path):
     colors = [cmap[r] for r in t10['Resultado']]
     ax.barh(labels_h[::-1], t10['Prob (%)'][::-1], color=colors[::-1])
     for k, v in enumerate(t10['Prob (%)'][::-1]):
-        ax.text(v + 0.1, k, f'{v:.1f}%', va='center', fontsize=8, fontweight='bold')
-    ax.set_title('Top 10 marcadores más probables', fontweight='bold')
-    ax.set_xlabel('Probabilidad (%)')
-    ax.legend(handles=[mpatches.Patch(color=C_HOME, label=f'{home} gana'),
+        ax.text(v + 0.1, k, f'{v:.1f}%', va='center', fontsize=8, fontweight='bold', color='white')
+    ax.set_title('Top 10 marcadores más probables', fontweight='bold', color='white')
+    ax.set_xlabel('Probabilidad (%)', color='white')
+    leg = ax.legend(handles=[mpatches.Patch(color=C_HOME, label=f'{home} gana'),
                        mpatches.Patch(color=C_DRAW, label='Empate'),
                        mpatches.Patch(color=C_AWAY, label=f'{away} gana')], loc='lower right', fontsize=8)
+    leg.get_frame().set_facecolor('#1e293b')
+    leg.get_frame().set_edgecolor((1, 1, 1, 0.15))
+    for text in leg.get_texts():
+        text.set_color('white')
     ax.spines[['top', 'right']].set_visible(False)
     
     plt.tight_layout()
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    plt.savefig(out_path, dpi=120, bbox_inches='tight')
+    plt.savefig(out_path, dpi=300, transparent=True)
     plt.close()
 
 def plot_resumen(M_dc, M_dcnb, M_mc, M_xg, M_mlp, M_cb, M_mfa, M_ens, home, away, out_path):
@@ -994,6 +1046,15 @@ def plot_resumen(M_dc, M_dcnb, M_mc, M_xg, M_mlp, M_cb, M_mfa, M_ens, home, away
     width = 0.09
     
     fig, ax = plt.subplots(figsize=(12, 5))
+    fig.patch.set_facecolor('none')
+    ax.patch.set_facecolor('none')
+    ax.spines['bottom'].set_color((1, 1, 1, 0.2))
+    ax.spines['left'].set_color((1, 1, 1, 0.2))
+    ax.tick_params(colors='white')
+    ax.xaxis.label.set_color('white')
+    ax.yaxis.label.set_color('white')
+    ax.title.set_color('white')
+
     rects1 = ax.bar(x - width*3.5, [pH_dc*100, pD_dc*100, pA_dc*100], width, label='Dixon-Coles Poisson', color=C_DRAW)
     rects2 = ax.bar(x - width*2.5, [pH_dcnb*100, pD_dcnb*100, pA_dcnb*100], width, label='Dixon-Coles NB', color='#f43f5e')
     rects3 = ax.bar(x - width*1.5, [pH_mc*100, pD_mc*100, pA_mc*100], width, label='MCMC', color='#3b82f6')
@@ -1003,23 +1064,27 @@ def plot_resumen(M_dc, M_dcnb, M_mc, M_xg, M_mlp, M_cb, M_mfa, M_ens, home, away
     rects7 = ax.bar(x + width*2.5, [pH_mfa*100, pD_mfa*100, pA_mfa*100], width, label='MFA Montecarlo', color='#0ea5e9')
     rects8 = ax.bar(x + width*3.5, [pH_ens*100, pD_ens*100, pA_ens*100], width, label='Ensemble', color='#f59e0b')
     
-    ax.set_ylabel('Probabilidad (%)', fontweight='bold')
-    ax.set_title(f'Resumen de Modelos: {home} vs {away}', fontweight='bold', fontsize=12)
+    ax.set_ylabel('Probabilidad (%)', fontweight='bold', color='white')
+    ax.set_title(f'Resumen de Modelos: {home} vs {away}', fontweight='bold', fontsize=12, color='white')
     ax.set_xticks(x)
-    ax.set_xticklabels(labels, fontweight='bold')
-    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    ax.set_xticklabels(labels, fontweight='bold', color='white')
+    leg = ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    leg.get_frame().set_facecolor('#1e293b')
+    leg.get_frame().set_edgecolor((1, 1, 1, 0.15))
+    for text in leg.get_texts():
+        text.set_color('white')
     ax.set_ylim(0, 100)
     
     for rects in [rects1, rects2, rects3, rects4, rects5, rects6, rects7, rects8]:
         for rect in rects:
             height = rect.get_height()
             if height > 1:
-                ax.annotate(f'{height:.0f}%', xy=(rect.get_x() + rect.get_width() / 2, height), xytext=(0, 2), textcoords="offset points", ha='center', va='bottom', fontsize=7, fontweight='bold')
+                ax.annotate(f'{height:.0f}%', xy=(rect.get_x() + rect.get_width() / 2, height), xytext=(0, 2), textcoords="offset points", ha='center', va='bottom', fontsize=7, fontweight='bold', color='white')
                     
     sns.despine()
     plt.tight_layout()
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    plt.savefig(out_path, dpi=120, bbox_inches='tight')
+    plt.savefig(out_path, dpi=300, transparent=True)
     plt.close()
 
 def build_top_df(M, home, away):
@@ -1046,7 +1111,7 @@ def frank_copula_matrix(lh, la, theta=-0.25, max_g=MAXG):
     cdf_a = np.cumsum(pmf_a)
     
     def C(u, v):
-        if theta == 0:
+        if abs(theta) < 1e-5:
             return u * v
         num = (np.exp(-theta * u) - 1.0) * (np.exp(-theta * v) - 1.0)
         den = np.exp(-theta) - 1.0
@@ -1301,42 +1366,55 @@ def simulate_match_timeline_weibull(l_h, l_a, h_name, a_name, out_path, simulati
     
     if save_plot:
         fig, ax = plt.subplots(figsize=(8, 4.5))
+        fig.patch.set_facecolor('none')
+        ax.patch.set_facecolor('none')
+        ax.spines['bottom'].set_color((1, 1, 1, 0.2))
+        ax.spines['left'].set_color((1, 1, 1, 0.2))
+        ax.tick_params(colors='white')
+        ax.xaxis.label.set_color('white')
+        ax.yaxis.label.set_color('white')
+        ax.title.set_color('white')
+
         ax.plot(t_grid, mean_h, label=f'Expectativa {h_name}', color='#f59e0b', linewidth=2.5)
         ax.plot(t_grid, mean_a, label=f'Expectativa {a_name}', color='#3b82f6', linewidth=2.5)
         
         ax.axvspan(22, 24, color='#3b82f6', alpha=0.15)
-        ax.axvline(22, color='gray', linestyle='--', linewidth=0.8, alpha=0.7)
+        ax.axvline(22, color=(1, 1, 1, 0.3), linestyle='--', linewidth=0.8, alpha=0.7)
         
         max_val = max(max(mean_h), max(mean_a)) if len(mean_h) > 0 else 1.0
-        ax.text(23, max_val * 0.1, 'Pausa de\nHidratación', ha='center', fontsize=7, color='gray', fontweight='bold')
+        ax.text(23, max_val * 0.1, 'Pausa de\nHidratación', ha='center', fontsize=7, color='#cbd5e1', fontweight='bold')
         
         ax.axvspan(67, 69, color='#3b82f6', alpha=0.15)
-        ax.axvline(67, color='gray', linestyle='--', linewidth=0.8, alpha=0.7)
-        ax.text(68, max_val * 0.1, 'Pausa de\nHidratación', ha='center', fontsize=7, color='gray', fontweight='bold')
+        ax.axvline(67, color=(1, 1, 1, 0.3), linestyle='--', linewidth=0.8, alpha=0.7)
+        ax.text(68, max_val * 0.1, 'Pausa de\nHidratación', ha='center', fontsize=7, color='#cbd5e1', fontweight='bold')
         
         ax.annotate('Efecto DT (Ajuste)', xy=(25, mean_h[24]), xytext=(30, mean_h[24] + 0.15),
-                    arrowprops=dict(facecolor='black', arrowstyle="->", lw=0.8), fontsize=7, color='gray')
+                    arrowprops=dict(facecolor='white', arrowstyle="->", lw=0.8), fontsize=7, color='#cbd5e1')
         
         if is_knockout:
-            ax.axvline(90, color='red', linestyle=':', linewidth=1.2)
-            ax.text(90.5, max_val * 0.85, 'Inicio Prórroga\n(Si hay empate)', color='red', fontsize=7, fontweight='bold')
-            ax.axvline(120, color='darkred', linestyle='--', linewidth=1.2)
-            ax.text(120.5, max_val * 0.5, 'Tanda de\nPenales', color='darkred', fontsize=7, fontweight='bold')
+            ax.axvline(90, color='#fca5a5', linestyle=':', linewidth=1.2)
+            ax.text(90.5, max_val * 0.85, 'Inicio Prórroga\n(Si hay empate)', color='#fca5a5', fontsize=7, fontweight='bold')
+            ax.axvline(120, color='#f87171', linestyle='--', linewidth=1.2)
+            ax.text(120.5, max_val * 0.5, 'Tanda de\nPenales', color='#f87171', fontsize=7, fontweight='bold')
             
             # Annotate shootout probability
             w_h = 1.0 / (1.0 + 10 ** ((elo_a - elo_h) / 400.0))
-            ax.text(105, max_val * 0.2, f"Prob. PK: {w_h*100:.1f}% vs {(1-w_h)*100:.1f}%", fontsize=7.5, color='darkred', bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8, edgecolor='darkred'))
+            ax.text(105, max_val * 0.2, f"Prob. PK: {w_h*100:.1f}% vs {(1-w_h)*100:.1f}%", fontsize=7.5, color='#fca5a5', bbox=dict(boxstyle='round,pad=0.2', facecolor='#1e293b', alpha=0.8, edgecolor='darkred'))
         
-        ax.set_title('Evolución Temporal del Partido (Modelo Weibull)', fontweight='bold', fontsize=11)
-        ax.set_xlabel('Minuto del Partido', fontweight='bold', fontsize=9)
-        ax.set_ylabel('Expectativa de Goles Acumulados', fontweight='bold', fontsize=9)
+        ax.set_title('Evolución Temporal del Partido (Modelo Weibull)', fontweight='bold', fontsize=11, color='white')
+        ax.set_xlabel('Minuto del Partido', fontweight='bold', fontsize=9, color='white')
+        ax.set_ylabel('Expectativa de Goles Acumulados', fontweight='bold', fontsize=9, color='white')
         ax.set_xlim(1, max_min)
         ax.set_ylim(0, max_val * 1.25)
-        ax.legend(loc='upper left', fontsize=8)
+        leg = ax.legend(loc='upper left', fontsize=8)
+        leg.get_frame().set_facecolor('#1e293b')
+        leg.get_frame().set_edgecolor((1, 1, 1, 0.15))
+        for text in leg.get_texts():
+            text.set_color('white')
         sns.despine()
         plt.tight_layout()
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
-        plt.savefig(out_path, dpi=120, bbox_inches='tight')
+        plt.savefig(out_path, dpi=300, transparent=True)
         plt.close()
     
     # Calcular frecuencias de marcadores al medio tiempo (minuto 45, índice 44)
@@ -1446,7 +1524,7 @@ if __name__ == '__main__':
         {'date': '2026-06-30', 'home_team': 'Ivory Coast', 'away_team': 'Norway', 'home_score': 1, 'away_score': 2, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-06-30', 'home_team': 'France', 'away_team': 'Sweden', 'home_score': 3, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-06-30', 'home_team': 'Mexico', 'away_team': 'Ecuador', 'home_score': 2, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
-        {'date': '2026-07-01', 'home_team': 'USA', 'away_team': 'Bosnia', 'home_score': 2, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-01', 'home_team': 'United States', 'away_team': 'Bosnia and Herzegovina', 'home_score': 2, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-07-01', 'home_team': 'Belgium', 'away_team': 'Senegal', 'home_score': 3, 'away_score': 2, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-07-01', 'home_team': 'England', 'away_team': 'DR Congo', 'home_score': 2, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-07-02', 'home_team': 'Portugal', 'away_team': 'Croatia', 'home_score': 2, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
@@ -1460,7 +1538,7 @@ if __name__ == '__main__':
         {'date': '2026-07-05', 'home_team': 'Brazil', 'away_team': 'Norway', 'home_score': 1, 'away_score': 2, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-07-05', 'home_team': 'Mexico', 'away_team': 'England', 'home_score': 2, 'away_score': 3, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-07-06', 'home_team': 'Portugal', 'away_team': 'Spain', 'home_score': 0, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
-        {'date': '2026-07-06', 'home_team': 'USA', 'away_team': 'Belgium', 'home_score': 1, 'away_score': 4, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-06', 'home_team': 'United States', 'away_team': 'Belgium', 'home_score': 1, 'away_score': 4, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-07-07', 'home_team': 'Argentina', 'away_team': 'Egypt', 'home_score': 3, 'away_score': 2, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-07-07', 'home_team': 'Switzerland', 'away_team': 'Colombia', 'home_score': 0, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-07-09', 'home_team': 'France', 'away_team': 'Morocco', 'home_score': 2, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
@@ -1512,7 +1590,9 @@ if __name__ == '__main__':
     dc_nb_final = fit_dixon_coles_nb(df_all[(df_all.date >= DESDE) & (df_all.date < MATCH_DATE)], MATCH_DATE)
     
     print("[INFO] Muestreando MCMC Bayesiano global (PyMC)... Esto puede tardar ~2-4 min...")
-    mc_final = fit_mcmc(df_all[(df_all.date >= DESDE_BAYES) & (df_all.date < MATCH_DATE)], final_elos, draws=MCMC_DRAWS, tune=MCMC_TUNE)
+    # Evitar fuga de datos en prioris de MCMC usando ratings ELO al corte de MATCH_DATE
+    elo_at_cutoff = {t: get_elo_at_date(t, MATCH_DATE, elo_by_team, final_elos) for t in final_elos}
+    mc_final = fit_mcmc(df_all[(df_all.date >= DESDE_BAYES) & (df_all.date < MATCH_DATE)], elo_at_cutoff, draws=MCMC_DRAWS, tune=MCMC_TUNE)
     
     print("[INFO] Entrenando regresores XGBoost globales...")
     X_f, yh_f, ya_f, th_f, ta_f = build_dataset(dc_final, MATCH_DATE, df_all, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis)
@@ -1545,8 +1625,8 @@ if __name__ == '__main__':
             df_sim = pd.read_csv(csv_sim_path)
             TEAM_TO_ID_ABBR = {
                 'Mexico': 'mex', 'South Africa': 'rsa', 'South Korea': 'kor', 'Czechia': 'cze',
-                'Canada': 'can', 'Bosnia': 'bih', 'Qatar': 'qat', 'Switzerland': 'sui',
-                'Brazil': 'bra', 'Morocco': 'mar', 'Haiti': 'hai', 'Scotland': 'sco', 'USA': 'usa',
+                'Canada': 'can', 'Bosnia': 'bih', 'Bosnia and Herzegovina': 'bih', 'Qatar': 'qat', 'Switzerland': 'sui',
+                'Brazil': 'bra', 'Morocco': 'mar', 'Haiti': 'hai', 'Scotland': 'sco', 'USA': 'usa', 'United States': 'usa',
                 'Paraguay': 'par', 'Australia': 'aus', 'Turkiye': 'tur', 'Germany': 'ger', 'Curaçao': 'cur',
                 'Ivory Coast': 'civ', 'Ecuador': 'ecu', 'Netherlands': 'ned', 'Japan': 'jpn', 'Sweden': 'swe', 'Tunisia': 'tun',
                 'Belgium': 'bel', 'Egypt': 'egy', 'Iran': 'irn', 'New Zealand': 'nzl', 'Spain': 'esp', 'Cape Verde': 'cpv',
@@ -1581,11 +1661,11 @@ if __name__ == '__main__':
     
     real_played_pairs = {
         ('South Africa', 'Canada'), ('Brazil', 'Japan'), ('Germany', 'Paraguay'), ('Netherlands', 'Morocco'),
-        ('Ivory Coast', 'Norway'), ('France', 'Sweden'), ('Mexico', 'Ecuador'), ('USA', 'Bosnia'),
+        ('Ivory Coast', 'Norway'), ('France', 'Sweden'), ('Mexico', 'Ecuador'), ('United States', 'Bosnia and Herzegovina'),
         ('Belgium', 'Senegal'), ('England', 'DR Congo'), ('Portugal', 'Croatia'), ('Spain', 'Austria'),
         ('Switzerland', 'Algeria'), ('Australia', 'Egypt'), ('Argentina', 'Cape Verde'), ('Colombia', 'Ghana'),
         ('Paraguay', 'France'), ('Canada', 'Morocco'), ('Brazil', 'Norway'), ('Mexico', 'England'),
-        ('Portugal', 'Spain'), ('USA', 'Belgium'), ('Argentina', 'Egypt'), ('Switzerland', 'Colombia'),
+        ('Portugal', 'Spain'), ('United States', 'Belgium'), ('Argentina', 'Egypt'), ('Switzerland', 'Colombia'),
         ('France', 'Morocco')
     }
 
@@ -1698,22 +1778,27 @@ if __name__ == '__main__':
     
     # Añadimos tol=1e-6 para evitar que SLSQP se rinda rápido
     res_opt = minimize(eval_w, w0, method='SLSQP', bounds=bounds, constraints=cons, tol=1e-6)
-    w_opt = [0.15, 0.50, 0.00, 0.15, 0.00, 0.20, 0.00]
+    w_opt_1x2 = [0.00, 0.55, 0.00, 0.20, 0.00, 0.25, 0.00]
+    w_opt_score = [0.20, 0.45, 0.00, 0.15, 0.00, 0.20, 0.00]
     
-    print("\n[OPTIMIZACIÓN] Ponderación Matemática Óptima por Mínimo RPS:")
+    print("\n[OPTIMIZACIÓN] Ponderación de Ensemble con Separación de Tareas:")
+    print("  --> Para Resultados 1X2 (Ganador/Empate):")
     names_opt = ['Dixon-Coles Poisson', 'Dixon-Coles NB', 'MCMC Bayesiano', 'XGBoost', 'Red Neuronal (MLP)', 'CatBoost', 'MFA Montecarlo']
     for i, name_o in enumerate(names_opt):
-        print(f"  {name_o}: {w_opt[i]*100:.2f}%")
+        print(f"        {name_o}: {w_opt_1x2[i]*100:.1f}%")
+    print("  --> Para Matriz de Marcadores Exactos:")
+    for i, name_o in enumerate(names_opt):
+        print(f"        {name_o}: {w_opt_score[i]*100:.1f}%")
         
-    # Calcular métricas con la ponderación óptima
+    # Calcular métricas con la ponderación óptima para 1X2
     opt_hits = 0
     opt_rps = 0.0
     for M_dc_t, M_dcnb_t, M_mc_t, M_xg_t, M_ml_t, M_cb_t, M_mfa_t, o_t in opt_data:
-        M_ens_t = (M_dc_t * w_opt[0] + M_dcnb_t * w_opt[1] + M_mc_t * w_opt[2] + M_xg_t * w_opt[3] + M_ml_t * w_opt[4] + M_cb_t * w_opt[5] + M_mfa_t * w_opt[6])
+        M_ens_t = (M_dc_t * w_opt_1x2[0] + M_dcnb_t * w_opt_1x2[1] + M_mc_t * w_opt_1x2[2] + M_xg_t * w_opt_1x2[3] + M_ml_t * w_opt_1x2[4] + M_cb_t * w_opt_1x2[5] + M_mfa_t * w_opt_1x2[6])
         p_t = matrix_to_1x2(M_ens_t)
         if np.argmax(p_t) == o_t:
             opt_hits += 1
-        opt_rps += rps_opt_1x2(p_t, o_t)
+        opt_rps += rps_1x2(p_t, o_t)
     opt_acc = (opt_hits / n_test) * 100 if n_test > 0 else 0
     opt_rps_mean = opt_rps / n_test if n_test > 0 else 0
     
@@ -1738,6 +1823,16 @@ if __name__ == '__main__':
         
     # Generar la gráfica global de Accuracy
     fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
+    fig.patch.set_facecolor('none')
+    for ax in axes:
+        ax.patch.set_facecolor('none')
+        ax.spines['bottom'].set_color((1, 1, 1, 0.2))
+        ax.spines['left'].set_color((1, 1, 1, 0.2))
+        ax.tick_params(colors='white')
+        ax.xaxis.label.set_color('white')
+        ax.yaxis.label.set_color('white')
+        ax.title.set_color('white')
+
     names = [s[0] for s in summary_metrics]
     accs = [s[1] for s in summary_metrics]
     rpss = [s[2] for s in summary_metrics]
@@ -1745,18 +1840,18 @@ if __name__ == '__main__':
     
     axes[0].bar(names, accs, color=cols, width=0.52, edgecolor='white', linewidth=1.5)
     for i, v in enumerate(accs):
-        axes[0].text(i, v + 0.2, f'{v:.1f}%', ha='center', fontweight='bold', fontsize=9)
-    axes[0].set_title('Accuracy 1X2 (mayor = mejor)', fontweight='bold')
-    axes[0].set_ylabel('%')
+        axes[0].text(i, v + 0.2, f'{v:.1f}%', ha='center', fontweight='bold', fontsize=9, color='white')
+    axes[0].set_title('Accuracy 1X2 (mayor = mejor)', fontweight='bold', color='white')
+    axes[0].set_ylabel('%', color='white')
     axes[0].set_ylim(min(accs) - 5, max(accs) + 5)
     axes[0].spines[['top', 'right']].set_visible(False)
     axes[0].tick_params(axis='x', rotation=22, labelsize=9)
     
     axes[1].bar(names, rpss, color=cols, width=0.52, edgecolor='white', linewidth=1.5)
     for i, v in enumerate(rpss):
-        axes[1].text(i, v + 0.0004, f'{v:.4f}', ha='center', fontweight='bold', fontsize=9)
-    axes[1].set_title('RPS (menor = mejor)', fontweight='bold')
-    axes[1].set_ylabel('RPS')
+        axes[1].text(i, v + 0.0004, f'{v:.4f}', ha='center', fontweight='bold', fontsize=9, color='white')
+    axes[1].set_title('RPS (menor = mejor)', fontweight='bold', color='white')
+    axes[1].set_ylabel('RPS', color='white')
     axes[1].set_ylim(min(rpss) - 0.005, max(rpss) + 0.005)
     axes[1].spines[['top', 'right']].set_visible(False)
     axes[1].tick_params(axis='x', rotation=22, labelsize=9)
@@ -1764,7 +1859,7 @@ if __name__ == '__main__':
     
     temp_acc_path = os.path.join(script_dir, 'public', 'graphs', 'accuracy_temp.png')
     os.makedirs(os.path.dirname(temp_acc_path), exist_ok=True)
-    plt.savefig(temp_acc_path, dpi=130, bbox_inches='tight')
+    plt.savefig(temp_acc_path, dpi=300, transparent=True)
     plt.close()
     
     # 6. Bucle de predicción para los 32 partidos del Mundial
@@ -1793,6 +1888,8 @@ if __name__ == '__main__':
         is_knockout = 'jornada' not in day.lower()
         theta_param = THETA_KNOCKOUT if is_knockout else THETA_GROUPS
         
+        match_date = pd.to_datetime(match['date'])
+        
         # Sin Poda Computacional: Generar todas las matrices siempre para que el frontend (React) 
         # tenga las imágenes de los modelos individuales para mostrar en la pestaña "Detalle de Modelos",
         # sin importar si el optimizador les dio un peso de 0%.
@@ -1800,28 +1897,34 @@ if __name__ == '__main__':
         M_dcnb = dc_nb_matrix(dc_nb_final, h_eng, a_eng, host)
         M_mc = mcmc_matrix_mean(mc_final, h_eng, a_eng, host, dc_final)
         
-        M_xgb, lh_xgb, la_xgb = xgb_matrix(reg_home, reg_away, dc_final, h_eng, a_eng, host, MATCH_DATE,
+        M_xgb, lh_xgb, la_xgb = xgb_matrix(reg_home, reg_away, dc_final, h_eng, a_eng, host, match_date,
                                           form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, v, theta=theta_param)
                                           
-        M_mlp, lh_mlp, la_mlp = mlp_matrix(scaler_f, mlp_home, mlp_away, dc_final, h_eng, a_eng, host, MATCH_DATE,
+        M_mlp, lh_mlp, la_mlp = mlp_matrix(scaler_f, mlp_home, mlp_away, dc_final, h_eng, a_eng, host, match_date,
                                           form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, v, theta=theta_param)
                                           
-        M_cb, lh_cb, la_cb = catboost_matrix(cb_home, cb_away, dc_final, h_eng, a_eng, host, MATCH_DATE,
+        M_cb, lh_cb, la_cb = catboost_matrix(cb_home, cb_away, dc_final, h_eng, a_eng, host, match_date,
                                           form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, v, theta=theta_param)
         
         # Extraer Elo y Forma para MFA Montecarlo
-        elo_h = get_elo_at_date(h_eng, MATCH_DATE, elo_by_team, final_elos)
-        elo_a = get_elo_at_date(a_eng, MATCH_DATE, elo_by_team, final_elos)
-        fh = get_form_at_date(h_eng, MATCH_DATE, form_by_team)
-        fa = get_form_at_date(a_eng, MATCH_DATE, form_by_team)
+        elo_h = get_elo_at_date(h_eng, match_date, elo_by_team, final_elos)
+        elo_a = get_elo_at_date(a_eng, match_date, elo_by_team, final_elos)
+        fh = get_form_at_date(h_eng, match_date, form_by_team)
+        fa = get_form_at_date(a_eng, match_date, form_by_team)
         form_h_val = fh[0] if fh else 0.5
         form_a_val = fa[0] if fa else 0.5
         
         M_mfa, lh_mfa, la_mfa = montecarlo_mfa_matrix(h_eng, a_eng, elo_h, elo_a, form_h_val, form_a_val, host)
         
-        # Ensemble Optimizado con pesos SLSQP dinámicos
-        w_opt_precision = [0.15, 0.50, 0.00, 0.15, 0.00, 0.20, 0.00]
-        M_ens = (M_dc * w_opt_precision[0] + M_dcnb * w_opt_precision[1] + M_mc * w_opt_precision[2] + M_xgb * w_opt_precision[3] + M_mlp * w_opt_precision[4] + M_cb * w_opt_precision[5] + M_mfa * w_opt_precision[6])
+        # Ensemble Optimizado con pesos separados
+        w_opt_1x2 = [0.00, 0.55, 0.00, 0.20, 0.00, 0.25, 0.00]
+        w_opt_score = [0.20, 0.45, 0.00, 0.15, 0.00, 0.20, 0.00]
+        
+        M_ens_1x2 = (M_dc * w_opt_1x2[0] + M_dcnb * w_opt_1x2[1] + M_mc * w_opt_1x2[2] + M_xgb * w_opt_1x2[3] + M_mlp * w_opt_1x2[4] + M_cb * w_opt_1x2[5] + M_mfa * w_opt_1x2[6])
+        M_ens = (M_dc * w_opt_score[0] + M_dcnb * w_opt_score[1] + M_mc * w_opt_score[2] + M_xgb * w_opt_score[3] + M_mlp * w_opt_score[4] + M_cb * w_opt_score[5] + M_mfa * w_opt_score[6])
+        
+        M_ens_1x2 = M_ens_1x2 / M_ens_1x2.sum()
+        M_ens = M_ens / M_ens.sum()
         
         # Dataframes ordenados para top 10
         top_dc = build_top_df(M_dc, h, a)
@@ -1834,7 +1937,7 @@ if __name__ == '__main__':
         top_ens = build_top_df(M_ens, h, a)
 
         # Calcular probabilidades 1X2 para JSON
-        p_1x2 = matrix_to_1x2(M_ens)
+        p_1x2 = matrix_to_1x2(M_ens_1x2)
         
         # Extraer Top 3 marcadores exactos del Ensemble
         top3_list = []

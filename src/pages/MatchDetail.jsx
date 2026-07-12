@@ -291,12 +291,12 @@ function Top3ScoresBanner({ prediction, home, away }) {
           const mc = idx === 0 ? '#f59e0b' : idx === 1 ? '#94a3b8' : '#b45309';
           const pl = idx === 0 ? '1er' : idx === 1 ? '2do' : '3er';
           return (
-            <div key={idx} style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid ${mc}40`, borderRadius: '8px', padding: '0.75rem', textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
+            <div key={idx} style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid ${mc}40`, borderRadius: '8px', padding: '1rem 1rem 1.35rem 1rem', textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
               <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '3px', background: mc }} />
               <div style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#94a3b8', marginBottom: '0.3rem', textTransform: 'uppercase' }}>{pl}</div>
               <div style={{ fontSize: '1.7rem', fontWeight: 'bold', fontFamily: 'monospace', color: '#fff', margin: '0.2rem 0' }}>{item.score}</div>
-              <div style={{ fontSize: '0.7rem', padding: '0.2rem 0.4rem', borderRadius: '4px', background: bg, color: tc, fontWeight: 'bold', margin: '0.3rem 0' }}>{bt}</div>
-              <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#10b981' }}>{item.prob.toFixed(1)}%</div>
+              <div style={{ fontSize: '0.7rem', padding: '0.2rem 0.4rem', borderRadius: '4px', background: bg, color: tc, fontWeight: 'bold', margin: '0.3rem 0 0.6rem 0' }}>{bt}</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#10b981', marginBottom: '0.4rem' }}>{item.prob.toFixed(1)}%</div>
               <StatBar val={item.prob} max={18} color="linear-gradient(90deg,#10b981,#059669)" />
             </div>
           );
@@ -452,8 +452,8 @@ function KnockoutAdvancePanel({ prediction, match, home, away }) {
         <div style={{ display: 'flex', justifyContent: 'space-between' }}><span><strong>Penales:</strong></span><span>{home}: <span style={{ color: '#f59e0b', fontWeight: 'bold' }}>{(pD * probPkH * 100).toFixed(1)}%</span> | {away}: <span style={{ color: '#3b82f6', fontWeight: 'bold' }}>{(pD * probPkA * 100).toFixed(1)}%</span></span></div>
       </div>
       {Math.abs(homeAdv - awayAdv) <= 10 && (
-        <div style={{ marginTop: '1.25rem', padding: '0.85rem', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', color: '#fca5a5', fontSize: '0.82rem' }}>
-          Alerta Coin-Toss: Diferencia menor o igual 10%. Alta prob. de resolverse en penales.
+        <div style={{ marginTop: '1.25rem', padding: '0.85rem 1.1rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '8px', color: '#f87171', fontSize: '0.82rem', lineHeight: 1.4 }}>
+          <strong>⚠️ Alerta Coin-Toss:</strong> Diferencia menor o igual a 10%. Alta probabilidad de prórroga o definición en penales.
         </div>
       )}
     </div>
@@ -706,7 +706,7 @@ function PlayerProjectionsPanel({ home, away, playerStats, prediction }) {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ color: '#fff' }}>Remates: <strong>{p.projectedShots.toFixed(1)}</strong></div>
-                  <div style={{ color: '#f59e0b', fontSize: '0.76rem', fontWeight: '600' }}>Prob. Gol: {p.goalProb.toFixed(0)}%</div>
+                  <div style={{ color: '#fbbf24', fontSize: '0.8rem', fontWeight: 'bold' }}>Prob. Gol: {p.goalProb.toFixed(0)}%</div>
                 </div>
               </div>
             ))}
@@ -727,7 +727,7 @@ function PlayerProjectionsPanel({ home, away, playerStats, prediction }) {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ color: '#fff' }}>Remates: <strong>{p.projectedShots.toFixed(1)}</strong></div>
-                  <div style={{ color: '#3b82f6', fontSize: '0.76rem', fontWeight: '600' }}>Prob. Gol: {p.goalProb.toFixed(0)}%</div>
+                  <div style={{ color: '#60a5fa', fontSize: '0.8rem', fontWeight: 'bold' }}>Prob. Gol: {p.goalProb.toFixed(0)}%</div>
                 </div>
               </div>
             ))}
@@ -857,10 +857,25 @@ function ScenariosPanel({ prediction, home, away }) {
             </div>
           ))}
           {prediction.weibull_analysis?.avg_first_goal_minute && (
-            <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '12px', padding: '1.5rem', border: '1px solid rgba(255,255,255,0.07)', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.3rem' }}>Minuto esperado</div>
-              <div style={{ fontSize: '2.2rem', fontWeight: '800', color: '#f59e0b', fontFamily: 'monospace' }}>{prediction.weibull_analysis.avg_first_goal_minute}'</div>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>Weibull k=1.15</div>
+            <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '12px', padding: '1.5rem', border: '1px solid rgba(255,255,255,0.07)', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.3rem' }}>Minuto esperado</div>
+                <div style={{ fontSize: '2.2rem', fontWeight: '800', color: '#f59e0b', fontFamily: 'monospace' }}>{prediction.weibull_analysis.avg_first_goal_minute}'</div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'center', margin: '0.5rem 0' }}>
+                <svg width="120" height="24" viewBox="0 0 120 24">
+                  <path 
+                    d="M 10 22 C 30 22, 45 22, 50 18 C 55 14, 58 4, 60 4 C 62 4, 65 14, 70 18 C 75 22, 90 22, 110 22" 
+                    fill="none" 
+                    stroke="rgba(245, 158, 11, 0.45)" 
+                    strokeWidth="2" 
+                    strokeLinecap="round"
+                  />
+                  <circle cx="60" cy="4" r="3" fill="#f59e0b" />
+                  <line x1="60" y1="4" x2="60" y2="22" stroke="rgba(245, 158, 11, 0.3)" strokeDasharray="2,2" />
+                </svg>
+              </div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Weibull k=1.15</div>
             </div>
           )}
         </div>
@@ -1217,33 +1232,28 @@ export default function MatchDetail() {
       y += 10;
       
       // Main KPI Card
-      card(y - 2, 48); 
+      card(y - 2, 60); 
       doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...tc);
       
-      // Left Column
-      doc.text(`Índice de Confianza: ${conf}/99`, 18, y + 4);
-      doc.text(`Volatilidad del Ensemble: ${(ent * 100).toFixed(0)}% (${vLbl})`, 18, y + 10);
-      doc.text(`Prob. Ambos Anotan (BTTS): ${(btts * 100).toFixed(1)}%`, 18, y + 16);
-      doc.text(`Prob. Sin Goles P(0-0): ${(cleanSheetProb(lH, lA) * 100).toFixed(1)}%`, 18, y + 22);
-      
-      // Right Column
-      doc.text(`ELO ${match.home}: ${Math.round(eloH)}`, 110, y + 4);
-      doc.text(`ELO ${match.away}: ${Math.round(eloA)}`, 110, y + 10);
-      doc.text(`Diferencia de ELO: ${Math.abs(Math.round(eloH - eloA))} pts`, 110, y + 16);
-      doc.text(`Dixon-Coles base xG: ${lH.toFixed(2)} vs ${lA.toFixed(2)}`, 110, y + 22);
+      doc.text(`• Índice de Confianza: ${conf}/99`, 18, y + 4);
+      doc.text(`• Volatilidad del Ensemble: ${(ent * 100).toFixed(0)}% (${vLbl})`, 18, y + 10);
+      doc.text(`• Prob. Ambos Anotan (BTTS): ${(btts * 100).toFixed(1)}%`, 18, y + 16);
+      doc.text(`• Prob. Sin Goles P(0-0): ${(cleanSheetProb(lH, lA) * 100).toFixed(1)}%`, 18, y + 22);
+      doc.text(`• Clasificación ELO: ${match.home} (${Math.round(eloH)}) vs ${match.away} (${Math.round(eloA)})`, 18, y + 28);
+      doc.text(`• Diferencia de ELO: ${Math.abs(Math.round(eloH - eloA))} pts | Dixon-Coles xG base: ${lH.toFixed(2)} vs ${lA.toFixed(2)}`, 18, y + 34);
       
       // Divider
-      doc.setDrawColor(200, 200, 200, 0.4); doc.line(18, y + 26, dw - 18, y + 26);
+      doc.setDrawColor(200, 200, 200, 0.4); doc.line(18, y + 38, dw - 18, y + 38);
       
       // 1X2 probabilities highlighted
       doc.setFont('helvetica', 'bold'); doc.setTextColor(...ac);
-      doc.text(`PROBABILIDADES EN REGLAMENTO: ${match.home} ${(pH * 100).toFixed(1)}% | Empate ${(pD * 100).toFixed(1)}% | ${match.away} ${(pA * 100).toFixed(1)}%`, 18, y + 32);
+      doc.text(`PROBABILIDADES EN REGLAMENTO: ${match.home} ${(pH * 100).toFixed(1)}% | Empate ${(pD * 100).toFixed(1)}% | ${match.away} ${(pA * 100).toFixed(1)}%`, 18, y + 44);
       
       doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(100, 100, 100);
-      doc.text(`Ajuste Tactico Aplicado en Lambda/Mu: ${match.home} (Att: ${homeMods.att.toFixed(3)} / Dfn: ${homeMods.dfn.toFixed(3)}) | ${match.away} (Att: ${awayMods.att.toFixed(3)} / Dfn: ${awayMods.dfn.toFixed(3)})`, 18, y + 38);
-      doc.text(`*Formula: (xG Acumulado + 1.0) / (Goles Acumulados + 1.0) - Laplace Smooth con peso w=0.35`, 18, y + 43);
+      doc.text(`Ajuste Tactico Aplicado en Lambda/Mu: ${match.home} (Att: ${homeMods.att.toFixed(3)} / Dfn: ${homeMods.dfn.toFixed(3)}) | ${match.away} (Att: ${awayMods.att.toFixed(3)} / Dfn: ${awayMods.dfn.toFixed(3)})`, 18, y + 50);
+      doc.text(`*Formula: (xG Acumulado + 1.0) / (Goles Acumulados + 1.0) - Laplace Smooth con peso w=0.30`, 18, y + 55);
 
-      y += 56;
+      y += 68;
       
       // SECTION 2: MÉTRICAS Y RENDIMIENTO TÁCTICO ACUMULADO (OPTA)
       bar(y); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...pc);
@@ -1257,37 +1267,51 @@ export default function MatchDetail() {
         const cHome = homeAvg.avgCorners;
         const cAway = awayAvg.avgCorners;
         
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...tc);
         doc.text(`Metrica Tactica (Por Partido)`, 18, y + 4);
-        doc.setFont('helvetica', 'bold');
         doc.text(match.home, 90, y + 4);
         doc.text(match.away, 140, y + 4);
         doc.text("Proyeccion / Total", 175, y + 4);
         
         doc.setFont('helvetica', 'normal');
-        doc.line(18, y + 6, dw - 18, y + 6);
+        doc.setDrawColor(...bl); doc.line(18, y + 6, dw - 18, y + 6);
         
-        doc.text(`1. Corners p/match:`, 18, y + 11);
-        doc.text(`${cHome.toFixed(1)} corners`, 90, y + 11);
-        doc.text(`${cAway.toFixed(1)} corners`, 140, y + 11);
-        doc.setFont('helvetica', 'bold'); doc.text(`${(cHome + cAway).toFixed(1)} corners`, 175, y + 11); doc.setFont('helvetica', 'normal');
+        // Row 1 (Zebra Background)
+        doc.setFillColor(245, 247, 250); doc.rect(16, y + 7, dw - 32, 6.5, 'F');
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...tc);
+        doc.text(`1. Corners p/match:`, 18, y + 11.5);
+        doc.setFont('courier', 'bold');
+        doc.text(cHome.toFixed(1).padStart(5), 90, y + 11.5);
+        doc.text(cAway.toFixed(1).padStart(5), 140, y + 11.5);
+        doc.text((cHome + cAway).toFixed(1).padStart(5), 175, y + 11.5);
         
-        doc.text(`2. Pases Completos:`, 18, y + 17);
-        doc.text(`${Math.round(homeAvg.avgPasses)} pases`, 90, y + 17);
-        doc.text(`${Math.round(awayAvg.avgPasses)} pases`, 140, y + 17);
-        doc.text(`${Math.round(homeAvg.avgPasses + awayAvg.avgPasses)} pases`, 175, y + 17);
+        // Row 2 (White)
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...tc);
+        doc.text(`2. Pases Completos:`, 18, y + 17.5);
+        doc.setFont('courier', 'normal');
+        doc.text(Math.round(homeAvg.avgPasses).toString().padStart(5), 90, y + 17.5);
+        doc.text(Math.round(awayAvg.avgPasses).toString().padStart(5), 140, y + 17.5);
+        doc.text(Math.round(homeAvg.avgPasses + awayAvg.avgPasses).toString().padStart(5), 175, y + 17.5);
         
-        doc.text(`3. Accion Creadora (SCA):`, 18, y + 23);
-        doc.text(`${homeAvg.avgSCA.toFixed(1)} SCA`, 90, y + 23);
-        doc.text(`${awayAvg.avgSCA.toFixed(1)} SCA`, 140, y + 23);
-        doc.text(`${(homeAvg.avgSCA + awayAvg.avgSCA).toFixed(1)} SCA`, 175, y + 23);
+        // Row 3 (Zebra Background)
+        doc.setFillColor(245, 247, 250); doc.rect(16, y + 20, dw - 32, 6.5, 'F');
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...tc);
+        doc.text(`3. Accion Creadora (SCA):`, 18, y + 24.5);
+        doc.setFont('courier', 'normal');
+        doc.text(homeAvg.avgSCA.toFixed(1).padStart(5), 90, y + 24.5);
+        doc.text(awayAvg.avgSCA.toFixed(1).padStart(5), 140, y + 24.5);
+        doc.text((homeAvg.avgSCA + awayAvg.avgSCA).toFixed(1).padStart(5), 175, y + 24.5);
         
-        doc.text(`4. Duelos Ganados / Tackles:`, 18, y + 29);
-        doc.text(`${homeAvg.avgDuels.toFixed(1)} / ${homeAvg.avgTackles.toFixed(1)}`, 90, y + 29);
-        doc.text(`${awayAvg.avgDuels.toFixed(1)} / ${awayAvg.avgTackles.toFixed(1)}`, 140, y + 29);
-        doc.text("-", 175, y + 29);
+        // Row 4 (White)
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...tc);
+        doc.text(`4. Duelos / Tackles:`, 18, y + 30.5);
+        doc.setFont('courier', 'normal');
+        doc.text(`${homeAvg.avgDuels.toFixed(1)} / ${homeAvg.avgTackles.toFixed(1)}`, 90, y + 30.5);
+        doc.text(`${awayAvg.avgDuels.toFixed(1)} / ${awayAvg.avgTackles.toFixed(1)}`, 140, y + 30.5);
+        doc.text("-".padStart(5), 175, y + 30.5);
         
         doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(110, 110, 110);
-        doc.text(`Muestra calculada dinamicamente a partir de los datos en player_stats.json para la Copa del Mundo.`, 18, y + 35);
+        doc.text(`Muestra calculada dinamicamente a partir de los datos en player_stats.json para la Copa del Mundo.`, 18, y + 37);
         y += 48;
       } else {
         card(y - 2, 14); doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(100, 100, 100);
@@ -1394,147 +1418,216 @@ export default function MatchDetail() {
         }
       });
       
+      doc.setDrawColor(200, 210, 220); doc.line(15, dh - 18, dw - 15, dh - 18);
       doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5); doc.setTextColor(150, 150, 150);
-      doc.text('Informe Generado por Antigravity ML Ensemble Engine | Datos en tiempo real', 15, dh - 10); 
-      doc.text('Página 1 de 3', dw - 30, dh - 10);
+      doc.text('Informe Generado por Antigravity ML Ensemble Engine | Datos en tiempo real', 15, dh - 12); 
+      doc.text('Página 1 de 3', dw - 30, dh - 6);
       
-      // PAGE 2: CONSENSO Y MATRICES
+      // Helper: draw a dark background behind chart images so white text is readable
+      const chartBg = (cy, ch) => { doc.setFillColor(15, 23, 42); doc.roundedRect(14, cy - 1, dw - 28, ch + 2, 2, 2, 'F'); };
+      
+      const totalPages = 4;
+      const pdfFooter = (pg) => {
+        doc.setDrawColor(200, 210, 220); doc.line(15, dh - 18, dw - 15, dh - 18);
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5); doc.setTextColor(150, 150, 150);
+        doc.text('Informe Generado por Antigravity ML Ensemble Engine | Datos en tiempo real', 15, dh - 12); 
+        doc.text(`Página ${pg} de ${totalPages}`, dw - 30, dh - 6);
+      };
+
+      // PAGE 2: CONSENSO Y MODELOS PRINCIPALES
       doc.addPage();
       doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
       doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
-      doc.text(`MATRICES DE DISTRIBUCION | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
+      doc.text(`CONSENSO Y MODELOS PRINCIPALES | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
       
       y = 23; 
       bar(y); doc.setFontSize(11); doc.setTextColor(...pc);
-      doc.text('4. CONSENSO COMPARATIVO Y MATRICES DE DISTRIBUCIÓN', 21, y);
+      doc.text('4. CONSENSO COMPARATIVO DE PROBABILIDADES 1X2', 21, y);
       doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5); 
       y += 8;
       
       if (match.graphs?.Resumen) {
         doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
-        doc.text('A) Consenso Comparativo de Probabilidades 1X2', 15, y); 
+        doc.text('A) Resumen Comparativo de los 8 Modelos', 15, y); 
         y += 4;
         const ri = await loadImageAsBase64(match.graphs.Resumen);
         if (ri) { 
-          doc.addImage(ri, 'PNG', 15, y, dw - 30, 68); 
-          doc.setDrawColor(...bl); doc.rect(15, y, dw - 30, 68, 'S'); 
-          y += 74;
+          chartBg(y, 58);
+          doc.addImage(ri, 'PNG', 16, y, dw - 32, 58); 
+          y += 63;
         }
       }
       
-      // Let's add matrices (Ensemble & Dixon Coles NB)
-      if (match.graphs?.ensemble || match.graphs?.dixoncoles) {
-        const matKey = match.graphs.ensemble ? 'ensemble' : 'dixoncoles';
-        const matLabel = match.graphs.ensemble ? 'B) Matriz de Distribución de Goles (Ensemble)' : 'B) Matriz de Distribución de Goles (Dixon-Coles)';
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
-        doc.text(matLabel, 15, y); 
-        y += 4;
-        const mi = await loadImageAsBase64(match.graphs[matKey]);
-        if (mi) {
-          doc.addImage(mi, 'PNG', 15, y, dw - 30, 68);
-          doc.setDrawColor(...bl); doc.rect(15, y, dw - 30, 68, 'S');
-          y += 74;
+      // Top 4 Model Matrices + Ensemble (2 per row, smaller)
+      const modelGraphs = [
+        { key: 'ensemble', label: 'B) Ensemble (Promedio Ponderado)' },
+        { key: 'catboost', label: 'C) CatBoost (Acc: 84.0%)' },
+        { key: 'dixoncoles', label: 'D) Dixon-Coles NB (Acc: 80.0%)' },
+        { key: 'xgboost', label: 'E) XGBoost (Acc: 80.0%)' },
+      ];
+      
+      bar(y + 4); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...pc);
+      doc.text('5. MATRICES DE DISTRIBUCIÓN POR MODELO', 21, y + 4);
+      doc.setDrawColor(...bl); doc.line(15, y + 6.5, dw - 15, y + 6.5); 
+      y += 12;
+      
+      const halfW = (dw - 34) / 2;
+      for (let mi = 0; mi < modelGraphs.length; mi += 2) {
+        const row = modelGraphs.slice(mi, mi + 2);
+        // Check if we need a new page
+        if (y + 62 > dh - 25) {
+          pdfFooter(2);
+          doc.addPage();
+          doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
+          doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+          doc.text(`MODELOS (CONT.) | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
+          y = 20;
         }
+        
+        for (let ci = 0; ci < row.length; ci++) {
+          const g = row[ci];
+          const xOff = 15 + ci * (halfW + 4);
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...tc);
+          doc.text(g.label, xOff, y);
+          if (match.graphs?.[g.key]) {
+            const img = await loadImageAsBase64(match.graphs[g.key]);
+            if (img) {
+              doc.setFillColor(15, 23, 42); doc.roundedRect(xOff - 1, y + 1, halfW + 2, 52, 2, 2, 'F');
+              doc.addImage(img, 'PNG', xOff, y + 2, halfW, 50);
+            }
+          }
+        }
+        y += 58;
       }
       
-      doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5); doc.setTextColor(150, 150, 150);
-      doc.text('Informe Generado por Antigravity ML Ensemble Engine | Datos en tiempo real', 15, dh - 10); 
-      doc.text('Página 2 de 3', dw - 30, dh - 10);
-      
-      // PAGE 3: WEIBULL Y ESCENARIOS CONDICIONALES
+      pdfFooter(2);
+
+      // PAGE 3: MFA + WEIBULL + CONDICIONALES
       doc.addPage();
       doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
       doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
-      doc.text(`CRONOLOGÍA WEIBULL Y ESCENARIOS | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
+      doc.text(`SIMULACIÓN WEIBULL Y ESCENARIOS | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
       
-      y = 23; 
-      bar(y); doc.setFontSize(11); doc.setTextColor(...pc);
-      doc.text('5. SIMULACIÓN DE TIEMPO REAL (WEIBULL) Y CONDICIONALES', 21, y);
+      y = 20;
+      
+      // MFA Montecarlo graph (remaining from page 2)
+      if (match.graphs?.mfa) {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...tc);
+        doc.text('F) MFA Montecarlo (Acc: 80.0%)', 15, y);
+        y += 2;
+        const mfaImg = await loadImageAsBase64(match.graphs.mfa);
+        if (mfaImg) {
+          chartBg(y, 52);
+          doc.addImage(mfaImg, 'PNG', 16, y + 1, dw - 32, 50);
+          y += 56;
+        }
+      }
+      
+      // SECTION: SIMULACIÓN WEIBULL
+      bar(y); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...pc);
+      doc.text('6. SIMULACIÓN DE TIEMPO REAL (WEIBULL) Y CONDICIONALES', 21, y);
       doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5); 
       y += 8;
       
-      // Condicional info card
-      card(y - 2, 28); doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...tc);
+      // Weibull info card
+      card(y - 2, 22); doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...tc);
       if (prediction.weibull_analysis) {
         const wa = prediction.weibull_analysis;
-        doc.text(`Minuto Promedio del Primer Gol: minuto ${wa.avg_first_goal_minute}'`, 18, y + 4);
-        doc.text(`Distribución de Goles: 1er Tiempo: ${wa.prob_goals_1t}% | 2do Tiempo: ${wa.prob_goals_2t}%`, 18, y + 10);
+        doc.text(`• Minuto Promedio del Primer Gol: minuto ${wa.avg_first_goal_minute}'`, 18, y + 4);
+        doc.text(`• Distribución de Goles: 1er Tiempo: ${wa.prob_goals_1t}% | 2do Tiempo: ${wa.prob_goals_2t}%`, 18, y + 10);
         if (wa.top_halftime_scores?.length > 0) {
-          doc.text(`Marcadores más probables al medio tiempo (HT): ${wa.top_halftime_scores.map(s => `${s.score}(${s.prob}%)`).join('  |  ')}`, 18, y + 16);
+          doc.text(`• HT más probables: ${wa.top_halftime_scores.map(s => `${s.score}(${s.prob}%)`).join('  |  ')}`, 18, y + 16);
         }
       }
-      doc.line(18, y + 20, dw - 18, y + 20);
-      doc.setFont('helvetica', 'bold'); doc.setTextColor(...bc);
+      y += 26;
+      
+      // Knockout classification (if applicable)
       const isKnockout = match.day === 'dieciseisavos' || match.day === 'octavos' || match.day === 'cuartos' || match.day === 'semis' || match.day === 'final';
       if (isKnockout) {
+        card(y - 2, 28); 
         const probEtH = prediction.prob_et_home ?? 0.05, probEtA = prediction.prob_et_away ?? 0.05;
         const probPkH = prediction.prob_pk_home ?? 0.25, probPkA = prediction.prob_pk_away ?? 0.25;
         const shootoutH = prediction.shootout_home ?? 0.50, shootoutA = prediction.shootout_away ?? 0.50;
         const homeAdv = (pH + pD * (probEtH + shootoutH * (1 - probEtH - probEtA))) * 100;
         const awayAdv = (pA + pD * (probEtA + shootoutA * (1 - probEtH - probEtA))) * 100;
         
-        doc.text(`PROYECCION DE CLASIFICACION (CUADRO ELIMINATORIO):`, 18, y + 25);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...bc);
+        doc.text(`PROYECCION DE CLASIFICACION (CUADRO ELIMINATORIO):`, 18, y + 3);
         doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...tc);
-        doc.text(`- Clasificar en Tiempo Regular (90m): ${match.home} ${(pH * 100).toFixed(1)}% vs ${(pA * 100).toFixed(1)}% ${match.away}`, 20, y + 30);
-        doc.text(`- Clasificar en Prorroga (ET): ${match.home} ${(pD * probEtH * 100).toFixed(1)}% vs ${(pD * probEtA * 100).toFixed(1)}% ${match.away}`, 20, y + 35);
-        doc.text(`- Clasificar en Penales (PK): ${match.home} ${(pD * (1 - probEtH - probEtA) * shootoutH * 100).toFixed(1)}% vs ${(pD * (1 - probEtH - probEtA) * shootoutA * 100).toFixed(1)}% ${match.away}`, 20, y + 40);
+        doc.text(`• Clasificar en Tiempo Regular (90m): ${match.home} ${(pH * 100).toFixed(1)}% vs ${(pA * 100).toFixed(1)}% ${match.away}`, 20, y + 9);
+        doc.text(`• Clasificar en Prórroga (ET): ${match.home} ${(pD * probEtH * 100).toFixed(1)}% vs ${(pD * probEtA * 100).toFixed(1)}% ${match.away}`, 20, y + 14);
+        doc.text(`• Clasificar en Penales (PK): ${match.home} ${(pD * (1 - probEtH - probEtA) * shootoutH * 100).toFixed(1)}% vs ${(pD * (1 - probEtH - probEtA) * shootoutA * 100).toFixed(1)}% ${match.away}`, 20, y + 19);
         
-        doc.setFont('helvetica', 'bold'); doc.setTextColor(...bc);
-        doc.text(`PROBABILIDAD FINAL DE AVANCE: ${match.home} ${homeAdv.toFixed(1)}% vs ${awayAdv.toFixed(1)}% ${match.away}`, 18, y + 46);
+        doc.setFont('helvetica', 'bold'); doc.setTextColor(...ac);
+        doc.text(`AVANCE FINAL: ${match.home} ${homeAdv.toFixed(1)}% vs ${awayAdv.toFixed(1)}% ${match.away}`, 18, y + 25);
+        y += 32;
       } else {
-        doc.text(`MERCADO DE EMPATE NO APUESTA (DNB): ${match.home} ${(pH / (pH + pA || 1) * 100).toFixed(0)}% vs ${(pA / (pH + pA || 1) * 100).toFixed(0)}% ${match.away}`, 18, y + 25);
+        doc.setFont('helvetica', 'bold'); doc.setTextColor(...bc);
+        doc.text(`DNB: ${match.home} ${(pH / (pH + pA || 1) * 100).toFixed(0)}% vs ${(pA / (pH + pA || 1) * 100).toFixed(0)}% ${match.away}`, 18, y + 3);
+        y += 10;
       }
       
-      y += 36;
-      
+      // Weibull timeline chart
       if (prediction.timeline_file) {
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
-        doc.text('C) Curva de Supervivencia e Intensidad Temporal (Weibull)', 15, y);
-        y += 4;
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...tc);
+        doc.text('G) Curva de Supervivencia e Intensidad Temporal (Weibull)', 15, y);
+        y += 3;
         const ti = await loadImageAsBase64(prediction.timeline_file);
         if (ti) {
-          doc.addImage(ti, 'PNG', 15, y, dw - 30, 68);
-          doc.setDrawColor(...bl); doc.rect(15, y, dw - 30, 68, 'S');
-          y += 74;
+          chartBg(y, 58);
+          doc.addImage(ti, 'PNG', 16, y + 1, dw - 32, 56);
+          y += 63;
         }
       }
 
-      // SECTION 6: ANALISIS DE EFICIENCIA Y ESTILO TACTICO DEL DT (OPTA)
-      y += 8;
+      pdfFooter(3);
+
+      // PAGE 4: ANALISIS DT + JUGADORES + METODOLOGÍA
+      doc.addPage();
+      doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
+      doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+      doc.text(`EFICIENCIA TÁCTICA Y GOLEADORES | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
+
+      y = 23;
+
+      // SECTION: ANALISIS DE EFICIENCIA Y ESTILO TACTICO DEL DT (OPTA)
       bar(y); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...pc);
-      doc.text('6. ANALISIS DE EFICIENCIA Y ESTILO TACTICO DEL DT', 21, y);
+      doc.text('7. ANALISIS DE EFICIENCIA Y ESTILO TACTICO DEL DT', 21, y);
       doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5); 
       y += 10;
       
-      card(y - 2, 24); doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...tc);
+      card(y - 2, 30); doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...tc);
       if (homeAvg && awayAvg) {
         const getStyleText = (mod) => {
           if (mod > 1.25) return "Poco efectivo (Crea mucho pero no concreta. Peligroso en volumen)";
-          if (mod < 0.8) return "Ultra contundente (Muy clinico de cara al arco o con alta dosis de suerte)";
+          if (mod < 0.8) return "Ultra contundente (Muy clinico de cara al arco)";
           return "Equilibrado (Fiel a la expectativa de goles generada)";
         };
         doc.setFont('helvetica', 'bold');
-        doc.text(`Estilo de Juego - ${match.home}:`, 18, y + 4);
+        doc.text(`${match.home}:`, 18, y + 5);
         doc.setFont('helvetica', 'normal');
-        doc.text(`Mult: ${homeMods.att.toFixed(3)} | ${getStyleText(homeMods.att)}`, 55, y + 4);
+        doc.text(`Multiplicador: ${homeMods.att.toFixed(3)}`, 55, y + 5);
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(100,100,100);
+        doc.text(getStyleText(homeMods.att), 18, y + 11);
         
-        doc.setFont('helvetica', 'bold');
-        doc.text(`Estilo de Juego - ${match.away}:`, 18, y + 12);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
+        doc.text(`${match.away}:`, 18, y + 19);
         doc.setFont('helvetica', 'normal');
-        doc.text(`Mult: ${awayMods.att.toFixed(3)} | ${getStyleText(awayMods.att)}`, 55, y + 12);
+        doc.text(`Multiplicador: ${awayMods.att.toFixed(3)}`, 55, y + 19);
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(100,100,100);
+        doc.text(getStyleText(awayMods.att), 18, y + 25);
       } else {
         doc.text('Medias Opta insuficientes para calcular la eficiencia tactica del DT.', 18, y + 6);
       }
-      y += 32;
+      y += 38;
 
-      // SECTION 7: PROYECCIONES INDIVIDUALES DE JUGADORES (OPTA)
-      y += 2;
+      // SECTION: PROYECCIONES INDIVIDUALES DE JUGADORES (OPTA)
       bar(y); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...pc);
-      doc.text('7. PROYECCIONES INDIVIDUALES DE GOLEADORES Y REMATES', 21, y);
+      doc.text('8. PROYECCIONES INDIVIDUALES DE GOLEADORES Y REMATES', 21, y);
       doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5); 
       y += 10;
       
-      card(y - 2, 28); doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...tc);
+      card(y - 2, 40); doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...tc);
       if (playerStats) {
         const getTopPlayers = (teamName, expectedGoals) => {
           const engTeam = SPANISH_TO_ENGLISH[teamName] || teamName;
@@ -1569,40 +1662,45 @@ export default function MatchDetail() {
             const goalProb = 1 - Math.exp(-playerExpectedGoals);
             return { name: p.name, position: p.position, projectedShots: expectedGoals ? avgShots * (expectedGoals / 1.5) + (avgShots * 0.2) : avgShots, goalProb: Math.min(0.99, Math.max(0.01, goalProb)) * 100 };
           });
-          return list.sort((a, b) => b.goalProb - a.goalProb).slice(0, 2);
+          return list.sort((a, b) => b.goalProb - a.goalProb).slice(0, 3);
         };
 
         const homeP = getTopPlayers(match.home, prediction ? prediction.exp_goles_home : 1.3);
         const awayP = getTopPlayers(match.away, prediction ? prediction.exp_goles_away : 1.1);
 
-        let colText = "";
-        if (homeP.length > 0) {
-          colText += `${match.home}: ${homeP[0].name} (${homeP[0].goalProb.toFixed(0)}% Gol, ${homeP[0].projectedShots.toFixed(1)} remates)`;
-          if (homeP[1]) colText += `, ${homeP[1].name} (${homeP[1].goalProb.toFixed(0)}% Gol, ${homeP[1].projectedShots.toFixed(1)} remates)`;
-        }
-        if (awayP.length > 0) {
-          if (colText) colText += "  |  ";
-          colText += `${match.away}: ${awayP[0].name} (${awayP[0].goalProb.toFixed(0)}% Gol, ${awayP[0].projectedShots.toFixed(1)} remates)`;
-          if (awayP[1]) colText += `, ${awayP[1].name} (${awayP[1].goalProb.toFixed(0)}% Gol, ${awayP[1].projectedShots.toFixed(1)} remates)`;
-        }
-        doc.text(colText, 18, y + 4, { maxWidth: dw - 36 });
+        // Home players table
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...ac);
+        doc.text(match.home, 18, y + 4);
+        doc.setFont('courier', 'normal'); doc.setFontSize(8); doc.setTextColor(...tc);
+        homeP.forEach((p, pi) => {
+          const py = y + 9 + pi * 5;
+          doc.text(`${(pi+1)}. ${p.name.padEnd(20)} ${p.position.padEnd(4)} Gol: ${p.goalProb.toFixed(0).padStart(3)}%  Remates: ${p.projectedShots.toFixed(1)}`, 20, py);
+        });
+        
+        const awayStartY = y + 9 + homeP.length * 5 + 3;
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...bc);
+        doc.text(match.away, 18, awayStartY);
+        doc.setFont('courier', 'normal'); doc.setFontSize(8); doc.setTextColor(...tc);
+        awayP.forEach((p, pi) => {
+          const py = awayStartY + 5 + pi * 5;
+          doc.text(`${(pi+1)}. ${p.name.padEnd(20)} ${p.position.padEnd(4)} Gol: ${p.goalProb.toFixed(0).padStart(3)}%  Remates: ${p.projectedShots.toFixed(1)}`, 20, py);
+        });
       } else {
         doc.text('Estadísticas de jugadores insuficientes para calcular las proyecciones individuales.', 18, y + 4);
       }
-      y += 36;
+      y += 48;
       
       // Methodology text box
-      doc.setFillColor(241, 245, 249); doc.roundedRect(15, y, dw - 30, 24, 2, 2, 'F');
+      doc.setFillColor(241, 245, 249); doc.roundedRect(15, y, dw - 30, 28, 2, 2, 'F');
       doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...pc);
       doc.text('NOTAS METODOLÓGICAS:', 18, y + 5);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...tc);
-      doc.text('- Distribución Weibull (k=1.15) modela la fatiga acumulada del jugador e incremento de goles por minuto.', 18, y + 10);
-      doc.text('- Simulación de Prórroga modela un decaimiento ofensivo de 30% por desgaste físico.', 18, y + 14);
-      doc.text('- Simulación de Penales modela la probabilidad Beta-Binomial según consistencia histórica del ELO en presión extrema.', 18, y + 18);
-      
-      doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5); doc.setTextColor(150, 150, 150);
-      doc.text('Informe Generado por Antigravity ML Ensemble Engine | Datos en tiempo real', 15, dh - 10); 
-      doc.text('Página 3 de 3', dw - 30, dh - 10);
+      doc.text('• Distribución Weibull (k=1.15) modela la fatiga acumulada e incremento de intensidad por minuto.', 18, y + 10);
+      doc.text('• Simulación de Prórroga modela un decaimiento ofensivo de 30% por desgaste físico.', 18, y + 14);
+      doc.text('• Simulación de Penales usa probabilidad Beta-Binomial según consistencia histórica del ELO.', 18, y + 18);
+      doc.text('• Ensemble pondera: Dixon-Coles 20% marcadores + CatBoost 25% + XGBoost 15% + MLP + MCMC + MFA + NB.', 18, y + 22);
+
+      pdfFooter(4);
       
       doc.save(`informe-tactico-${match.id}.pdf`);
     } catch (err) { 
@@ -1688,17 +1786,26 @@ export default function MatchDetail() {
           </div>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '1.5rem', fontSize: '0.88rem', color: 'var(--text-secondary)', borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: '1rem' }}>
-          {match.time && <span>Time: {match.time}</span>}
+          {match.time && <span>Time: {match.time === 'time' ? 'TBD' : match.time}</span>}
           {match.venue && <span>Venue: {match.venue}</span>}
         </div>
         {prediction && (
-          <div style={{ marginTop: '1.25rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.4rem' }}>
-              <span>{match.home} <strong style={{ color: '#f59e0b' }}>{(pH * 100).toFixed(1)}%</strong></span>
-              <span>Empate <strong style={{ color: '#94a3b8' }}>{(pD * 100).toFixed(1)}%</strong></span>
-              <span>{match.away} <strong style={{ color: '#3b82f6' }}>{(pA * 100).toFixed(1)}%</strong></span>
+          <div style={{ marginTop: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem', alignItems: 'center' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <span>{match.home}</span>
+                <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#f59e0b', background: 'rgba(245,158,11,0.1)', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid rgba(245,158,11,0.2)' }}>{(pH * 100).toFixed(1)}%</span>
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <span>Empate</span>
+                <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#cbd5e1', background: 'rgba(255,255,255,0.06)', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.1)' }}>{(pD * 100).toFixed(1)}%</span>
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <span>{match.away}</span>
+                <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#3b82f6', background: 'rgba(59,130,246,0.1)', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid rgba(59,130,246,0.2)' }}>{(pA * 100).toFixed(1)}%</span>
+              </span>
             </div>
-            <div style={{ height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', overflow: 'hidden', display: 'flex' }}>
+            <div style={{ height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', overflow: 'hidden', display: 'flex' }}>
               <div style={{ width: `${pH * 100}%`, height: '100%', background: 'linear-gradient(90deg,#f59e0b,#d97706)' }} />
               <div style={{ width: `${pD * 100}%`, height: '100%', background: 'rgba(148,163,184,0.4)' }} />
               <div style={{ width: `${pA * 100}%`, height: '100%', background: 'linear-gradient(90deg,#3b82f6,#2563eb)' }} />
@@ -1798,11 +1905,11 @@ export default function MatchDetail() {
             <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '2rem' }}>
               {[
                 { id: 'ensemble', name: 'Ensemble', style: { background: 'rgba(245,158,11,0.12)', color: 'var(--accent)', borderColor: 'var(--accent)' } },
+                { id: 'dcnb', name: 'DC NB', style: { background: 'rgba(244,63,94,0.12)', color: '#f43f5e', borderColor: '#f43f5e' } },
                 { id: 'mfa', name: 'MFA', style: { background: 'rgba(14,165,233,0.12)', color: '#0ea5e9', borderColor: '#0ea5e9' } },
                 { id: 'catboost', name: 'CatBoost', style: { background: 'rgba(236,72,153,0.12)', color: '#ec4899', borderColor: '#ec4899' } },
                 { id: 'xgboost', name: 'XGBoost', style: { background: 'rgba(16,185,129,0.12)', color: '#10b981', borderColor: '#10b981' } },
                 { id: 'mlp', name: 'MLP', style: { background: 'rgba(139,92,246,0.12)', color: '#8b5cf6', borderColor: '#8b5cf6' } },
-                { id: 'dcnb', name: 'DC NB', style: { background: 'rgba(244,63,94,0.12)', color: '#f43f5e', borderColor: '#f43f5e' } },
                 { id: 'mcmc', name: 'MCMC', style: { background: 'rgba(59,130,246,0.12)', color: '#3b82f6', borderColor: '#3b82f6' } },
                 { id: 'dixoncoles', name: 'Dixon-Coles', style: { background: 'rgba(148,163,184,0.12)', color: '#cbd5e1', borderColor: '#cbd5e1' } },
               ].map(m => (
@@ -1826,7 +1933,7 @@ export default function MatchDetail() {
             <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.6, marginBottom: '1.5rem', background: 'rgba(255,255,255,0.03)', padding: '1.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
               <p style={{ marginBottom: '1rem' }}>Rendimiento empírico evaluado a ciegas sobre resultados reales.</p>
               <ul style={{ paddingLeft: '1.5rem' }}>
-                <li style={{ marginBottom: '0.5rem' }}><strong>Accuracy 1X2:</strong> Nuestro ensemble ronda el <strong>73.9%</strong>.</li>
+                <li style={{ marginBottom: '0.5rem' }}><strong>Accuracy 1X2:</strong> Nuestro ensemble ronda el <strong>80.0%</strong>.</li>
                 <li><strong>RPS:</strong> Castiga sobreconfianza. Valores menores = mejor calibración.</li>
               </ul>
             </div>
@@ -1920,7 +2027,7 @@ export default function MatchDetail() {
                     <span style={{ color: '#fff' }}>Minuto Transcurrido:</span>
                     <span style={{ color: 'var(--orange)', fontFamily: 'monospace', fontSize: '1.25rem', fontWeight: 'bold' }}>{liveMinute}' {liveMinute > 90 ? '(PRÓRROGA)' : ''}</span>
                   </div>
-                  <input type="range" min="0" max={isKO ? 120 : 90} value={liveMinute} onChange={e => setLiveMinute(parseInt(e.target.value))} style={{ width: '100%', accentColor: 'var(--orange)', cursor: 'pointer' }} />
+                  <input type="range" min="0" max={isKO ? 120 : 90} value={liveMinute} onChange={e => setLiveMinute(parseInt(e.target.value))} style={{ width: '100%', accentColor: 'var(--orange)', cursor: 'pointer', padding: '10px 0' }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
                     <span>Inicio (0')</span>
                     <span>Medio (45')</span>

@@ -174,12 +174,12 @@ export default function SwissSystem() {
             <thead>
               <tr style={{borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)'}}>
                 <th style={{padding: '1rem 0.5rem'}}>Selección</th>
-                <th style={{padding: '1rem 0.5rem'}}>ELO</th>
-                <th style={{padding: '1rem 0.5rem'}}>Octavos</th>
-                <th style={{padding: '1rem 0.5rem'}}>Cuartos</th>
-                <th style={{padding: '1rem 0.5rem'}}>Semis</th>
-                <th style={{padding: '1rem 0.5rem'}}>Final</th>
-                <th style={{padding: '1rem 0.5rem', color: '#f1c40f'}}>🏆 Campeón</th>
+                <th style={{padding: '1rem 0.5rem', textAlign: 'center'}}>ELO</th>
+                <th style={{padding: '1rem 0.5rem', textAlign: 'center'}}>Octavos</th>
+                <th style={{padding: '1rem 0.5rem', textAlign: 'center'}}>Cuartos</th>
+                <th style={{padding: '1rem 0.5rem', textAlign: 'center'}}>Semis</th>
+                <th style={{padding: '1rem 0.5rem', textAlign: 'center'}}>Final</th>
+                <th style={{padding: '1rem 0.5rem', color: '#f1c40f', textAlign: 'center'}}>🏆 Campeón</th>
               </tr>
             </thead>
             <tbody>
@@ -189,22 +189,22 @@ export default function SwissSystem() {
                     <img src={flagUrl(team.code)} alt={team.team} style={{width: '24px', borderRadius: '2px'}} />
                     {team.team}
                   </td>
-                  <td style={{padding: '0.75rem 0.5rem', color: 'var(--text-muted)'}}>{Math.round(team.elo)}</td>
+                  <td style={{padding: '0.75rem 0.5rem', color: 'var(--text-muted)', textAlign: 'center'}}>{Math.round(team.elo)}</td>
                   
                   {/* Heatmap effect for probabilities */}
-                  <td style={{padding: '0.75rem 0.5rem', background: `rgba(46, 204, 113, ${team.r16/100 * 0.3})`}}>
+                  <td style={{padding: '0.75rem 0.5rem', textAlign: 'center', background: `rgba(46, 204, 113, ${team.r16/100 * 0.3})`}}>
                     {team.r16}%
                   </td>
-                  <td style={{padding: '0.75rem 0.5rem', background: `rgba(46, 204, 113, ${team.qf/100 * 0.4})`}}>
+                  <td style={{padding: '0.75rem 0.5rem', textAlign: 'center', background: `rgba(46, 204, 113, ${team.qf/100 * 0.4})`}}>
                     {team.qf}%
                   </td>
-                  <td style={{padding: '0.75rem 0.5rem', background: `rgba(46, 204, 113, ${team.sf/100 * 0.5})`}}>
+                  <td style={{padding: '0.75rem 0.5rem', textAlign: 'center', background: `rgba(46, 204, 113, ${team.sf/100 * 0.5})`}}>
                     {team.sf}%
                   </td>
-                  <td style={{padding: '0.75rem 0.5rem', background: `rgba(52, 152, 219, ${team.final/100 * 0.6})`}}>
+                  <td style={{padding: '0.75rem 0.5rem', textAlign: 'center', background: `rgba(52, 152, 219, ${team.final/100 * 0.6})`}}>
                     {team.final}%
                   </td>
-                  <td style={{padding: '0.75rem 0.5rem', fontWeight: 'bold', color: '#f1c40f', background: `rgba(241, 196, 15, ${team.champion/100 * 0.4})`}}>
+                  <td style={{padding: '0.75rem 0.5rem', fontWeight: '800', color: '#fbbf24', textAlign: 'center', background: `rgba(241, 196, 15, ${team.champion/100 * 0.4})` }}>
                     {team.champion}%
                   </td>
                 </tr>

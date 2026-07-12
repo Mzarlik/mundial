@@ -454,7 +454,7 @@ export default function Parlays() {
             fontSize: '0.85rem'
           }}
         >
-          🔍 Ver Todos los Safe Bets
+          🔍 Ver Todas las Proyecciones
         </button>
       </div>
 
@@ -532,96 +532,6 @@ export default function Parlays() {
               {/* Ticket Top Highlight */}
               <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '4px', background: 'linear-gradient(90deg, #f59e0b 0%, #ea580c 100%)' }}></div>
               
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.8rem', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '1rem' }}>
-                <div>
-                  <span style={{ fontSize: '0.7rem', color: '#f59e0b', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Sugerencia del Día</span>
-                  <h2 style={{ margin: '0.2rem 0 0 0', color: '#fff', fontSize: '1.5rem', fontFamily: 'var(--font-display)' }}>
-                    🎫 TICKET COMBINADO: {currentDayInfo?.full}
-                  </h2>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <span style={{ fontSize: '0.72rem', color: 'rgba(255, 255, 255, 0.4)', display: 'block' }}>ESTADO</span>
-                  <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '0.25rem 0.6rem', borderRadius: '20px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-                    VENTAJA (+EV)
-                  </span>
-                </div>
-              </div>
-
-              {/* Picks list */}
-              <div style={{ display: 'grid', gap: '1rem', marginBottom: '2rem' }}>
-                {dailyParlay.picks.map((pick, index) => (
-                  <div key={pick.id} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    background: 'rgba(255, 255, 255, 0.02)',
-                    border: '1px solid rgba(255, 255, 255, 0.05)',
-                    borderRadius: '10px',
-                    padding: '1rem 1.25rem',
-                    transition: 'all 0.2s ease',
-                    position: 'relative'
-                  }}>
-                    <span style={{ position: 'absolute', left: 0, top: '25%', height: '50%', width: '3px', background: pick.color }}></span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', width: '70px', justifyContent: 'center' }}>
-                      {pick.type === 'Total Goles' ? (
-                        <div style={{ display: 'flex', alignItems: 'center', position: 'relative', width: '38px', height: '18px' }}>
-                          <img src={flagUrl(pick.homeCode)} style={{ width: '22px', height: '14px', borderRadius: '2px', objectFit: 'cover', position: 'absolute', left: 0, zIndex: 2, border: '1px solid rgba(0,0,0,0.2)' }} alt="" />
-                          <img src={flagUrl(pick.awayCode)} style={{ width: '22px', height: '14px', borderRadius: '2px', objectFit: 'cover', position: 'absolute', right: 0, zIndex: 1, border: '1px solid rgba(0,0,0,0.2)' }} alt="" />
-                        </div>
-                      ) : (
-                        <img src={flagUrl(pick.pick.includes(pick.home) ? pick.homeCode : pick.awayCode)} style={{ width: '28px', height: '18px', borderRadius: '2px', objectFit: 'cover', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }} alt="" />
-                      )}
-                      <span style={{ fontSize: '0.72rem', fontWeight: 'bold', background: pick.bg, color: pick.color, padding: '0.15rem 0.4rem', borderRadius: '4px', border: `1px solid rgba(255,255,255,0.03)` }}>
-                        {pick.shortType}
-                      </span>
-                    </div>
-                    <div style={{ flex: 1, paddingLeft: '0.5rem' }}>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{pick.group} &bull; {pick.home} vs {pick.away}</div>
-                      <div style={{ fontWeight: 'bold', fontSize: '1.05rem', color: '#fff', marginTop: '0.1rem' }}>{pick.pick}</div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <span style={{ color: '#10b981', fontWeight: 'bold', fontSize: '1.15rem', display: 'block' }}>
-                        {(pick.prob * 100).toFixed(1)}%
-                      </span>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Confianza</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Total Calculation Slip */}
-              <div style={{
-                background: 'rgba(15, 23, 42, 0.8)',
-                border: '1px solid rgba(255,255,255,0.06)',
-                borderRadius: '12px',
-                padding: '1.25rem 1.5rem',
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '1.5rem',
-                alignItems: 'center'
-              }}>
-                <div>
-                  <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Probabilidad Combinada</span>
-                  <div style={{ color: '#10b981', fontSize: '2rem', fontWeight: 'bold', letterSpacing: '0.02em', marginTop: '0.1rem' }}>
-                    {(dailyParlay.prob * 100).toFixed(1)}%
-                  </div>
-                </div>
-                <div style={{ borderLeft: '1px solid rgba(255, 255, 255, 0.08)', paddingLeft: '1.5rem' }}>
-                  <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Cuota Implícita (Fair Odds)</span>
-                  <div style={{ color: '#f59e0b', fontSize: '2rem', fontWeight: 'bold', letterSpacing: '0.02em', marginTop: '0.1rem' }}>
-                    {dailyParlay.odds}
-                  </div>
-                </div>
-              </div>
-
-              {/* Value warning */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginTop: '1.5rem', padding: '0.8rem 1rem', background: 'rgba(245, 158, 11, 0.05)', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.1)', marginBottom: '1.5rem' }}>
-                <span style={{ fontSize: '1.1rem' }}>💡</span>
-                <p style={{ margin: 0, fontSize: '0.82rem', color: 'rgba(255, 255, 255, 0.7)', lineHeight: '1.4' }}>
-                  Si tu casa de apuestas ofrece una cuota combinada <strong>superior a {dailyParlay.odds}</strong>, estarás apostando con valor matemático a largo plazo (+EV).
-                </p>
-              </div>
-
-              {/* Kelly Calculator Panel */}
               {(() => {
                 const pCombined = dailyParlay.prob;
                 const fairOdds = dailyParlay.odds;
@@ -632,70 +542,199 @@ export default function Parlays() {
                 const suggestedStake = bankroll * suggestedFraction;
 
                 return (
-                  <div style={{
-                    padding: '1.25rem 1.5rem',
-                    background: 'rgba(255, 255, 255, 0.02)',
-                    border: '1px solid rgba(245, 158, 11, 0.15)',
-                    borderRadius: '12px',
-                    boxSizing: 'border-box'
-                  }}>
-                    <h4 style={{ margin: '0 0 1rem 0', color: '#f59e0b', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      💰 Calculadora de Gestión de Riesgo (Kelly)
-                    </h4>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.8rem', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '1rem' }}>
                       <div>
-                        <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.4rem', textTransform: 'uppercase' }}>Mi Bankroll ($)</label>
-                        <input 
-                          type="number" 
-                          value={bankroll} 
-                          onChange={e => setBankroll(parseFloat(e.target.value) || 0)}
-                          style={{ width: '100%', padding: '0.5rem', background: 'var(--bg-darker)', border: '1px solid var(--border-color)', borderRadius: '6px', color: '#fff', fontSize: '0.88rem', outline: 'none' }}
-                        />
+                        <span style={{ fontSize: '0.7rem', color: '#f59e0b', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Sugerencia del Día</span>
+                        <h2 style={{ margin: '0.2rem 0 0 0', color: '#fff', fontSize: '1.5rem', fontFamily: 'var(--font-display)' }}>
+                          🎫 TICKET COMBINADO: {currentDayInfo?.full}
+                        </h2>
                       </div>
-                      <div>
-                        <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.4rem', textTransform: 'uppercase' }}>Cuota Ofrecida (Odds)</label>
-                        <input 
-                          type="number" 
-                          step="0.05"
-                          placeholder={fairOdds}
-                          value={userOdds} 
-                          onChange={e => setUserOdds(e.target.value)}
-                          style={{ width: '100%', padding: '0.5rem', background: 'var(--bg-darker)', border: '1px solid var(--border-color)', borderRadius: '6px', color: '#fff', fontSize: '0.88rem', outline: 'none' }}
-                        />
-                      </div>
-                      <div>
-                        <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.4rem', textTransform: 'uppercase' }}>Fracción de Kelly</label>
-                        <select 
-                          value={kellyFraction} 
-                          onChange={e => setKellyFraction(parseFloat(e.target.value))}
-                          style={{ width: '100%', padding: '0.5rem', background: 'var(--bg-darker)', border: '1px solid var(--border-color)', borderRadius: '6px', color: '#fff', fontSize: '0.88rem', outline: 'none', cursor: 'pointer' }}
-                        >
-                          <option value={1.0}>Full Kelly (100% - Riesgo Alto)</option>
-                          <option value={0.5}>Half Kelly (50% - Riesgo Medio)</option>
-                          <option value={0.25}>Quarter Kelly (25% - Recomendado)</option>
-                          <option value={0.125}>Eighth Kelly (12.5% - Conservador)</option>
-                        </select>
+                      <div style={{ textAlign: 'right' }}>
+                        <span style={{ fontSize: '0.72rem', color: 'rgba(255, 255, 255, 0.4)', display: 'block' }}>ESTADO</span>
+                        {ev > 0 ? (
+                          <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '0.25rem 0.6rem', borderRadius: '20px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                            VENTAJA (+EV)
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#fbbf24', background: 'rgba(251, 191, 36, 0.1)', padding: '0.25rem 0.6rem', borderRadius: '20px', border: '1px solid rgba(251, 191, 36, 0.2)' }}>
+                            CANDIDATO EV
+                          </span>
+                        )}
                       </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '1rem' }}>
+                    {/* Picks list */}
+                    <div style={{ display: 'grid', gap: '1rem', marginBottom: '2rem' }}>
+                      {dailyParlay.picks.map((pick, index) => (
+                        <div key={pick.id} style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          background: 'rgba(255, 255, 255, 0.02)',
+                          border: '1px solid rgba(255, 255, 255, 0.05)',
+                          borderRadius: '10px',
+                          padding: '1.25rem 1.75rem',
+                          transition: 'all 0.2s ease',
+                          position: 'relative'
+                        }}>
+                          <span style={{ position: 'absolute', left: 0, top: '25%', height: '50%', width: '3px', background: pick.color }}></span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', width: '80px', justifyContent: 'flex-start', marginRight: '0.5rem' }}>
+                            {pick.type === 'Total Goles' ? (
+                              <div style={{ display: 'flex', alignItems: 'center', position: 'relative', width: '38px', height: '18px' }}>
+                                <img src={flagUrl(pick.homeCode)} style={{ width: '22px', height: '14px', borderRadius: '2px', objectFit: 'cover', position: 'absolute', left: 0, zIndex: 2, border: '1px solid rgba(0,0,0,0.2)' }} alt="" />
+                                <img src={flagUrl(pick.awayCode)} style={{ width: '22px', height: '14px', borderRadius: '2px', objectFit: 'cover', position: 'absolute', right: 0, zIndex: 1, border: '1px solid rgba(0,0,0,0.2)' }} alt="" />
+                              </div>
+                            ) : (
+                              <img src={flagUrl(pick.pick.includes(pick.home) ? pick.homeCode : pick.awayCode)} style={{ width: '28px', height: '18px', borderRadius: '2px', objectFit: 'cover', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }} alt="" />
+                            )}
+                            <span style={{ fontSize: '0.72rem', fontWeight: 'bold', background: pick.bg, color: pick.color, padding: '0.15rem 0.4rem', borderRadius: '4px', border: `1px solid rgba(255,255,255,0.03)` }}>
+                              {pick.shortType}
+                            </span>
+                          </div>
+                          <div style={{ flex: 1, paddingLeft: '0.5rem' }}>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{pick.group} &bull; {pick.home} vs {pick.away}</div>
+                            <div style={{ fontWeight: 'bold', fontSize: '1.05rem', color: '#fff', marginTop: '0.1rem' }}>{pick.pick}</div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <span style={{ color: '#10b981', fontWeight: 'bold', fontSize: '1.15rem', display: 'block' }}>
+                              {(pick.prob * 100).toFixed(1)}%
+                            </span>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Confianza</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Total Calculation Slip */}
+                    <div style={{
+                      background: 'rgba(15, 23, 42, 0.8)',
+                      border: '1px solid rgba(255,255,255,0.06)',
+                      borderRadius: '12px',
+                      padding: '1.25rem 1.5rem',
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: '1.5rem',
+                      alignItems: 'center'
+                    }}>
                       <div>
-                        <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', display: 'block' }}>Valor Esperado (EV)</span>
-                        <span style={{ fontWeight: 'bold', fontSize: '1.2rem', color: ev > 0 ? '#10b981' : '#ef4444' }}>
-                          {ev > 0 ? `+${(ev * 100).toFixed(1)}% (+EV)` : `${(ev * 100).toFixed(1)}% (-EV)`}
-                        </span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Probabilidad Combinada</span>
+                        <div style={{ color: '#10b981', fontSize: '2rem', fontWeight: 'bold', letterSpacing: '0.02em', marginTop: '0.1rem' }}>
+                          {(pCombined * 100).toFixed(1)}%
+                        </div>
                       </div>
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', display: 'block' }}>Inversión Sugerida ({kellyFraction * 100}%)</span>
-                        <span style={{ fontWeight: 'bold', fontSize: '1.2rem', color: ev > 0 ? '#f59e0b' : '#94a3b8' }}>
-                          {ev > 0 ? `$${suggestedStake.toFixed(2)} USD` : '$0.00 USD'}
-                        </span>
-                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block' }}>
-                          {ev > 0 ? `(${(suggestedFraction * 100).toFixed(2)}% del bankroll)` : '(Sin ventaja matemática)'}
-                        </span>
+                      <div style={{ borderLeft: '1px solid rgba(255, 255, 255, 0.08)', paddingLeft: '1.5rem' }}>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Cuota Implícita (Fair Odds)</span>
+                        <div style={{ color: '#f59e0b', fontSize: '2rem', fontWeight: 'bold', letterSpacing: '0.02em', marginTop: '0.1rem' }}>
+                          {fairOdds}
+                        </div>
                       </div>
                     </div>
-                  </div>
+
+                    {/* Value warning */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginTop: '1.5rem', padding: '0.8rem 1rem', background: 'rgba(245, 158, 11, 0.05)', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.1)', marginBottom: '1.5rem' }}>
+                      <span style={{ fontSize: '1.1rem' }}>💡</span>
+                      <p style={{ margin: 0, fontSize: '0.82rem', color: 'rgba(255, 255, 255, 0.7)', lineHeight: '1.4' }}>
+                        Si tu casa de apuestas ofrece una cuota combinada {ev <= 0 ? <span>con valor real (mayor a {fairOdds})</span> : <span>superior a {fairOdds}</span>}, estarás apostando con ventaja matemática a largo plazo (+EV).
+                      </p>
+                    </div>
+
+                    {/* Kelly Calculator Panel */}
+                    <div style={{
+                      padding: '1.25rem 1.5rem',
+                      background: 'rgba(255, 255, 255, 0.02)',
+                      border: '1px solid rgba(245, 158, 11, 0.15)',
+                      borderRadius: '12px',
+                      boxSizing: 'border-box'
+                    }}>
+                      <h4 style={{ margin: '0 0 1rem 0', color: '#f59e0b', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        💰 Calculadora de Gestión de Riesgo (Kelly)
+                      </h4>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.4rem', textTransform: 'uppercase' }}>Mi Bankroll ($)</label>
+                          <input 
+                            type="number" 
+                            value={bankroll} 
+                            onChange={e => setBankroll(parseFloat(e.target.value) || 0)}
+                            style={{ 
+                              width: '100%', 
+                              padding: '0.6rem 0.8rem', 
+                              background: 'rgba(255, 255, 255, 0.06)', 
+                              border: '1px solid rgba(255, 255, 255, 0.15)', 
+                              borderRadius: '8px', 
+                              color: '#fff', 
+                              fontSize: '0.9rem', 
+                              outline: 'none',
+                              transition: 'border-color 0.2s ease, background-color 0.2s ease'
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.4rem', textTransform: 'uppercase' }}>Cuota Ofrecida (Odds)</label>
+                          <input 
+                            type="number" 
+                            step="0.05"
+                            placeholder={fairOdds}
+                            value={userOdds} 
+                            onChange={e => setUserOdds(e.target.value)}
+                            style={{ 
+                              width: '100%', 
+                              padding: '0.6rem 0.8rem', 
+                              background: 'rgba(255, 255, 255, 0.06)', 
+                              border: '1px solid rgba(255, 255, 255, 0.15)', 
+                              borderRadius: '8px', 
+                              color: '#fff', 
+                              fontSize: '0.9rem', 
+                              outline: 'none',
+                              transition: 'border-color 0.2s ease, background-color 0.2s ease'
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.4rem', textTransform: 'uppercase' }}>Fracción de Kelly</label>
+                          <select 
+                            value={kellyFraction} 
+                            onChange={e => setKellyFraction(parseFloat(e.target.value))}
+                            style={{ 
+                              width: '100%', 
+                              padding: '0.6rem 0.8rem', 
+                              background: 'rgba(255, 255, 255, 0.06)', 
+                              border: '1px solid rgba(255, 255, 255, 0.15)', 
+                              borderRadius: '8px', 
+                              color: '#fff', 
+                              fontSize: '0.9rem', 
+                              outline: 'none',
+                              cursor: 'pointer',
+                              transition: 'border-color 0.2s ease, background-color 0.2s ease'
+                            }}
+                          >
+                            <option value={1.0}>Full Kelly (100% - Riesgo Alto)</option>
+                            <option value={0.5}>Half Kelly (50% - Riesgo Medio)</option>
+                            <option value={0.25}>Quarter Kelly (25% - Recomendado)</option>
+                            <option value={0.125}>Eighth Kelly (12.5% - Conservador)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '1rem' }}>
+                        <div>
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', display: 'block' }}>Valor Esperado (EV)</span>
+                          <span style={{ fontWeight: 'bold', fontSize: '1.2rem', color: ev > 0 ? '#10b981' : '#ef4444' }}>
+                            {ev > 0 ? `+${(ev * 100).toFixed(1)}% (+EV)` : `${(ev * 100).toFixed(1)}% (-EV)`}
+                          </span>
+                        </div>
+                        <div>
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', display: 'block' }}>Inversión Sugerida ({kellyFraction * 100}%)</span>
+                          <span style={{ fontWeight: 'bold', fontSize: '1.2rem', color: ev > 0 ? '#10b981' : '#f59e0b' }}>
+                            {ev > 0 ? `$${suggestedStake.toFixed(2)} USD` : '$0.00 USD'}
+                          </span>
+                          <span style={{ fontSize: '0.68rem', color: ev > 0 ? 'var(--text-muted)' : '#f59e0b', display: 'block', fontWeight: ev > 0 ? 'normal' : '600' }}>
+                            {ev > 0 ? `(${(suggestedFraction * 100).toFixed(2)}% del bankroll)` : '⚠️ NO APOSTAR (Sin ventaja matemática)'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </>
                 );
               })()}
             </div>
@@ -723,7 +762,7 @@ export default function Parlays() {
           {/* List of matches for the selected day */}
           <div>
             <h2 style={{ fontSize: '1.3rem', marginBottom: '1.2rem', fontFamily: 'var(--font-display)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-              Análisis y Apuestas Seguras del Día ({activeDate === 'all' ? currentDayInfo?.label : activeDate.split('-').reverse().slice(0, 2).join('/')})
+              Proyecciones de Alto Valor y Análisis ({activeDate === 'all' ? currentDayInfo?.label : activeDate.split('-').reverse().slice(0, 2).join('/')})
             </h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
               {MATCHES.filter(m => m.day === activeTab && (activeDate === 'all' || m.date === activeDate)).map(match => {
@@ -741,7 +780,7 @@ export default function Parlays() {
                       <div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
                           <span>{match.group}</span>
-                          <span>{match.time}</span>
+                          <span>{match.time === 'time' ? 'TBD' : match.time}</span>
                         </div>
                         <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
                           <span>{match.home}</span>
@@ -753,7 +792,7 @@ export default function Parlays() {
                       {safest ? (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.02)', padding: '0.5rem 0.8rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.03)' }}>
                           <div>
-                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block' }}>Pick IA Recomendado</span>
+                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block' }}>Proyección IA Recomendada</span>
                             <span style={{ fontWeight: 'bold', color: '#fff', fontSize: '0.85rem' }}>{safest.pick.split(':')[1] || safest.pick}</span>
                           </div>
                           <span style={{ fontSize: '0.85rem', fontWeight: 'bold', background: safest.bg, color: safest.color, padding: '0.2rem 0.5rem', borderRadius: '4px' }}>
@@ -777,10 +816,12 @@ export default function Parlays() {
                         return (
                           <div style={{ marginTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '0.6rem', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span>🔥 Prop: <strong style={{ color: '#fff' }}>{bestPlayer.name}</strong></span>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                                <span>🔥</span> Prop: <strong style={{ color: '#fff' }}>{bestPlayer.name}</strong>
+                              </span>
                               <span style={{ color: '#f59e0b', fontWeight: 'bold' }}>{bestPlayer.goalProb.toFixed(0)}% Gol</span>
                             </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.68rem', marginTop: '0.15rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.68rem', marginTop: '0.15rem' }}>
                               <span>Remates Esperados: {bestPlayer.projectedShots.toFixed(1)}</span>
                             </div>
                           </div>
@@ -801,7 +842,7 @@ export default function Parlays() {
         /* "Ver Todos" Pestaña */
         <div>
           <h2 style={{ fontSize: '1.3rem', marginBottom: '1.2rem', fontFamily: 'var(--font-display)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-            Todas las Ventajas Estadísticas Detectadas (Safe Bets)
+            Todas las Proyecciones de Alto Valor Detectadas
           </h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
             {allSafePicks.map(pick => {
@@ -830,7 +871,7 @@ export default function Parlays() {
 
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.02)', padding: '0.5rem 0.8rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.03)' }}>
                       <div>
-                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block' }}>Pick IA ({pick.type})</span>
+                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block' }}>Proyección IA ({pick.type})</span>
                         <span style={{ fontWeight: 'bold', color: '#fff', fontSize: '0.85rem' }}>{pick.pick}</span>
                       </div>
                       <span style={{ fontSize: '0.85rem', fontWeight: 'bold', background: pick.bg, color: pick.color, padding: '0.2rem 0.5rem', borderRadius: '4px' }}>

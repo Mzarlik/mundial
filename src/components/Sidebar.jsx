@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { DAYS, getMatchesByDay } from '../config/matches';
+import { TicketIcon, TrophyIcon, FlaskIcon, ChartIcon } from './Icons';
 
 export default function Sidebar({ open, onClose }) {
   const [daysOpen, setDaysOpen] = useState(true);
@@ -39,11 +40,88 @@ export default function Sidebar({ open, onClose }) {
       <div className="sidebar-logo"><h2>Mundial ML</h2><span>Predicciones con Machine Learning</span></div>
       <nav>
         <div className="sidebar-section-label">Principal</div>
-        <NavLink to="/" end>Inicio</NavLink>
-        <NavLink to="/parleys" style={{ color: '#f39c12', fontWeight: 'bold' }}>🎟️ Parleys Recomendados</NavLink>
-        <NavLink to="/cuadro" style={{ color: '#0ea5e9', fontWeight: 'bold' }}>🏆 Simulador de Llaves</NavLink>
-        <NavLink to="/suizo" style={{ color: '#9b59b6', fontWeight: 'bold' }}>🧪 Laboratorios de IA</NavLink>
-        <NavLink to="/estadisticas-jugadores" style={{ color: '#10b981', fontWeight: 'bold' }}>📊 Estadísticas de Jugadores</NavLink>
+        <NavLink 
+          to="/" 
+          end
+          style={({ isActive }) => ({
+            color: isActive ? '#fff' : 'var(--text-sidebar)',
+            background: isActive ? 'rgba(255, 255, 255, 0.05)' : undefined,
+            borderLeft: isActive ? '3px solid var(--accent)' : '3px solid transparent',
+            borderRight: 'none',
+            paddingLeft: isActive ? '1.75rem' : '1.5rem',
+            fontWeight: isActive ? 'bold' : '500'
+          })}
+        >
+          Inicio
+        </NavLink>
+        <NavLink 
+          to="/parleys" 
+          style={({ isActive }) => ({ 
+            color: isActive ? '#fff' : '#f59e0b', 
+            background: isActive ? 'rgba(245, 158, 11, 0.08)' : undefined,
+            borderLeft: isActive ? '3px solid #f59e0b' : '3px solid transparent',
+            borderRight: 'none',
+            paddingLeft: isActive ? '1.75rem' : '1.5rem',
+            fontWeight: 'bold',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px'
+          })}
+        >
+          <TicketIcon size={16} />
+          <span>Parleys Recomendados</span>
+        </NavLink>
+        <NavLink 
+          to="/cuadro" 
+          style={({ isActive }) => ({ 
+            color: isActive ? '#fff' : '#0ea5e9', 
+            background: isActive ? 'rgba(14, 165, 233, 0.08)' : undefined,
+            borderLeft: isActive ? '3px solid #0ea5e9' : '3px solid transparent',
+            borderRight: 'none',
+            paddingLeft: isActive ? '1.75rem' : '1.5rem',
+            fontWeight: 'bold',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px'
+          })}
+        >
+          <TrophyIcon size={16} />
+          <span>Simulador de Llaves</span>
+        </NavLink>
+        <NavLink 
+          to="/suizo" 
+          style={({ isActive }) => ({ 
+            color: isActive ? '#fff' : '#a78bfa', 
+            background: isActive ? 'rgba(167, 139, 250, 0.08)' : undefined,
+            borderLeft: isActive ? '3px solid #a78bfa' : '3px solid transparent',
+            borderRight: 'none',
+            paddingLeft: isActive ? '1.75rem' : '1.5rem',
+            fontWeight: 'bold',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px'
+          })}
+        >
+          <FlaskIcon size={16} />
+          <span>Laboratorios de IA</span>
+        </NavLink>
+        <NavLink 
+          to="/estadisticas-jugadores" 
+          style={({ isActive }) => ({ 
+            color: isActive ? '#fff' : '#10b981', 
+            background: isActive ? 'rgba(16, 185, 129, 0.08)' : undefined,
+            borderLeft: isActive ? '3px solid #10b981' : '3px solid transparent',
+            borderRight: 'none',
+            paddingLeft: isActive ? '1.75rem' : '1.5rem',
+            fontWeight: 'bold',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px'
+          })}
+        >
+          <ChartIcon size={16} />
+          <span>Estadísticas de Jugadores</span>
+        </NavLink>
         
         <div className="sidebar-section-label">Resultados por día</div>
         <button className="sidebar-toggle-btn" onClick={() => setDaysOpen(!daysOpen)}>

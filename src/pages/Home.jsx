@@ -17,22 +17,36 @@ export default function Home() {
       
       <div className="section-block">
         <h2>Un Motor que Aprende en Tiempo Real 🧠</h2>
-        <div className="card" style={{padding: '2.5rem'}}>
-          <p>A diferencia de las calculadoras tradicionales, este sistema <strong>se retroalimenta de la realidad</strong>. Cada vez que un partido oficial concluye en el Mundial, los resultados se inyectan en nuestro motor. Las redes neuronales, XGBoost y las Cadenas de Markov (MCMC) recalculan sus pesos, y los puntajes ELO históricos se ajustan dinámicamente.</p>
-          <p style={{marginBottom: 0}}>Si una "cenicienta" da la sorpresa en Fase de Grupos, el algoritmo aprende inmediatamente de esa volatilidad para ajustar las predicciones del resto de sus partidos eliminatorios. El Optimizador Matemático evalúa constantemente cuál de nuestras 7 inteligencias artificiales tiene el menor margen de error (RPS) y le cede el control absoluto del Ensamble.</p>
+        <div className="card" style={{ padding: '2.5rem', lineHeight: '1.6' }}>
+          <p style={{ fontSize: '1.05rem', marginBottom: '1.25rem' }}>A diferencia de las calculadoras tradicionales, este sistema <strong>se retroalimenta de la realidad en tiempo real</strong>:</p>
+          <ul style={{ paddingLeft: '1.25rem', marginBottom: 0, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <li><strong>Actualización Automática:</strong> Cada vez que concluye un partido oficial, los resultados se inyectan en nuestro motor, recalculando las redes neuronales, XGBoost y Cadenas de Markov (MCMC).</li>
+            <li><strong>Adaptabilidad ELO:</strong> Si una "cenicienta" da la sorpresa en Fase de Grupos, el algoritmo aprende inmediatamente de esa volatilidad, reajustando la forma y las proyecciones para los siguientes cruces.</li>
+            <li><strong>Optimizador de Ensemble:</strong> El motor evalúa de forma continua cuál de nuestros 7 algoritmos posee el menor margen de error empírico (RPS) y ajusta de forma dinámica los pesos de decisión.</li>
+          </ul>
         </div>
       </div>
 
       <div className="section-block">
         <h2>Laboratorios de Monte Carlo 🎲</h2>
-        <div className="comparison-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))' }}>
-          <div className="card">
+        <div className="comparison-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1.5rem' }}>
+          <div className="card" style={{ padding: '2rem', lineHeight: '1.6' }}>
             <h3>♟️ Sistema Suizo Estocástico</h3>
-            <p>Simulamos un torneo masivo de Formato Suizo puro (48 equipos). Utilizando la distribución histórica de ELO, el motor realiza <strong>miles de iteraciones de Monte Carlo</strong> para encontrar el promedio exacto de puntos esperados (xPts), cruces y goles de cada selección si el Mundial se jugara como un torneo de ajedrez gigante.</p>
+            <p style={{ marginBottom: '1rem' }}>Simulamos un formato suizo puro (48 equipos) aplicando distribuciones históricas de ELO:</p>
+            <ul style={{ paddingLeft: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+              <li>Ejecución de <strong>miles de iteraciones de Monte Carlo</strong>.</li>
+              <li>Cálculo exacto de <strong>puntos esperados (xPts)</strong> y goles por selección.</li>
+              <li>Proyección de cruces dinámicos bajo modelo estocástico.</li>
+            </ul>
           </div>
-          <div className="card">
+          <div className="card" style={{ padding: '2rem', lineHeight: '1.6' }}>
             <h3>⚔️ Supervivencia Eliminatoria</h3>
-            <p>La fase final no es predecible a simple vista. Inyectamos los 16 cruces de Dieciseisavos a un motor estocástico que tira los dados <strong>2,000 veces</strong> simulando prórrogas y tandas de penales con modelos Beta-Binomiales. El resultado es un mapa de calor que desnuda la verdadera probabilidad de cada selección de levantar la copa.</p>
+            <p style={{ marginBottom: '1rem' }}>Modelamos la fase final simulando la entropía de los cruces de eliminación directa:</p>
+            <ul style={{ paddingLeft: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+              <li>Simulación estocástica de <strong>10,000 torneos completos</strong>.</li>
+              <li>Prórrogas modeladas con desgaste físico y penales Beta-Binomiales.</li>
+              <li>Generación de un <strong>mapa de calor interactivo</strong> de supervivencia.</li>
+            </ul>
           </div>
         </div>
       </div>
