@@ -475,15 +475,20 @@ def get_pi_at_date(team, date, pi_by_team, final_pis):
     return history[idx-1][1]
 
 # --- MODELO DIXON-COLES ---
-def fit_dixon_coles(train, cutoff, half_life=HALF_LIFE):
+def fit_dixon_coles(train, cutoff, elo_by_team, final_elos, half_life=HALF_LIFE):
     """
-    Ajusta el modelo probabilístico de Dixon-Coles.
+    Ajusta el modelo probabilístico de Dixon-Coles con diferencia de ELO integrada.
     Calcula los parámetros de ataque (att) y defensa (dfn) de cada equipo, la ventaja
-    de localía (home), y el parámetro de ajuste de empates de pocos goles (rho), utilizando
-    una regresión de Poisson ponderada por tiempo (decaimiento exponencial).
+    de localía (home), el parámetro de ajuste de empates de pocos goles (rho), y el peso del ELO (delta),
+    utilizando una regresión de Poisson ponderada por tiempo (decaimiento exponencial).
     """
     train = train.copy()
     train['w'] = 0.5 ** ((cutoff - train['date']).dt.days / half_life)
+    train['elo_h'] = train.apply(lambda r: get_elo_at_date(r.home_team, r.date, elo_by_team, final_elos), axis=1)
+    train['elo_a'] = train.apply(lambda r: get_elo_at_date(r.away_team, r.date, elo_by_team, final_elos), axis=1)
+    train['elo_diff_scaled'] = (train['elo_h'] - train['elo_a']) / 100.0
+    ediff = train['elo_diff_scaled'].values
+    
     teams = sorted(set(train['home_team']) | set(train['away_team']))
     idx = {t:i for i,t in enumerate(teams)}; n = len(teams)
     hi = train['home_team'].map(idx).values; ai = train['away_team'].map(idx).values
@@ -499,26 +504,43 @@ def fit_dixon_coles(train, cutoff, half_life=HALF_LIFE):
         return t
         
     def nll(p):
-        at = p[:n] - p[:n].mean(); dn = p[n:2*n]; h = p[2*n]; r = p[2*n+1]
-        l = np.exp(at[hi] - dn[ai] + h*lm); m = np.exp(at[ai] - dn[hi])
+        at = np.empty(n)
+        at[:-1] = p[:n-1]
+        at[-1] = -at[:-1].sum()
+        dn = p[n-1:2*n-1]
+        h = p[2*n-1]
+        r = p[2*n]
+        delta = p[2*n+1]
+        
+        l = np.exp(at[hi] - dn[ai] + h*lm + delta * ediff)
+        m = np.exp(at[ai] - dn[hi] - delta * ediff)
         t = np.clip(tau(hs, as_, l, m, r), 1e-10, None)
         l2_penalty = 0.05 * ((at ** 2).sum() + (dn ** 2).sum())
         return -(w * (np.log(t) + poisson.logpmf(hs, l) + poisson.logpmf(as_, m))).sum() + l2_penalty
         
-    r = minimize(nll, np.concatenate([np.zeros(n), np.zeros(n), [.25, -.05]]), method='L-BFGS-B')
-    at = r.x[:n] - r.x[:n].mean()
-    return {'att': at, 'dfn': r.x[n:2*n], 'home': r.x[2*n], 'rho': r.x[2*n+1], 'idx': idx, 'teams': teams}
+    init_p = np.concatenate([np.zeros(n-1), np.zeros(n), [.25, -.05, 0.1]])
+    bounds = [(None, None)] * (2*n - 1) + [(None, None), (-0.9, 0.9), (None, None)]
+    r = minimize(nll, init_p, method='L-BFGS-B', bounds=bounds, options={'maxfun': 150000, 'maxiter': 1000})
+    at = np.empty(n)
+    at[:-1] = r.x[:n-1]
+    at[-1] = -at[:-1].sum()
+    return {
+        'att': at, 'dfn': r.x[n-1:2*n-1], 'home': r.x[2*n-1], 'rho': r.x[2*n], 'delta': r.x[2*n+1],
+        'idx': idx, 'teams': teams
+    }
 
-def dc_matrix(dcm, h, a, host):
+def dc_matrix(dcm, h, a, host, elo_h, elo_a):
     idx = dcm['idx']
     if h not in idx or a not in idx:
         # Fallback si el equipo no está en Dixon-Coles
         M = np.outer(poisson.pmf(range(MAXG), 1.2), poisson.pmf(range(MAXG), 1.2))
         return M / M.sum()
         
-    att, dfn, home, rho = dcm['att'], dcm['dfn'], dcm['home'], dcm['rho']
-    l = np.exp(att[idx[h]] - dfn[idx[a]] + (home if host else 0))
-    m = np.exp(att[idx[a]] - dfn[idx[h]])
+    att, dfn, home, rho, delta = dcm['att'], dcm['dfn'], dcm['home'], dcm['rho'], dcm.get('delta', 0.0)
+    ediff = (elo_h - elo_a) / 100.0
+    
+    l = np.exp(att[idx[h]] - dfn[idx[a]] + (home if host else 0) + delta * ediff)
+    m = np.exp(att[idx[a]] - dfn[idx[h]] - delta * ediff)
     
     # Aplicar modificadores de Opta
     w = 0.30 # Peso de suavizado
@@ -538,15 +560,20 @@ def matrix_to_1x2(M):
     return [np.tril(M, -1).sum(), np.trace(M), np.triu(M, 1).sum()]
 
 # --- MODELO DIXON-COLES CON BINOMIAL NEGATIVA (DC-NB) ---
-def fit_dixon_coles_nb(train, cutoff, half_life=HALF_LIFE):
+def fit_dixon_coles_nb(train, cutoff, elo_by_team, final_elos, half_life=HALF_LIFE):
     """
-    Ajusta el modelo de Dixon-Coles utilizando distribuciones Binomial Negativa (NB) bivariadas.
+    Ajusta el modelo de Dixon-Coles utilizando distribuciones Binomial Negativa (NB) bivariadas con diferencia de ELO integrada.
     Permite modelar la sobredispersión (varianza > media) de goles en partidos reales.
-    Optimiza parámetros de ataque, defensa, ventaja de localía, correlación de empates (rho)
-    y parámetros de dispersión alpha_h y alpha_a.
+    Optimiza parámetros de ataque, defensa, ventaja de localía, correlación de empates (rho),
+    parámetros de dispersión alpha_h y alpha_a, y el coeficiente del ELO (delta).
     """
     train = train.copy()
     train['w'] = 0.5 ** ((cutoff - train['date']).dt.days / half_life)
+    train['elo_h'] = train.apply(lambda r: get_elo_at_date(r.home_team, r.date, elo_by_team, final_elos), axis=1)
+    train['elo_a'] = train.apply(lambda r: get_elo_at_date(r.away_team, r.date, elo_by_team, final_elos), axis=1)
+    train['elo_diff_scaled'] = (train['elo_h'] - train['elo_a']) / 100.0
+    ediff = train['elo_diff_scaled'].values
+    
     teams = sorted(set(train['home_team']) | set(train['away_team']))
     idx = {t:i for i,t in enumerate(teams)}; n = len(teams)
     hi = train['home_team'].map(idx).values; ai = train['away_team'].map(idx).values
@@ -562,11 +589,18 @@ def fit_dixon_coles_nb(train, cutoff, half_life=HALF_LIFE):
         return t
         
     def nll(p):
-        at = p[:n] - p[:n].mean(); dn = p[n:2*n]; h = p[2*n]; r = p[2*n+1]
-        alpha_h = np.exp(p[2*n+2])
-        alpha_a = np.exp(p[2*n+3])
-        l = np.exp(at[hi] - dn[ai] + h*lm)
-        m = np.exp(at[ai] - dn[hi])
+        at = np.empty(n)
+        at[:-1] = p[:n-1]
+        at[-1] = -at[:-1].sum()
+        dn = p[n-1:2*n-1]
+        h = p[2*n-1]
+        r = p[2*n]
+        alpha_h = np.exp(p[2*n+1])
+        alpha_a = np.exp(p[2*n+2])
+        delta = p[2*n+3]
+        
+        l = np.exp(at[hi] - dn[ai] + h*lm + delta * ediff)
+        m = np.exp(at[ai] - dn[hi] - delta * ediff)
         t = np.clip(tau(hs, as_, l, m, r), 1e-10, None)
         
         n_h = 1.0 / alpha_h
@@ -589,25 +623,30 @@ def fit_dixon_coles_nb(train, cutoff, half_life=HALF_LIFE):
         l2_penalty = 0.20 * ((at ** 2).sum() + (dn ** 2).sum())
         return -(w * (np.log(t) + logpmf_h + logpmf_a - np.log(S))).sum() + l2_penalty
         
-    init_p = np.concatenate([np.zeros(n), np.zeros(n), [.25, -.05, -1.0, -1.0]])
-    r = minimize(nll, init_p, method='L-BFGS-B')
-    at = r.x[:n] - r.x[:n].mean()
+    init_p = np.concatenate([np.zeros(n-1), np.zeros(n), [.25, -.05, -1.0, -1.0, 0.1]])
+    bounds = [(None, None)] * (2*n - 1) + [(None, None), (-0.9, 0.9), (None, None), (None, None), (None, None)]
+    r = minimize(nll, init_p, method='L-BFGS-B', bounds=bounds, options={'maxfun': 150000, 'maxiter': 1000})
+    at = np.empty(n)
+    at[:-1] = r.x[:n-1]
+    at[-1] = -at[:-1].sum()
     return {
-        'att': at, 'dfn': r.x[n:2*n], 'home': r.x[2*n], 'rho': r.x[2*n+1],
-        'alpha_h': np.exp(r.x[2*n+2]), 'alpha_a': np.exp(r.x[2*n+3]),
+        'att': at, 'dfn': r.x[n-1:2*n-1], 'home': r.x[2*n-1], 'rho': r.x[2*n],
+        'alpha_h': np.exp(r.x[2*n+1]), 'alpha_a': np.exp(r.x[2*n+2]), 'delta': r.x[2*n+3],
         'idx': idx, 'teams': teams
     }
 
-def dc_nb_matrix(dcm, h, a, host):
+def dc_nb_matrix(dcm, h, a, host, elo_h, elo_a):
     idx = dcm['idx']
     if h not in idx or a not in idx:
         M = np.outer(poisson.pmf(range(MAXG), 1.2), poisson.pmf(range(MAXG), 1.2))
         return M / M.sum()
         
-    att, dfn, home, rho = dcm['att'], dcm['dfn'], dcm['home'], dcm['rho']
+    att, dfn, home, rho, delta = dcm['att'], dcm['dfn'], dcm['home'], dcm['rho'], dcm.get('delta', 0.0)
     alpha_h, alpha_a = dcm['alpha_h'], dcm['alpha_a']
-    l = np.exp(att[idx[h]] - dfn[idx[a]] + (home if host else 0))
-    m = np.exp(att[idx[a]] - dfn[idx[h]])
+    ediff = (elo_h - elo_a) / 100.0
+    
+    l = np.exp(att[idx[h]] - dfn[idx[a]] + (home if host else 0) + delta * ediff)
+    m = np.exp(att[idx[a]] - dfn[idx[h]] - delta * ediff)
     
     # Aplicar modificadores de Opta
     w = 0.30 # Peso de suavizado
@@ -705,7 +744,7 @@ def mcmc_matrix_mean(mc, h, a, host, dc_model):
             dc_idx = dc_model['idx']
             if h in dc_idx:
                 att_h = dc_model['att'][dc_idx[h]]
-                dfn_h = dc_model['dfn'][dc_idx[h]]
+                dfn_h = dc_model['dfn'][dc_idx[h]] - dc_model['dfn'].mean()
             else:
                 att_h, dfn_h = 0.0, 0.0
                 
@@ -716,7 +755,7 @@ def mcmc_matrix_mean(mc, h, a, host, dc_model):
             dc_idx = dc_model['idx']
             if a in dc_idx:
                 att_a = dc_model['att'][dc_idx[a]]
-                dfn_a = dc_model['dfn'][dc_idx[a]]
+                dfn_a = dc_model['dfn'][dc_idx[a]] - dc_model['dfn'].mean()
             else:
                 att_a, dfn_a = 0.0, 0.0
                 
@@ -1799,10 +1838,10 @@ if __name__ == '__main__':
         
     # 4. Ajustar modelos GLOBALES finales
     print("\n[INFO] Ajustando Dixon-Coles global...")
-    dc_final = fit_dixon_coles(df_all[(df_all.date >= DESDE) & (df_all.date < MATCH_DATE)], MATCH_DATE)
+    dc_final = fit_dixon_coles(df_all[(df_all.date >= DESDE) & (df_all.date < MATCH_DATE)], MATCH_DATE, elo_by_team, final_elos)
     
     print("[INFO] Ajustando Dixon-Coles NB (Binomial Negativa) global...")
-    dc_nb_final = fit_dixon_coles_nb(df_all[(df_all.date >= DESDE) & (df_all.date < MATCH_DATE)], MATCH_DATE)
+    dc_nb_final = fit_dixon_coles_nb(df_all[(df_all.date >= DESDE) & (df_all.date < MATCH_DATE)], MATCH_DATE, elo_by_team, final_elos)
     
     print("[INFO] Muestreando MCMC Bayesiano global (PyMC)... Esto puede tardar ~2-4 min...")
     # Evitar fuga de datos en prioris de MCMC usando ratings ELO al corte de MATCH_DATE
@@ -1881,36 +1920,17 @@ if __name__ == '__main__':
         'MFA Montecarlo': [],
         'Ensemble': []
     }
-    score5_hits = {
-        'Dixon-Coles': 0,
-        'Dixon-Coles NB': 0,
-        'MCMC Bayesiano': 0,
-        'XGBoost': 0,
-        'Red Neuronal': 0,
-        'CatBoost': 0,
-        'MFA Montecarlo': 0,
-        'Ensemble': 0
-    }
-    score10_hits = {
-        'Dixon-Coles': 0,
-        'Dixon-Coles NB': 0,
-        'MCMC Bayesiano': 0,
-        'XGBoost': 0,
-        'Red Neuronal': 0,
-        'CatBoost': 0,
-        'MFA Montecarlo': 0,
-        'Ensemble': 0
+    score5_hits = {}
+    score10_hits = {}
+    scoreN_hits = {
+        name: {N: 0 for N in range(1, 13)}
+        for name in ['Dixon-Coles', 'Dixon-Coles NB', 'MCMC Bayesiano', 'XGBoost', 'Red Neuronal', 'CatBoost', 'MFA Montecarlo', 'Ensemble']
     }
     
-    def check_top5_score_hit(M, real_h, real_a):
-        flat_idx = np.argsort(M.flatten())[-5:]
-        top5_scores = [(idx // M.shape[1], idx % M.shape[1]) for idx in flat_idx]
-        return int((real_h, real_a) in top5_scores)
-        
-    def check_top10_score_hit(M, real_h, real_a):
-        flat_idx = np.argsort(M.flatten())[-10:]
-        top10_scores = [(idx // M.shape[1], idx % M.shape[1]) for idx in flat_idx]
-        return int((real_h, real_a) in top10_scores)
+    def check_topN_score_hit(M, real_h, real_a, N):
+        flat_idx = np.argsort(M.flatten())[-N:]
+        topN_scores = [(idx // M.shape[1], idx % M.shape[1]) for idx in flat_idx]
+        return int((real_h, real_a) in topN_scores)
 
     n_test = 0
     opt_data = []
@@ -1946,24 +1966,26 @@ if __name__ == '__main__':
         match_date = pd.to_datetime(match_obj['date'])
         
         o = resultado_real(goals_h, goals_a)
+        elo_h = get_elo_at_date(h_eng, match_date, elo_by_team, final_elos)
+        elo_a = get_elo_at_date(a_eng, match_date, elo_by_team, final_elos)
         
         # DC
-        M_dc = dc_matrix(dc_final, h_eng, a_eng, host)
+        M_dc = dc_matrix(dc_final, h_eng, a_eng, host, elo_h, elo_a)
         p_dc = matrix_to_1x2(M_dc)
         res['Dixon-Coles'][0] += int(np.argmax(p_dc) == o)
         res['Dixon-Coles'][1] += rps_1x2(p_dc, o)
         conf_acc['Dixon-Coles'].append((int(np.argmax(p_dc) == o), max(p_dc)))
-        score5_hits['Dixon-Coles'] += check_top5_score_hit(M_dc, goals_h, goals_a)
-        score10_hits['Dixon-Coles'] += check_top10_score_hit(M_dc, goals_h, goals_a)
+        for N in range(1, 13):
+            scoreN_hits['Dixon-Coles'][N] += check_topN_score_hit(M_dc, goals_h, goals_a, N)
         
         # DC NB
-        M_dcnb = dc_nb_matrix(dc_nb_final, h_eng, a_eng, host)
+        M_dcnb = dc_nb_matrix(dc_nb_final, h_eng, a_eng, host, elo_h, elo_a)
         p_dcnb = matrix_to_1x2(M_dcnb)
         res['Dixon-Coles NB'][0] += int(np.argmax(p_dcnb) == o)
         res['Dixon-Coles NB'][1] += rps_1x2(p_dcnb, o)
         conf_acc['Dixon-Coles NB'].append((int(np.argmax(p_dcnb) == o), max(p_dcnb)))
-        score5_hits['Dixon-Coles NB'] += check_top5_score_hit(M_dcnb, goals_h, goals_a)
-        score10_hits['Dixon-Coles NB'] += check_top10_score_hit(M_dcnb, goals_h, goals_a)
+        for N in range(1, 13):
+            scoreN_hits['Dixon-Coles NB'][N] += check_topN_score_hit(M_dcnb, goals_h, goals_a, N)
         
         # MCMC
         M_mc = mcmc_matrix_mean(mc_final, h_eng, a_eng, host, dc_final)
@@ -1971,8 +1993,8 @@ if __name__ == '__main__':
         res['MCMC Bayesiano'][0] += int(np.argmax(p_mc) == o)
         res['MCMC Bayesiano'][1] += rps_1x2(p_mc, o)
         conf_acc['MCMC Bayesiano'].append((int(np.argmax(p_mc) == o), max(p_mc)))
-        score5_hits['MCMC Bayesiano'] += check_top5_score_hit(M_mc, goals_h, goals_a)
-        score10_hits['MCMC Bayesiano'] += check_top10_score_hit(M_mc, goals_h, goals_a)
+        for N in range(1, 13):
+            scoreN_hits['MCMC Bayesiano'][N] += check_topN_score_hit(M_mc, goals_h, goals_a, N)
         
         # Obtener sede para cargar datos climáticos
         v_val = match_obj.get('venue')
@@ -1984,8 +2006,8 @@ if __name__ == '__main__':
         res['XGBoost'][0] += int(np.argmax(p_xg) == o)
         res['XGBoost'][1] += rps_1x2(p_xg, o)
         conf_acc['XGBoost'].append((int(np.argmax(p_xg) == o), max(p_xg)))
-        score5_hits['XGBoost'] += check_top5_score_hit(M_xg, goals_h, goals_a)
-        score10_hits['XGBoost'] += check_top10_score_hit(M_xg, goals_h, goals_a)
+        for N in range(1, 13):
+            scoreN_hits['XGBoost'][N] += check_topN_score_hit(M_xg, goals_h, goals_a, N)
         
         # MLP
         M_ml = mlp_matrix(scaler_f, mlp_home, mlp_away, dc_final, h_eng, a_eng, host, match_date,
@@ -1994,8 +2016,8 @@ if __name__ == '__main__':
         res['Red Neuronal'][0] += int(np.argmax(p_ml) == o)
         res['Red Neuronal'][1] += rps_1x2(p_ml, o)
         conf_acc['Red Neuronal'].append((int(np.argmax(p_ml) == o), max(p_ml)))
-        score5_hits['Red Neuronal'] += check_top5_score_hit(M_ml, goals_h, goals_a)
-        score10_hits['Red Neuronal'] += check_top10_score_hit(M_ml, goals_h, goals_a)
+        for N in range(1, 13):
+            scoreN_hits['Red Neuronal'][N] += check_topN_score_hit(M_ml, goals_h, goals_a, N)
         
         # CatBoost
         M_cb = catboost_matrix(cb_home, cb_away, dc_final, h_eng, a_eng, host, match_date,
@@ -2004,12 +2026,10 @@ if __name__ == '__main__':
         res['CatBoost'][0] += int(np.argmax(p_cb) == o)
         res['CatBoost'][1] += rps_1x2(p_cb, o)
         conf_acc['CatBoost'].append((int(np.argmax(p_cb) == o), max(p_cb)))
-        score5_hits['CatBoost'] += check_top5_score_hit(M_cb, goals_h, goals_a)
-        score10_hits['CatBoost'] += check_top10_score_hit(M_cb, goals_h, goals_a)
+        for N in range(1, 13):
+            scoreN_hits['CatBoost'][N] += check_topN_score_hit(M_cb, goals_h, goals_a, N)
         
         # MFA Montecarlo
-        elo_h = get_elo_at_date(h_eng, match_date, elo_by_team, final_elos)
-        elo_a = get_elo_at_date(a_eng, match_date, elo_by_team, final_elos)
         fh = get_form_at_date(h_eng, match_date, form_by_team)
         fa = get_form_at_date(a_eng, match_date, form_by_team)
         form_h_val = fh[0] if fh else 0.5
@@ -2019,8 +2039,8 @@ if __name__ == '__main__':
         res['MFA Montecarlo'][0] += int(np.argmax(p_mfa) == o)
         res['MFA Montecarlo'][1] += rps_1x2(p_mfa, o)
         conf_acc['MFA Montecarlo'].append((int(np.argmax(p_mfa) == o), max(p_mfa)))
-        score5_hits['MFA Montecarlo'] += check_top5_score_hit(M_mfa, goals_h, goals_a)
-        score10_hits['MFA Montecarlo'] += check_top10_score_hit(M_mfa, goals_h, goals_a)
+        for N in range(1, 13):
+            scoreN_hits['MFA Montecarlo'][N] += check_topN_score_hit(M_mfa, goals_h, goals_a, N)
         
         opt_data.append((M_dc, M_dcnb, M_mc, M_xg, M_ml, M_cb, M_mfa, o, goals_h, goals_a))
         
@@ -2079,8 +2099,8 @@ if __name__ == '__main__':
         
         # Marcador exacto para el Ensemble (usando los pesos w_opt_score)
         M_ens_score_t = (M_dc_t * w_opt_score[0] + M_dcnb_t * w_opt_score[1] + M_mc_t * w_opt_score[2] + M_xg_t * w_opt_score[3] + M_ml_t * w_opt_score[4] + M_cb_t * w_opt_score[5] + M_mfa_t * w_opt_score[6])
-        score5_hits['Ensemble'] += check_top5_score_hit(M_ens_score_t, goals_h_t, goals_a_t)
-        score10_hits['Ensemble'] += check_top10_score_hit(M_ens_score_t, goals_h_t, goals_a_t)
+        for N in range(1, 13):
+            scoreN_hits['Ensemble'][N] += check_topN_score_hit(M_ens_score_t, goals_h_t, goals_a_t, N)
         
     opt_acc = (opt_hits / n_test) * 100 if n_test > 0 else 0
     opt_rps_mean = opt_rps / n_test if n_test > 0 else 0
@@ -2095,6 +2115,10 @@ if __name__ == '__main__':
     print(f"  --> Ensemble Optimizado: Accuracy 1X2 = {opt_acc:.2f}% | RPS = {opt_rps_mean:.4f}")
     
     # Calcular precisión de marcadores exactos (Top 5 y Top 10 sugeridos)
+    for name in scoreN_hits:
+        score5_hits[name] = scoreN_hits[name][5]
+        score10_hits[name] = scoreN_hits[name][10]
+        
     exact_score5_accs = {}
     exact_score10_accs = {}
     for k, hits in score5_hits.items():
@@ -2112,66 +2136,63 @@ if __name__ == '__main__':
     for k, acc_pct, rps_mean, es5_acc, es10_acc in summary_metrics:
         print(f"  {k:<18} Accuracy 1X2: {acc_pct:>5.1f}%  RPS: {rps_mean:.4f}  Top 5 Score Acc: {es5_acc:.1f}%  Top 10 Score Acc: {es10_acc:.1f}%")
         
-    # Generar la gráfica global de Accuracy en cuadrícula 2x2
-    fig, axes = plt.subplots(2, 2, figsize=(15, 11))
+    # Generar la gráfica global de Accuracy con GridSpec (2 filas, la segunda fila combinada)
+    fig = plt.figure(figsize=(15, 12))
     fig.patch.set_facecolor('none')
-    for r in range(2):
-        for c in range(2):
-            ax = axes[r, c]
-            ax.patch.set_facecolor('none')
-            ax.spines['bottom'].set_color((1, 1, 1, 0.2))
-            ax.spines['left'].set_color((1, 1, 1, 0.2))
-            ax.tick_params(colors='white')
-            ax.xaxis.label.set_color('white')
-            ax.yaxis.label.set_color('white')
-            ax.title.set_color('white')
+    gs = fig.add_gridspec(2, 2, height_ratios=[1, 1.2])
+    
+    ax0 = fig.add_subplot(gs[0, 0])
+    ax1 = fig.add_subplot(gs[0, 1])
+    ax2 = fig.add_subplot(gs[1, :])
+    
+    for ax in [ax0, ax1, ax2]:
+        ax.patch.set_facecolor('none')
+        ax.spines['bottom'].set_color((1, 1, 1, 0.2))
+        ax.spines['left'].set_color((1, 1, 1, 0.2))
+        ax.tick_params(colors='white')
+        ax.xaxis.label.set_color('white')
+        ax.yaxis.label.set_color('white')
+        ax.title.set_color('white')
 
     names = [s[0] for s in summary_metrics]
     accs = [s[1] for s in summary_metrics]
     rpss = [s[2] for s in summary_metrics]
-    t3_vals = [s[3] for s in summary_metrics]
-    t10_vals = [s[4] for s in summary_metrics]
     cols = ['#94a3b8', '#f43f5e', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#0ea5e9', '#f59e0b']
     
     # 1. Accuracy 1X2 General
-    axes[0, 0].bar(names, accs, color=cols, width=0.52, edgecolor='white', linewidth=1.5)
+    ax0.bar(names, accs, color=cols, width=0.52, edgecolor='white', linewidth=1.5)
     for i, v in enumerate(accs):
-        axes[0, 0].text(i, v + 0.2, f'{v:.1f}%', ha='center', fontweight='bold', fontsize=9, color='white')
-    axes[0, 0].set_title('Accuracy 1X2 General (mayor = mejor)', fontweight='bold', color='white')
-    axes[0, 0].set_ylabel('%', color='white')
-    axes[0, 0].set_ylim(min(accs) - 5, max(accs) + 5)
-    axes[0, 0].spines[['top', 'right']].set_visible(False)
-    axes[0, 0].tick_params(axis='x', rotation=22, labelsize=9)
+        ax0.text(i, v + 0.2, f'{v:.1f}%', ha='center', fontweight='bold', fontsize=9, color='white')
+    ax0.set_title('Accuracy 1X2 General (mayor = mejor)', fontweight='bold', color='white')
+    ax0.set_ylabel('%', color='white')
+    ax0.set_ylim(min(accs) - 5, max(accs) + 5)
+    ax0.spines[['top', 'right']].set_visible(False)
+    ax0.tick_params(axis='x', rotation=22, labelsize=9)
     
     # 2. RPS General
-    axes[0, 1].bar(names, rpss, color=cols, width=0.52, edgecolor='white', linewidth=1.5)
+    ax1.bar(names, rpss, color=cols, width=0.52, edgecolor='white', linewidth=1.5)
     for i, v in enumerate(rpss):
-        axes[0, 1].text(i, v + 0.0004, f'{v:.4f}', ha='center', fontweight='bold', fontsize=9, color='white')
-    axes[0, 1].set_title('RPS General (menor = mejor)', fontweight='bold', color='white')
-    axes[0, 1].set_ylabel('RPS', color='white')
-    axes[0, 1].set_ylim(min(rpss) - 0.005, max(rpss) + 0.005)
-    axes[0, 1].spines[['top', 'right']].set_visible(False)
-    axes[0, 1].tick_params(axis='x', rotation=22, labelsize=9)
+        ax1.text(i, v + 0.0004, f'{v:.4f}', ha='center', fontweight='bold', fontsize=9, color='white')
+    ax1.set_title('RPS General (menor = mejor)', fontweight='bold', color='white')
+    ax1.set_ylabel('RPS', color='white')
+    ax1.set_ylim(min(rpss) - 0.005, max(rpss) + 0.005)
+    ax1.spines[['top', 'right']].set_visible(False)
+    ax1.tick_params(axis='x', rotation=22, labelsize=9)
 
-    # 3. Exact Score Accuracy (Top 5 Sugeridos)
-    axes[1, 0].bar(names, t3_vals, color=cols, width=0.52, edgecolor='white', linewidth=1.5)
-    for i, v in enumerate(t3_vals):
-        axes[1, 0].text(i, v + 0.2, f'{v:.1f}%', ha='center', fontweight='bold', fontsize=9, color='white')
-    axes[1, 0].set_title('Acierto de Marcador Real en Top 5 Sugeridos', fontweight='bold', color='white')
-    axes[1, 0].set_ylabel('%', color='white')
-    axes[1, 0].set_ylim(0, 110)
-    axes[1, 0].spines[['top', 'right']].set_visible(False)
-    axes[1, 0].tick_params(axis='x', rotation=22, labelsize=9)
-
-    # 4. Exact Score Accuracy (Top 10 Sugeridos)
-    axes[1, 1].bar(names, t10_vals, color=cols, width=0.52, edgecolor='white', linewidth=1.5)
-    for i, v in enumerate(t10_vals):
-        axes[1, 1].text(i, v + 0.2, f'{v:.1f}%', ha='center', fontweight='bold', fontsize=9, color='white')
-    axes[1, 1].set_title('Acierto de Marcador Real en Top 10 Sugeridos', fontweight='bold', color='white')
-    axes[1, 1].set_ylabel('%', color='white')
-    axes[1, 1].set_ylim(0, 110)
-    axes[1, 1].spines[['top', 'right']].set_visible(False)
-    axes[1, 1].tick_params(axis='x', rotation=22, labelsize=9)
+    # 3. Curva de Acierto de Marcador Exacto (Top 1 a Top 12)
+    N_values = list(range(1, 13))
+    for name, col in zip(names, cols):
+        acc_curve = [(scoreN_hits[name][N] / n_test) * 100 if n_test > 0 else 0 for N in N_values]
+        ax2.plot(N_values, acc_curve, marker='o', markersize=6, linewidth=2.2, label=name, color=col)
+        
+    ax2.set_title('Curva de Acierto de Marcador Real (Top 1 a Top 12 sugeridos)', fontweight='bold', color='white', fontsize=12)
+    ax2.set_ylabel('% de Acierto', color='white')
+    ax2.set_xlabel('Marcadores Sugeridos (Top N)', color='white')
+    ax2.set_ylim(0, 105)
+    ax2.set_xticks(N_values)
+    ax2.grid(True, color='white', alpha=0.08, linestyle='--')
+    ax2.spines[['top', 'right']].set_visible(False)
+    ax2.legend(facecolor='#141820', edgecolor=(1, 1, 1, 0.15), labelcolor='white', loc='upper left', framealpha=0.8)
 
     plt.tight_layout()
     
@@ -2207,12 +2228,14 @@ if __name__ == '__main__':
         theta_param = THETA_KNOCKOUT if is_knockout else THETA_GROUPS
         
         match_date = pd.to_datetime(match['date'])
+        elo_h = get_elo_at_date(h_eng, match_date, elo_by_team, final_elos)
+        elo_a = get_elo_at_date(a_eng, match_date, elo_by_team, final_elos)
         
         # Sin Poda Computacional: Generar todas las matrices siempre para que el frontend (React) 
         # tenga las imágenes de los modelos individuales para mostrar en la pestaña "Detalle de Modelos",
         # sin importar si el optimizador les dio un peso de 0%.
-        M_dc = dc_matrix(dc_final, h_eng, a_eng, host)
-        M_dcnb = dc_nb_matrix(dc_nb_final, h_eng, a_eng, host)
+        M_dc = dc_matrix(dc_final, h_eng, a_eng, host, elo_h, elo_a)
+        M_dcnb = dc_nb_matrix(dc_nb_final, h_eng, a_eng, host, elo_h, elo_a)
         M_mc = mcmc_matrix_mean(mc_final, h_eng, a_eng, host, dc_final)
         
         M_xgb, lh_xgb, la_xgb = xgb_matrix(reg_home, reg_away, dc_final, h_eng, a_eng, host, match_date,
@@ -2225,8 +2248,6 @@ if __name__ == '__main__':
                                           form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, v, theta=theta_param)
         
         # Extraer Elo y Forma para MFA Montecarlo
-        elo_h = get_elo_at_date(h_eng, match_date, elo_by_team, final_elos)
-        elo_a = get_elo_at_date(a_eng, match_date, elo_by_team, final_elos)
         fh = get_form_at_date(h_eng, match_date, form_by_team)
         fa = get_form_at_date(a_eng, match_date, form_by_team)
         form_h_val = fh[0] if fh else 0.5

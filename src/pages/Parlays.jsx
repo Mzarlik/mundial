@@ -698,7 +698,7 @@ export default function Parlays() {
                             style={{ 
                               width: '100%', 
                               padding: '0.6rem 0.8rem', 
-                              background: 'rgba(255, 255, 255, 0.06)', 
+                              background: '#141820', 
                               border: '1px solid rgba(255, 255, 255, 0.15)', 
                               borderRadius: '8px', 
                               color: '#fff', 
@@ -708,10 +708,10 @@ export default function Parlays() {
                               transition: 'border-color 0.2s ease, background-color 0.2s ease'
                             }}
                           >
-                            <option value={1.0}>Full Kelly (100% - Riesgo Alto)</option>
-                            <option value={0.5}>Half Kelly (50% - Riesgo Medio)</option>
-                            <option value={0.25}>Quarter Kelly (25% - Recomendado)</option>
-                            <option value={0.125}>Eighth Kelly (12.5% - Conservador)</option>
+                            <option value={1.0} style={{ background: '#141820', color: '#fff' }}>Full Kelly (100% - Riesgo Alto)</option>
+                            <option value={0.5} style={{ background: '#141820', color: '#fff' }}>Half Kelly (50% - Riesgo Medio)</option>
+                            <option value={0.25} style={{ background: '#141820', color: '#fff' }}>Quarter Kelly (25% - Recomendado)</option>
+                            <option value={0.125} style={{ background: '#141820', color: '#fff' }}>Eighth Kelly (12.5% - Conservador)</option>
                           </select>
                         </div>
                       </div>

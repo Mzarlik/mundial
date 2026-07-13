@@ -72,7 +72,7 @@ def evaluate_tournament(df_all, start_date, end_date, tournament_name):
     X_train, yh_train, ya_train, th_train, ta_train = pm.build_dataset(dc_model, cutoff, df_train, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis)
     
     print("[INFO] Muestreando MCMC Bayesiano (PyMC)... Esto puede tardar ~1 min (draws=1500, tune=1500)...")
-    mc_model = pm.fit_mcmc(df_train[df_train.date >= pm.DESDE_BAYES], draws=1500, tune=1500)
+    mc_model = pm.fit_mcmc(df_train[df_train.date >= pm.DESDE_BAYES], final_elos, draws=1500, tune=1500)
     
     print("[INFO] Training XGBoost (early stopping)...")
     model_h, model_a = pm.train_xgb_goals(X_train, yh_train, ya_train)
