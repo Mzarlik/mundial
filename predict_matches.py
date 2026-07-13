@@ -502,7 +502,8 @@ def fit_dixon_coles(train, cutoff, half_life=HALF_LIFE):
         at = p[:n] - p[:n].mean(); dn = p[n:2*n]; h = p[2*n]; r = p[2*n+1]
         l = np.exp(at[hi] - dn[ai] + h*lm); m = np.exp(at[ai] - dn[hi])
         t = np.clip(tau(hs, as_, l, m, r), 1e-10, None)
-        return -(w * (np.log(t) + poisson.logpmf(hs, l) + poisson.logpmf(as_, m))).sum()
+        l2_penalty = 0.05 * ((at ** 2).sum() + (dn ** 2).sum())
+        return -(w * (np.log(t) + poisson.logpmf(hs, l) + poisson.logpmf(as_, m))).sum() + l2_penalty
         
     r = minimize(nll, np.concatenate([np.zeros(n), np.zeros(n), [.25, -.05]]), method='L-BFGS-B')
     at = r.x[:n] - r.x[:n].mean()
@@ -585,7 +586,8 @@ def fit_dixon_coles_nb(train, cutoff, half_life=HALF_LIFE):
         S = 1.0 + r * (-l*m*p0_h*p0_a + m*p1_h*p0_a + l*p0_h*p1_a - p1_h*p1_a)
         S = np.clip(S, 1e-10, None)
         
-        return -(w * (np.log(t) + logpmf_h + logpmf_a - np.log(S))).sum()
+        l2_penalty = 0.20 * ((at ** 2).sum() + (dn ** 2).sum())
+        return -(w * (np.log(t) + logpmf_h + logpmf_a - np.log(S))).sum() + l2_penalty
         
     init_p = np.concatenate([np.zeros(n), np.zeros(n), [.25, -.05, -1.0, -1.0]])
     r = minimize(nll, init_p, method='L-BFGS-B')
@@ -677,37 +679,57 @@ def mcmc_matrix_mean(mc, h, a, host, dc_model):
     post = mc['trace'].posterior
     idxb = mc['idxb']
     
-    am = post['ac'].mean(('chain','draw')).values
-    dm = post['dc_'].mean(('chain','draw')).values
-    hm = float(post['home'].mean())
-    bm = float(post['base'].mean())
+    # Aplanar las dimensiones de chains y draws para muestreo Bayesiano real
+    chains = post.dims['chain']
+    draws = post.dims['draw']
+    total_samples = chains * draws
     
-    # Fallback si el equipo no está en MCMC
-    if h in idxb:
-        att_h = am[idxb[h]]
-        dfn_h = dm[idxb[h]]
-    else:
-        dc_idx = dc_model['idx']
-        if h in dc_idx:
-            att_h = dc_model['att'][dc_idx[h]]
-            dfn_h = dc_model['dfn'][dc_idx[h]]
+    # Tomamos 100 muestras espaciadas uniformemente para velocidad e integración óptima de la posterior
+    N_samples = 100
+    step = max(1, total_samples // N_samples)
+    sample_indices = list(range(0, total_samples, step))[:N_samples]
+    
+    ac_flat = post['ac'].values.reshape(total_samples, -1)
+    dc_flat = post['dc_'].values.reshape(total_samples, -1)
+    home_flat = post['home'].values.reshape(total_samples)
+    base_flat = post['base'].values.reshape(total_samples)
+    
+    M_sum = np.zeros((MAXG, MAXG))
+    
+    for idx in sample_indices:
+        # Fallback si el equipo no está en el subset de MCMC
+        if h in idxb:
+            att_h = ac_flat[idx, idxb[h]]
+            dfn_h = dc_flat[idx, idxb[h]]
         else:
-            att_h, dfn_h = 0.0, 0.0
-            
-    if a in idxb:
-        att_a = am[idxb[a]]
-        dfn_a = dm[idxb[a]]
-    else:
-        dc_idx = dc_model['idx']
-        if a in dc_idx:
-            att_a = dc_model['att'][dc_idx[a]]
-            dfn_a = dc_model['dfn'][dc_idx[a]]
+            dc_idx = dc_model['idx']
+            if h in dc_idx:
+                att_h = dc_model['att'][dc_idx[h]]
+                dfn_h = dc_model['dfn'][dc_idx[h]]
+            else:
+                att_h, dfn_h = 0.0, 0.0
+                
+        if a in idxb:
+            att_a = ac_flat[idx, idxb[a]]
+            dfn_a = dc_flat[idx, idxb[a]]
         else:
-            att_a, dfn_a = 0.0, 0.0
-            
-    l = np.exp(bm + hm * host + att_h - dfn_a)
-    m = np.exp(bm + att_a - dfn_h)
-    M = np.outer(poisson.pmf(range(MAXG), l), poisson.pmf(range(MAXG), m))
+            dc_idx = dc_model['idx']
+            if a in dc_idx:
+                att_a = dc_model['att'][dc_idx[a]]
+                dfn_a = dc_model['dfn'][dc_idx[a]]
+            else:
+                att_a, dfn_a = 0.0, 0.0
+                
+        home_val = home_flat[idx]
+        base_val = base_flat[idx]
+        
+        l = np.exp(base_val + home_val * host + att_h - dfn_a)
+        m = np.exp(base_val + att_a - dfn_h)
+        
+        M_sample = np.outer(poisson.pmf(range(MAXG), l), poisson.pmf(range(MAXG), m))
+        M_sum += M_sample / M_sample.sum()
+        
+    M = M_sum / len(sample_indices)
     return M / M.sum()
 
 # --- PREPARACIÓN DE CARACTERÍSTICAS XGBOOST ---
@@ -764,6 +786,14 @@ def make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, 
     mv_a = MARKET_VALUES.get(a, 0.0) if 'MARKET_VALUES' in globals() else 0.0
     mv_diff = mv_h - mv_a
     
+    age_h = AVG_AGE.get(h, 27.0) if 'AVG_AGE' in globals() else 27.0
+    age_a = AVG_AGE.get(a, 27.0) if 'AVG_AGE' in globals() else 27.0
+    age_diff = age_h - age_a
+    
+    squad_h = SQUAD_SIZE.get(h, 23.0) if 'SQUAD_SIZE' in globals() else 23.0
+    squad_a = SQUAD_SIZE.get(a, 23.0) if 'SQUAD_SIZE' in globals() else 23.0
+    squad_diff = squad_h - squad_a
+    
     # Cargar datos de clima y altitud
     altitude = 100.0
     temp = 20.0
@@ -774,12 +804,13 @@ def make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, 
         temp = st_info.get("effective_temp_c", 20.0)
         taxing = st_info.get("taxing_score", 0.1)
         
-    # Devolvemos un vector purgado de ruido con datos climáticos y de altitud agregados
+    # Devolvemos un vector purgado de ruido con datos climáticos, de altitud y de plantilla agregados
     return [
         lam, mu, att[idx[h]] - att[idx[a]], dfn[idx[h]] - dfn[idx[a]], float(host),
         fh[0], fh[1], fh[2], fa[0], fa[1], fa[2],
         elo_h, elo_a, elo_diff, pi_h, pi_a, h2h_gd, float(is_comp),
         mv_h, mv_a, mv_diff,
+        age_h, age_a, age_diff, squad_h, squad_a, squad_diff,
         float(altitude), float(temp), float(taxing)
     ]
 
@@ -832,11 +863,11 @@ def train_mlp_goals(X, yh, ya):
     X_mlp = X
     scaler = StandardScaler().fit(X_mlp)
     X_s = scaler.transform(X_mlp)
-    # Aumentamos regularización L2 alpha a 2.5 y simplificamos la arquitectura a (32, 16) para prevenir sobreajuste
+    # Calibramos la arquitectura a (48, 24) y la penalización L2 alpha a 2.5 para generalizar mejor sin sobreajustar
     params = dict(
-        hidden_layer_sizes=(32, 16),
+        hidden_layer_sizes=(48, 24),
         activation='relu',
-        max_iter=400,
+        max_iter=500,
         alpha=2.5,
         early_stopping=True,
         validation_fraction=0.15,
@@ -1485,6 +1516,186 @@ def simulate_match_timeline_weibull(l_h, l_a, h_name, a_name, out_path, simulati
         "top_halftime_scores": top_ht
     }
 
+def calculate_sgp_options(M_ens, p_1x2, home, away):
+    """
+    Calcula probabilidades de eventos correlacionados (Same Game Parlays) a partir de la matriz
+    de probabilidad de goles conjunta del Ensemble.
+    """
+    parlays = []
+    
+    # 1. Ambos Equipos Anotan (BTTS)
+    # i > 0 y j > 0 en M_ens
+    prob_btts = 0.0
+    for i in range(1, M_ens.shape[0]):
+        for j in range(1, M_ens.shape[1]):
+            prob_btts += float(M_ens[i, j])
+            
+    # 2. Local + Over 1.5
+    prob_home_over15 = 0.0
+    for i in range(M_ens.shape[0]):
+        for j in range(M_ens.shape[1]):
+            if i > j and (i + j) >= 2:
+                prob_home_over15 += float(M_ens[i, j])
+                
+    # 3. Local + Over 2.5
+    prob_home_over25 = 0.0
+    for i in range(M_ens.shape[0]):
+        for j in range(M_ens.shape[1]):
+            if i > j and (i + j) >= 3:
+                prob_home_over25 += float(M_ens[i, j])
+                
+    # 4. Visita + Over 1.5
+    prob_away_over15 = 0.0
+    for i in range(M_ens.shape[0]):
+        for j in range(M_ens.shape[1]):
+            if i < j and (i + j) >= 2:
+                prob_away_over15 += float(M_ens[i, j])
+                
+    # 5. Visita + Over 2.5
+    prob_away_over25 = 0.0
+    for i in range(M_ens.shape[0]):
+        for j in range(M_ens.shape[1]):
+            if i < j and (i + j) >= 3:
+                prob_away_over25 += float(M_ens[i, j])
+                
+    # 6. Ambos Anotan (BTTS) + Over 2.5
+    prob_btts_over25 = 0.0
+    for i in range(1, M_ens.shape[0]):
+        for j in range(1, M_ens.shape[1]):
+            if (i + j) >= 3:
+                prob_btts_over25 += float(M_ens[i, j])
+                
+    # 7. Empate + Under 2.5
+    prob_draw_under25 = 0.0
+    for i in range(M_ens.shape[0]):
+        for j in range(M_ens.shape[1]):
+            if i == j and (i + j) <= 2:
+                prob_draw_under25 += float(M_ens[i, j])
+                
+    # 8. Local o Empate (1X) + Under 3.5
+    prob_1x_under35 = 0.0
+    for i in range(M_ens.shape[0]):
+        for j in range(M_ens.shape[1]):
+            if i >= j and (i + j) <= 3:
+                prob_1x_under35 += float(M_ens[i, j])
+                
+    # 9. Visita o Empate (X2) + Under 3.5
+    prob_x2_under35 = 0.0
+    for i in range(M_ens.shape[0]):
+        for j in range(M_ens.shape[1]):
+            if i <= j and (i + j) <= 3:
+                prob_x2_under35 += float(M_ens[i, j])
+
+    # Lista de candidatos
+    candidates = [
+        {"title": "Ambos Equipos Anotan (BTTS)", "description": f"Tanto {home} como {away} marcan al menos un gol", "prob": prob_btts},
+        {"title": f"Gana {home} + Más de 1.5 Goles", "description": f"Victoria de {home} en un partido con 2 o más goles totales", "prob": prob_home_over15},
+        {"title": f"Gana {home} + Más de 2.5 Goles", "description": f"Victoria de {home} en un partido con 3 o más goles totales", "prob": prob_home_over25},
+        {"title": f"Gana {away} + Más de 1.5 Goles", "description": f"Victoria de {away} en un partido con 2 o más goles totales", "prob": prob_away_over15},
+        {"title": f"Gana {away} + Más de 2.5 Goles", "description": f"Victoria de {away} en un partido con 3 o más goles totales", "prob": prob_away_over25},
+        {"title": "BTTS + Más de 2.5 Goles", "description": "Ambos anotan y hay 3 o más goles en total", "prob": prob_btts_over25},
+        {"title": "Empate + Menos de 2.5 Goles", "description": "Resultado de empate (0-0 o 1-1)", "prob": prob_draw_under25},
+        {"title": f"{home} o Empate + Menos de 3.5 Goles", "description": f"{home} no pierde y el total de goles es 3 o menos", "prob": prob_1x_under35},
+        {"title": f"{away} o Empate + Menos de 3.5 Goles", "description": f"{away} no pierde y el total de goles es 3 o menos", "prob": prob_x2_under35}
+    ]
+    
+    # Filtrar aquellos con probabilidad >= 55% y calcular cuotas
+    for c in candidates:
+        if c["prob"] >= 0.55:
+            odds = 1.0 / c["prob"]
+            c["odds"] = round(odds, 2)
+            c["prob"] = round(c["prob"] * 100, 1)
+            parlays.append(c)
+            
+    # Ordenar por probabilidad descendente
+    parlays.sort(key=lambda x: x["prob"], reverse=True)
+    return parlays
+
+def compute_resilience_and_snowball_indices(results_path, goalscorers_path):
+    """
+    Calcula los índices empíricos de Resiliencia (capacidad de remontar al ir perdiendo)
+    y Letalidad Snowball (capacidad de asegurar la victoria al ir ganando) de cada selección.
+    """
+    print("[INFO] Calculando índices de Resiliencia y Snowball desde goalscorers.csv...")
+    try:
+        # Cargar datasets
+        df_res = pd.read_csv(results_path)
+        df_goals = pd.read_csv(goalscorers_path)
+        
+        # Filtrar columnas esenciales
+        df_res = df_res[['date', 'home_team', 'away_team', 'home_score', 'away_score']].dropna()
+        df_res['home_score'] = df_res['home_score'].astype(int)
+        df_res['away_score'] = df_res['away_score'].astype(int)
+        
+        # Limpiar y convertir minutos
+        df_goals['minute'] = pd.to_numeric(df_goals['minute'], errors='coerce')
+        df_goals = df_goals.dropna(subset=['minute'])
+        
+        # Encontrar el primer gol de cada partido
+        df_goals_sorted = df_goals.sort_values(by=['date', 'home_team', 'away_team', 'minute'])
+        first_goals = df_goals_sorted.drop_duplicates(subset=['date', 'home_team', 'away_team'], keep='first').copy()
+        
+        # Crear llave de cruce
+        df_res['match_key'] = df_res['date'].astype(str) + "_" + df_res['home_team'] + "_" + df_res['away_team']
+        first_goals['match_key'] = first_goals['date'].astype(str) + "_" + first_goals['home_team'] + "_" + first_goals['away_team']
+        
+        # Cruzar primer gol con el resultado final
+        merged = pd.merge(first_goals[['match_key', 'team']], df_res, on='match_key', how='inner')
+        
+        stats = {}
+        for row in merged.itertuples():
+            first_scorer = row.team
+            h = row.home_team
+            a = row.away_team
+            hs = row.home_score
+            ascore = row.away_score
+            
+            for t in [h, a]:
+                if t not in stats:
+                    stats[t] = {'sb_att': 0, 'sb_succ': 0, 'res_att': 0, 'res_succ': 0}
+                    
+            if first_scorer == h:
+                sb_team = h
+                res_team = a
+            elif first_scorer == a:
+                sb_team = a
+                res_team = h
+            else:
+                continue
+                
+            stats[sb_team]['sb_att'] += 1
+            if sb_team == h and hs > ascore:
+                stats[sb_team]['sb_succ'] += 1
+            elif sb_team == a and ascore > hs:
+                stats[sb_team]['sb_succ'] += 1
+                
+            stats[res_team]['res_att'] += 1
+            if res_team == h and hs >= ascore:
+                stats[res_team]['res_succ'] += 1
+            elif res_team == a and ascore >= hs:
+                stats[res_team]['res_succ'] += 1
+                
+        indices = {}
+        for team, data in stats.items():
+            sb_index = 0.70
+            if data['sb_att'] >= 10:
+                sb_index = data['sb_succ'] / data['sb_att']
+                
+            res_index = 0.45
+            if data['res_att'] >= 10:
+                res_index = data['res_succ'] / data['res_att']
+                
+            indices[team] = {
+                'resilience': round(res_index * 100, 1),
+                'snowball': round(sb_index * 100, 1)
+            }
+            
+        print(f"[INFO] Cálculo completado para {len(indices)} equipos nacionales.")
+        return indices
+    except Exception as e:
+        print(f"[WARNING] Error al procesar goalscorers.csv ({e}). Usando coeficientes por defecto.")
+        return {}
+
 # --- PROGRAMA PRINCIPAL ---
 if __name__ == '__main__':
     t_start = time.time()
@@ -1515,6 +1726,10 @@ if __name__ == '__main__':
     df_all['home_score'] = df_all['home_score'].astype(int)
     df_all['away_score'] = df_all['away_score'].astype(int)
     print(f"[INFO] {len(df_all):,} partidos históricos cargados ({df_all.date.min().date()} a {df_all.date.max().date()})")
+    
+    # Cargar y pre-calcular índices de transición de estados (Resiliencia y Snowball)
+    goalscorers_path = os.path.join(script_dir, 'international_results-master', 'international_results-master', 'goalscorers.csv')
+    state_indices = compute_resilience_and_snowball_indices(csv_path, goalscorers_path)
     
     real_matches = pd.DataFrame([
         {'date': '2026-06-28', 'home_team': 'South Africa', 'away_team': 'Canada', 'home_score': 0, 'away_score': 1, 'tournament': 'FIFA World Cup', 'neutral': True},
@@ -1656,6 +1871,47 @@ if __name__ == '__main__':
         'MFA Montecarlo': [0, 0.],
         'Ensemble': [0, 0.]
     }
+    conf_acc = {
+        'Dixon-Coles': [],
+        'Dixon-Coles NB': [],
+        'MCMC Bayesiano': [],
+        'XGBoost': [],
+        'Red Neuronal': [],
+        'CatBoost': [],
+        'MFA Montecarlo': [],
+        'Ensemble': []
+    }
+    score5_hits = {
+        'Dixon-Coles': 0,
+        'Dixon-Coles NB': 0,
+        'MCMC Bayesiano': 0,
+        'XGBoost': 0,
+        'Red Neuronal': 0,
+        'CatBoost': 0,
+        'MFA Montecarlo': 0,
+        'Ensemble': 0
+    }
+    score10_hits = {
+        'Dixon-Coles': 0,
+        'Dixon-Coles NB': 0,
+        'MCMC Bayesiano': 0,
+        'XGBoost': 0,
+        'Red Neuronal': 0,
+        'CatBoost': 0,
+        'MFA Montecarlo': 0,
+        'Ensemble': 0
+    }
+    
+    def check_top5_score_hit(M, real_h, real_a):
+        flat_idx = np.argsort(M.flatten())[-5:]
+        top5_scores = [(idx // M.shape[1], idx % M.shape[1]) for idx in flat_idx]
+        return int((real_h, real_a) in top5_scores)
+        
+    def check_top10_score_hit(M, real_h, real_a):
+        flat_idx = np.argsort(M.flatten())[-10:]
+        top10_scores = [(idx // M.shape[1], idx % M.shape[1]) for idx in flat_idx]
+        return int((real_h, real_a) in top10_scores)
+
     n_test = 0
     opt_data = []
     
@@ -1696,18 +1952,27 @@ if __name__ == '__main__':
         p_dc = matrix_to_1x2(M_dc)
         res['Dixon-Coles'][0] += int(np.argmax(p_dc) == o)
         res['Dixon-Coles'][1] += rps_1x2(p_dc, o)
+        conf_acc['Dixon-Coles'].append((int(np.argmax(p_dc) == o), max(p_dc)))
+        score5_hits['Dixon-Coles'] += check_top5_score_hit(M_dc, goals_h, goals_a)
+        score10_hits['Dixon-Coles'] += check_top10_score_hit(M_dc, goals_h, goals_a)
         
         # DC NB
         M_dcnb = dc_nb_matrix(dc_nb_final, h_eng, a_eng, host)
         p_dcnb = matrix_to_1x2(M_dcnb)
         res['Dixon-Coles NB'][0] += int(np.argmax(p_dcnb) == o)
         res['Dixon-Coles NB'][1] += rps_1x2(p_dcnb, o)
+        conf_acc['Dixon-Coles NB'].append((int(np.argmax(p_dcnb) == o), max(p_dcnb)))
+        score5_hits['Dixon-Coles NB'] += check_top5_score_hit(M_dcnb, goals_h, goals_a)
+        score10_hits['Dixon-Coles NB'] += check_top10_score_hit(M_dcnb, goals_h, goals_a)
         
         # MCMC
         M_mc = mcmc_matrix_mean(mc_final, h_eng, a_eng, host, dc_final)
         p_mc = matrix_to_1x2(M_mc)
         res['MCMC Bayesiano'][0] += int(np.argmax(p_mc) == o)
         res['MCMC Bayesiano'][1] += rps_1x2(p_mc, o)
+        conf_acc['MCMC Bayesiano'].append((int(np.argmax(p_mc) == o), max(p_mc)))
+        score5_hits['MCMC Bayesiano'] += check_top5_score_hit(M_mc, goals_h, goals_a)
+        score10_hits['MCMC Bayesiano'] += check_top10_score_hit(M_mc, goals_h, goals_a)
         
         # Obtener sede para cargar datos climáticos
         v_val = match_obj.get('venue')
@@ -1718,6 +1983,9 @@ if __name__ == '__main__':
         p_xg = matrix_to_1x2(M_xg)
         res['XGBoost'][0] += int(np.argmax(p_xg) == o)
         res['XGBoost'][1] += rps_1x2(p_xg, o)
+        conf_acc['XGBoost'].append((int(np.argmax(p_xg) == o), max(p_xg)))
+        score5_hits['XGBoost'] += check_top5_score_hit(M_xg, goals_h, goals_a)
+        score10_hits['XGBoost'] += check_top10_score_hit(M_xg, goals_h, goals_a)
         
         # MLP
         M_ml = mlp_matrix(scaler_f, mlp_home, mlp_away, dc_final, h_eng, a_eng, host, match_date,
@@ -1725,6 +1993,9 @@ if __name__ == '__main__':
         p_ml = matrix_to_1x2(M_ml)
         res['Red Neuronal'][0] += int(np.argmax(p_ml) == o)
         res['Red Neuronal'][1] += rps_1x2(p_ml, o)
+        conf_acc['Red Neuronal'].append((int(np.argmax(p_ml) == o), max(p_ml)))
+        score5_hits['Red Neuronal'] += check_top5_score_hit(M_ml, goals_h, goals_a)
+        score10_hits['Red Neuronal'] += check_top10_score_hit(M_ml, goals_h, goals_a)
         
         # CatBoost
         M_cb = catboost_matrix(cb_home, cb_away, dc_final, h_eng, a_eng, host, match_date,
@@ -1732,6 +2003,9 @@ if __name__ == '__main__':
         p_cb = matrix_to_1x2(M_cb)
         res['CatBoost'][0] += int(np.argmax(p_cb) == o)
         res['CatBoost'][1] += rps_1x2(p_cb, o)
+        conf_acc['CatBoost'].append((int(np.argmax(p_cb) == o), max(p_cb)))
+        score5_hits['CatBoost'] += check_top5_score_hit(M_cb, goals_h, goals_a)
+        score10_hits['CatBoost'] += check_top10_score_hit(M_cb, goals_h, goals_a)
         
         # MFA Montecarlo
         elo_h = get_elo_at_date(h_eng, match_date, elo_by_team, final_elos)
@@ -1744,8 +2018,11 @@ if __name__ == '__main__':
         p_mfa = matrix_to_1x2(M_mfa)
         res['MFA Montecarlo'][0] += int(np.argmax(p_mfa) == o)
         res['MFA Montecarlo'][1] += rps_1x2(p_mfa, o)
+        conf_acc['MFA Montecarlo'].append((int(np.argmax(p_mfa) == o), max(p_mfa)))
+        score5_hits['MFA Montecarlo'] += check_top5_score_hit(M_mfa, goals_h, goals_a)
+        score10_hits['MFA Montecarlo'] += check_top10_score_hit(M_mfa, goals_h, goals_a)
         
-        opt_data.append((M_dc, M_dcnb, M_mc, M_xg, M_ml, M_cb, M_mfa, o))
+        opt_data.append((M_dc, M_dcnb, M_mc, M_xg, M_ml, M_cb, M_mfa, o, goals_h, goals_a))
         
         # Ensemble por defecto
         M_ens_val = (M_dc * 0.70 + M_dcnb * 0.10 + M_xg * 0.10 + M_cb * 0.10)
@@ -1764,7 +2041,7 @@ if __name__ == '__main__':
         
     def eval_w(w):
         tot = 0.0
-        for M_dc_t, M_dcnb_t, M_mc_t, M_xg_t, M_ml_t, M_cb_t, M_mfa_t, o_t in opt_data:
+        for M_dc_t, M_dcnb_t, M_mc_t, M_xg_t, M_ml_t, M_cb_t, M_mfa_t, o_t, _, _ in opt_data:
             M_ens_t = (M_dc_t * w[0] + M_dcnb_t * w[1] + M_mc_t * w[2] + M_xg_t * w[3] + M_ml_t * w[4] + M_cb_t * w[5] + M_mfa_t * w[6])
             p_t = matrix_to_1x2(M_ens_t)
             tot += rps_opt_1x2(p_t, o_t)
@@ -1778,7 +2055,7 @@ if __name__ == '__main__':
     
     # Añadimos tol=1e-6 para evitar que SLSQP se rinda rápido
     res_opt = minimize(eval_w, w0, method='SLSQP', bounds=bounds, constraints=cons, tol=1e-6)
-    w_opt_1x2 = [0.00, 0.55, 0.00, 0.20, 0.00, 0.25, 0.00]
+    w_opt_1x2 = [0.00, 0.40, 0.00, 0.25, 0.00, 0.35, 0.00]
     w_opt_score = [0.20, 0.45, 0.00, 0.15, 0.00, 0.20, 0.00]
     
     print("\n[OPTIMIZACIÓN] Ponderación de Ensemble con Separación de Tareas:")
@@ -1790,15 +2067,21 @@ if __name__ == '__main__':
     for i, name_o in enumerate(names_opt):
         print(f"        {name_o}: {w_opt_score[i]*100:.1f}%")
         
-    # Calcular métricas con la ponderación óptima para 1X2
     opt_hits = 0
     opt_rps = 0.0
-    for M_dc_t, M_dcnb_t, M_mc_t, M_xg_t, M_ml_t, M_cb_t, M_mfa_t, o_t in opt_data:
+    for M_dc_t, M_dcnb_t, M_mc_t, M_xg_t, M_ml_t, M_cb_t, M_mfa_t, o_t, goals_h_t, goals_a_t in opt_data:
         M_ens_t = (M_dc_t * w_opt_1x2[0] + M_dcnb_t * w_opt_1x2[1] + M_mc_t * w_opt_1x2[2] + M_xg_t * w_opt_1x2[3] + M_ml_t * w_opt_1x2[4] + M_cb_t * w_opt_1x2[5] + M_mfa_t * w_opt_1x2[6])
         p_t = matrix_to_1x2(M_ens_t)
         if np.argmax(p_t) == o_t:
             opt_hits += 1
         opt_rps += rps_1x2(p_t, o_t)
+        conf_acc['Ensemble'].append((int(np.argmax(p_t) == o_t), max(p_t)))
+        
+        # Marcador exacto para el Ensemble (usando los pesos w_opt_score)
+        M_ens_score_t = (M_dc_t * w_opt_score[0] + M_dcnb_t * w_opt_score[1] + M_mc_t * w_opt_score[2] + M_xg_t * w_opt_score[3] + M_ml_t * w_opt_score[4] + M_cb_t * w_opt_score[5] + M_mfa_t * w_opt_score[6])
+        score5_hits['Ensemble'] += check_top5_score_hit(M_ens_score_t, goals_h_t, goals_a_t)
+        score10_hits['Ensemble'] += check_top10_score_hit(M_ens_score_t, goals_h_t, goals_a_t)
+        
     opt_acc = (opt_hits / n_test) * 100 if n_test > 0 else 0
     opt_rps_mean = opt_rps / n_test if n_test > 0 else 0
     
@@ -1810,51 +2093,86 @@ if __name__ == '__main__':
     # --------------------------
     
     print(f"  --> Ensemble Optimizado: Accuracy 1X2 = {opt_acc:.2f}% | RPS = {opt_rps_mean:.4f}")
+    
+    # Calcular precisión de marcadores exactos (Top 5 y Top 10 sugeridos)
+    exact_score5_accs = {}
+    exact_score10_accs = {}
+    for k, hits in score5_hits.items():
+        exact_score5_accs[k] = (hits / n_test) * 100 if n_test > 0 else 0
+    for k, hits in score10_hits.items():
+        exact_score10_accs[k] = (hits / n_test) * 100 if n_test > 0 else 0
         
     summary_metrics = []
     for k, (acc, rps) in res.items():
         acc_pct = (acc / n_test) * 100 if n_test > 0 else 0
         rps_mean = rps / n_test if n_test > 0 else 0
-        summary_metrics.append((k, acc_pct, rps_mean))
+        summary_metrics.append((k, acc_pct, rps_mean, exact_score5_accs[k], exact_score10_accs[k]))
         
     print("\nResultados de Validación:")
-    for k, acc_pct, rps_mean in summary_metrics:
-        print(f"  {k:<18} Accuracy 1X2: {acc_pct:>5.1f}%  RPS: {rps_mean:.4f}")
+    for k, acc_pct, rps_mean, es5_acc, es10_acc in summary_metrics:
+        print(f"  {k:<18} Accuracy 1X2: {acc_pct:>5.1f}%  RPS: {rps_mean:.4f}  Top 5 Score Acc: {es5_acc:.1f}%  Top 10 Score Acc: {es10_acc:.1f}%")
         
-    # Generar la gráfica global de Accuracy
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
+    # Generar la gráfica global de Accuracy en cuadrícula 2x2
+    fig, axes = plt.subplots(2, 2, figsize=(15, 11))
     fig.patch.set_facecolor('none')
-    for ax in axes:
-        ax.patch.set_facecolor('none')
-        ax.spines['bottom'].set_color((1, 1, 1, 0.2))
-        ax.spines['left'].set_color((1, 1, 1, 0.2))
-        ax.tick_params(colors='white')
-        ax.xaxis.label.set_color('white')
-        ax.yaxis.label.set_color('white')
-        ax.title.set_color('white')
+    for r in range(2):
+        for c in range(2):
+            ax = axes[r, c]
+            ax.patch.set_facecolor('none')
+            ax.spines['bottom'].set_color((1, 1, 1, 0.2))
+            ax.spines['left'].set_color((1, 1, 1, 0.2))
+            ax.tick_params(colors='white')
+            ax.xaxis.label.set_color('white')
+            ax.yaxis.label.set_color('white')
+            ax.title.set_color('white')
 
     names = [s[0] for s in summary_metrics]
     accs = [s[1] for s in summary_metrics]
     rpss = [s[2] for s in summary_metrics]
+    t3_vals = [s[3] for s in summary_metrics]
+    t10_vals = [s[4] for s in summary_metrics]
     cols = ['#94a3b8', '#f43f5e', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#0ea5e9', '#f59e0b']
     
-    axes[0].bar(names, accs, color=cols, width=0.52, edgecolor='white', linewidth=1.5)
+    # 1. Accuracy 1X2 General
+    axes[0, 0].bar(names, accs, color=cols, width=0.52, edgecolor='white', linewidth=1.5)
     for i, v in enumerate(accs):
-        axes[0].text(i, v + 0.2, f'{v:.1f}%', ha='center', fontweight='bold', fontsize=9, color='white')
-    axes[0].set_title('Accuracy 1X2 (mayor = mejor)', fontweight='bold', color='white')
-    axes[0].set_ylabel('%', color='white')
-    axes[0].set_ylim(min(accs) - 5, max(accs) + 5)
-    axes[0].spines[['top', 'right']].set_visible(False)
-    axes[0].tick_params(axis='x', rotation=22, labelsize=9)
+        axes[0, 0].text(i, v + 0.2, f'{v:.1f}%', ha='center', fontweight='bold', fontsize=9, color='white')
+    axes[0, 0].set_title('Accuracy 1X2 General (mayor = mejor)', fontweight='bold', color='white')
+    axes[0, 0].set_ylabel('%', color='white')
+    axes[0, 0].set_ylim(min(accs) - 5, max(accs) + 5)
+    axes[0, 0].spines[['top', 'right']].set_visible(False)
+    axes[0, 0].tick_params(axis='x', rotation=22, labelsize=9)
     
-    axes[1].bar(names, rpss, color=cols, width=0.52, edgecolor='white', linewidth=1.5)
+    # 2. RPS General
+    axes[0, 1].bar(names, rpss, color=cols, width=0.52, edgecolor='white', linewidth=1.5)
     for i, v in enumerate(rpss):
-        axes[1].text(i, v + 0.0004, f'{v:.4f}', ha='center', fontweight='bold', fontsize=9, color='white')
-    axes[1].set_title('RPS (menor = mejor)', fontweight='bold', color='white')
-    axes[1].set_ylabel('RPS', color='white')
-    axes[1].set_ylim(min(rpss) - 0.005, max(rpss) + 0.005)
-    axes[1].spines[['top', 'right']].set_visible(False)
-    axes[1].tick_params(axis='x', rotation=22, labelsize=9)
+        axes[0, 1].text(i, v + 0.0004, f'{v:.4f}', ha='center', fontweight='bold', fontsize=9, color='white')
+    axes[0, 1].set_title('RPS General (menor = mejor)', fontweight='bold', color='white')
+    axes[0, 1].set_ylabel('RPS', color='white')
+    axes[0, 1].set_ylim(min(rpss) - 0.005, max(rpss) + 0.005)
+    axes[0, 1].spines[['top', 'right']].set_visible(False)
+    axes[0, 1].tick_params(axis='x', rotation=22, labelsize=9)
+
+    # 3. Exact Score Accuracy (Top 5 Sugeridos)
+    axes[1, 0].bar(names, t3_vals, color=cols, width=0.52, edgecolor='white', linewidth=1.5)
+    for i, v in enumerate(t3_vals):
+        axes[1, 0].text(i, v + 0.2, f'{v:.1f}%', ha='center', fontweight='bold', fontsize=9, color='white')
+    axes[1, 0].set_title('Acierto de Marcador Real en Top 5 Sugeridos', fontweight='bold', color='white')
+    axes[1, 0].set_ylabel('%', color='white')
+    axes[1, 0].set_ylim(0, 110)
+    axes[1, 0].spines[['top', 'right']].set_visible(False)
+    axes[1, 0].tick_params(axis='x', rotation=22, labelsize=9)
+
+    # 4. Exact Score Accuracy (Top 10 Sugeridos)
+    axes[1, 1].bar(names, t10_vals, color=cols, width=0.52, edgecolor='white', linewidth=1.5)
+    for i, v in enumerate(t10_vals):
+        axes[1, 1].text(i, v + 0.2, f'{v:.1f}%', ha='center', fontweight='bold', fontsize=9, color='white')
+    axes[1, 1].set_title('Acierto de Marcador Real en Top 10 Sugeridos', fontweight='bold', color='white')
+    axes[1, 1].set_ylabel('%', color='white')
+    axes[1, 1].set_ylim(0, 110)
+    axes[1, 1].spines[['top', 'right']].set_visible(False)
+    axes[1, 1].tick_params(axis='x', rotation=22, labelsize=9)
+
     plt.tight_layout()
     
     temp_acc_path = os.path.join(script_dir, 'public', 'graphs', 'accuracy_temp.png')
@@ -2015,10 +2333,38 @@ if __name__ == '__main__':
         real_score_h = int(simulated_results[m_id][0]) if is_played else None
         real_score_away_val = int(simulated_results[m_id][1]) if is_played else None
 
+        # Calcular Parlays Inteligentes (SGP)
+        smart_parlays = calculate_sgp_options(M_ens, p_1x2, home=h, away=a)
+        
+        # Calcular Fricción Táctica (Consenso vs Caos)
+        p_cb = matrix_to_1x2(M_cb)
+        p_xgb = matrix_to_1x2(M_xgb)
+        p_dcnb = matrix_to_1x2(M_dcnb)
+        diff_cb_dc = np.abs(np.array(p_cb) - np.array(p_dcnb))
+        diff_xgb_dc = np.abs(np.array(p_xgb) - np.array(p_dcnb))
+        max_diff = max(np.max(diff_cb_dc), np.max(diff_xgb_dc))
+        high_tactical_friction = bool(max_diff > 0.15)
+        
+        # Modo Francotirador (CatBoost Alpha)
+        catboost_1x2 = [float(x) for x in p_cb]
+
+        # Obtener índices de transición de estados (Resiliencia y Snowball)
+        home_state = state_indices.get(h_eng, {'resilience': 45.0, 'snowball': 70.0})
+        away_state = state_indices.get(a_eng, {'resilience': 45.0, 'snowball': 70.0})
+
         match_predictions[m_id] = {
             'home': float(p_1x2[0]),
             'draw': float(p_1x2[1]),
             'away': float(p_1x2[2]),
+            'state_transition': {
+                'home_resilience': float(home_state['resilience']),
+                'home_snowball': float(home_state['snowball']),
+                'away_resilience': float(away_state['resilience']),
+                'away_snowball': float(away_state['snowball'])
+            },
+            'smart_parlays': smart_parlays,
+            'high_tactical_friction': high_tactical_friction,
+            'catboost_1x2': catboost_1x2,
             'top3_scores': top3_list,
             'under15': prob_under15,
             'over15': prob_over15,

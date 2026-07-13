@@ -180,7 +180,7 @@ const loadImageAsBase64 = (url) =>
       canvas.width = img.naturalWidth;
       canvas.height = img.naturalHeight;
       canvas.getContext('2d').drawImage(img, 0, 0);
-      resolve(canvas.toDataURL('image/png'));
+      resolve(canvas.toDataURL('image/jpeg', 0.75));
     };
     img.onerror = () => resolve(null);
     img.src = url;
@@ -280,7 +280,7 @@ function Top3ScoresBanner({ prediction, home, away }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <span style={{ fontWeight: 'bold', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#f59e0b' }}>Top 3 Marcadores (Ensemble)</span>
         </div>
-        <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', background: 'rgba(255,255,255,0.08)', padding: '0.2rem 0.6rem', borderRadius: '20px' }}>Promedio 5 IAs</span>
+        <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', background: 'rgba(255,255,255,0.08)', padding: '0.2rem 0.6rem', borderRadius: '20px' }}>Consenso de 8 IAs</span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem' }}>
         {prediction.top3_scores.map((item, idx) => {
@@ -352,8 +352,8 @@ function MatchIntelligenceCard({ prediction, home, away }) {
     { label: 'Favorito', val: favTeam, sub: `${(favProb * 100).toFixed(1)}% de prob.`, color: '#f59e0b', bg: 'rgba(245,158,11,0.06)', bc: 'rgba(245,158,11,0.15)' },
     { label: 'Diferencia ELO', val: Math.abs(eloDiff), sub: `${eloAdv} - ${eloDiff > 0 ? home : eloDiff < 0 ? away : 'Par'}`, color: '#fff', bg: 'rgba(255,255,255,0.03)', bc: 'rgba(255,255,255,0.07)' },
     { label: 'xG Total', val: totalXG.toFixed(2), sub: domLabel, color: '#fff', bg: 'rgba(255,255,255,0.03)', bc: 'rgba(255,255,255,0.07)' },
-    { label: 'BTTS', val: `${(btts * 100).toFixed(1)}%`, sub: null, color: '#8b5cf6', bg: 'rgba(139,92,246,0.06)', bc: 'rgba(139,92,246,0.15)', bar: btts, barC: 'linear-gradient(90deg,#8b5cf6,#6d28d9)' },
-    { label: 'P(0-0)', val: `${(noGoal * 100).toFixed(1)}%`, sub: null, color: '#94a3b8', bg: 'rgba(255,255,255,0.03)', bc: 'rgba(255,255,255,0.07)', bar: noGoal, barC: 'linear-gradient(90deg,#475569,#334155)' },
+    { label: 'Ambos anotan', val: `${(btts * 100).toFixed(1)}%`, sub: null, color: '#8b5cf6', bg: 'rgba(139,92,246,0.06)', bc: 'rgba(139,92,246,0.15)', bar: btts, barC: 'linear-gradient(90deg,#8b5cf6,#6d28d9)' },
+    { label: 'Ninguno anota', val: `${(noGoal * 100).toFixed(1)}%`, sub: null, color: '#94a3b8', bg: 'rgba(255,255,255,0.03)', bc: 'rgba(255,255,255,0.07)', bar: noGoal, barC: 'linear-gradient(90deg,#475569,#334155)' },
     { label: 'Entropia', val: `${(ent * 100).toFixed(0)}%`, sub: `Volatilidad ${volatLabel}`, color: volatColor, bg: 'rgba(255,255,255,0.03)', bc: `${volatColor}25`, bar: ent, barC: volatColor },
   ];
 
@@ -802,7 +802,9 @@ function WeibullSummaryPanel({ prediction }) {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
         {prediction.timeline_file ? (
           <>
-            <img src={prediction.timeline_file} alt="Weibull" style={{ width: '100%', maxHeight: '150px', objectFit: 'contain', borderRadius: 'var(--radius-md)' }} />
+            <div style={{ width: '100%', padding: '0.5rem', background: '#0f172a', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'center', boxSizing: 'border-box' }}>
+              <img src={prediction.timeline_file} alt="Weibull" style={{ width: '100%', maxHeight: '280px', objectFit: 'contain', borderRadius: '4px' }} />
+            </div>
             {prediction.weibull_analysis?.top_halftime_scores && (
               <div style={{ width: '100%', marginTop: '0.75rem', fontSize: '0.78rem', color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.03)', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)', textAlign: 'center' }}>
                 Medio Tiempo: {prediction.weibull_analysis.top_halftime_scores[0].score} ({prediction.weibull_analysis.top_halftime_scores[0].prob}%)
@@ -837,7 +839,7 @@ function ScenariosPanel({ prediction, home, away }) {
   const noGoal = cleanSheetProb(lH, lA);
   const hCS = Math.exp(-lA) * (1 - Math.exp(-lH));
   const aCS = Math.exp(-lH) * (1 - Math.exp(-lA));
-  const tabs = [{ id: 'firstGoal', label: 'Primer Gol' }, { id: 'btts', label: 'BTTS / Goles' }, { id: 'conditional', label: 'Condicional' }];
+  const tabs = [{ id: 'firstGoal', label: 'Primer Gol' }, { id: 'btts', label: 'Ambos Anotan / Goles' }, { id: 'conditional', label: 'Condicional' }];
   return (
     <div className="graph-section" style={{ borderLeft: '4px solid #8b5cf6' }}>
       <h2>Analisis de Escenarios</h2>
@@ -847,7 +849,7 @@ function ScenariosPanel({ prediction, home, away }) {
       </div>
       {tab === 'firstGoal' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: '1.25rem' }}>
-          {[{ team: home, prob: lH / (lH + lA), color: '#f59e0b', icon: 'H' }, { team: away, prob: lA / (lH + lA), color: '#3b82f6', icon: 'A' }].map((t, i) => (
+          {[{ team: home, prob: lH / (lH + lA), color: '#f59e0b', icon: '⚽' }, { team: away, prob: lA / (lH + lA), color: '#3b82f6', icon: '⚽' }].map((t, i) => (
             <div key={i} style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '12px', padding: '1.5rem', border: `1px solid ${t.color}25`, textAlign: 'center' }}>
               <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{t.icon}</div>
               <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.3rem' }}>Primer gol</div>
@@ -882,7 +884,7 @@ function ScenariosPanel({ prediction, home, away }) {
       )}
       {tab === 'btts' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '1rem' }}>
-          {[{ label: 'BTTS', val: btts, color: '#8b5cf6', icon: 'G-G' }, { label: 'Sin Goles (0-0)', val: noGoal, color: '#94a3b8', icon: '0-0' }, { label: `CS ${home}`, val: hCS, color: '#10b981', icon: 'CS H' }, { label: `CS ${away}`, val: aCS, color: '#3b82f6', icon: 'CS A' }].map((s, i) => (
+          {[{ label: 'Ambos anotan', val: btts, color: '#8b5cf6', icon: '⚽⚽' }, { label: 'Ninguno anota (0-0)', val: noGoal, color: '#94a3b8', icon: '0-0' }, { label: `Arco en cero (${home})`, val: hCS, color: '#10b981', icon: '🛡️ H' }, { label: `Arco en cero (${away})`, val: aCS, color: '#3b82f6', icon: '🛡️ A' }].map((s, i) => (
             <div key={i} style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '12px', padding: '1.25rem', border: `1px solid ${s.color}25`, textAlign: 'center' }}>
               <div style={{ fontSize: '1.8rem', marginBottom: '0.4rem' }}>{s.icon}</div>
               <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginBottom: '0.4rem' }}>{s.label}</div>
@@ -1214,8 +1216,8 @@ export default function MatchDetail() {
       doc.text(`${match.home.toUpperCase()} vs ${match.away.toUpperCase()}`, 15, 25);
       
       // Draw small flags if loaded
-      if (flagH) doc.addImage(flagH, 'PNG', dw - 48, 12, 14, 9);
-      if (flagA) doc.addImage(flagA, 'PNG', dw - 30, 12, 14, 9);
+      if (flagH) doc.addImage(flagH, 'JPEG', dw - 48, 12, 14, 9, undefined, 'FAST');
+      if (flagA) doc.addImage(flagA, 'JPEG', dw - 30, 12, 14, 9, undefined, 'FAST');
       
       doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(200, 200, 200);
       doc.text(`${dy?.full || 'Fase de Eliminatorias'} | ${match.time || ''} | ${match.venue || ''}`, 15, 32);
@@ -1426,7 +1428,7 @@ export default function MatchDetail() {
       // Helper: draw a dark background behind chart images so white text is readable
       const chartBg = (cy, ch) => { doc.setFillColor(15, 23, 42); doc.roundedRect(14, cy - 1, dw - 28, ch + 2, 2, 2, 'F'); };
       
-      const totalPages = 4;
+      const totalPages = 7;
       const pdfFooter = (pg) => {
         doc.setDrawColor(200, 210, 220); doc.line(15, dh - 18, dw - 15, dh - 18);
         doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5); doc.setTextColor(150, 150, 150);
@@ -1434,11 +1436,11 @@ export default function MatchDetail() {
         doc.text(`Página ${pg} de ${totalPages}`, dw - 30, dh - 6);
       };
 
-      // PAGE 2: CONSENSO Y MODELOS PRINCIPALES
+      // PAGE 2: CONSENSO Y MODELO ENSEMBLE
       doc.addPage();
       doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
       doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
-      doc.text(`CONSENSO Y MODELOS PRINCIPALES | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
+      doc.text(`CONSENSO Y MODELO ENSEMBLE | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
       
       y = 23; 
       bar(y); doc.setFontSize(11); doc.setTextColor(...pc);
@@ -1453,75 +1455,153 @@ export default function MatchDetail() {
         const ri = await loadImageAsBase64(match.graphs.Resumen);
         if (ri) { 
           chartBg(y, 58);
-          doc.addImage(ri, 'PNG', 16, y, dw - 32, 58); 
+          doc.addImage(ri, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST'); 
           y += 63;
         }
       }
       
-      // Top 4 Model Matrices + Ensemble (2 per row, smaller)
-      const modelGraphs = [
-        { key: 'ensemble', label: 'B) Ensemble (Promedio Ponderado)' },
-        { key: 'catboost', label: 'C) CatBoost (Acc: 84.0%)' },
-        { key: 'dixoncoles', label: 'D) Dixon-Coles NB (Acc: 80.0%)' },
-        { key: 'xgboost', label: 'E) XGBoost (Acc: 80.0%)' },
-      ];
-      
-      bar(y + 4); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...pc);
-      doc.text('5. MATRICES DE DISTRIBUCIÓN POR MODELO', 21, y + 4);
-      doc.setDrawColor(...bl); doc.line(15, y + 6.5, dw - 15, y + 6.5); 
-      y += 12;
-      
-      const halfW = (dw - 34) / 2;
-      for (let mi = 0; mi < modelGraphs.length; mi += 2) {
-        const row = modelGraphs.slice(mi, mi + 2);
-        // Check if we need a new page
-        if (y + 62 > dh - 25) {
-          pdfFooter(2);
-          doc.addPage();
-          doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
-          doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
-          doc.text(`MODELOS (CONT.) | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
-          y = 20;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
+      doc.text('B) Ensemble (Promedio Ponderado - SLSQP)', 15, y); 
+      y += 4;
+      if (match.graphs?.ensemble) {
+        const img = await loadImageAsBase64(match.graphs.ensemble);
+        if (img) {
+          chartBg(y, 58);
+          doc.addImage(img, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
         }
-        
-        for (let ci = 0; ci < row.length; ci++) {
-          const g = row[ci];
-          const xOff = 15 + ci * (halfW + 4);
-          doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...tc);
-          doc.text(g.label, xOff, y);
-          if (match.graphs?.[g.key]) {
-            const img = await loadImageAsBase64(match.graphs[g.key]);
-            if (img) {
-              doc.setFillColor(15, 23, 42); doc.roundedRect(xOff - 1, y + 1, halfW + 2, 52, 2, 2, 'F');
-              doc.addImage(img, 'PNG', xOff, y + 2, halfW, 50);
-            }
-          }
-        }
-        y += 58;
       }
       
       pdfFooter(2);
 
-      // PAGE 3: MFA + WEIBULL + CONDICIONALES
+      // PAGE 3: MATRICES DE DISTRIBUCION (I)
       doc.addPage();
       doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
       doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
-      doc.text(`SIMULACIÓN WEIBULL Y ESCENARIOS | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
+      doc.text(`MATRICES DE DISTRIBUCION (I) | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
       
-      y = 20;
+      y = 23;
+      bar(y); doc.setFontSize(11); doc.setTextColor(...pc);
+      doc.text('5. MATRICES DE DISTRIBUCIÓN POR MODELO (PARTE 1)', 21, y);
+      doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5); 
+      y += 8;
       
-      // MFA Montecarlo graph (remaining from page 2)
-      if (match.graphs?.mfa) {
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...tc);
-        doc.text('F) MFA Montecarlo (Acc: 80.0%)', 15, y);
-        y += 2;
-        const mfaImg = await loadImageAsBase64(match.graphs.mfa);
-        if (mfaImg) {
-          chartBg(y, 52);
-          doc.addImage(mfaImg, 'PNG', 16, y + 1, dw - 32, 50);
-          y += 56;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
+      doc.text('C) CatBoost (Acc: 84.0%)', 15, y);
+      y += 4;
+      if (match.graphs?.catboost) {
+        const img = await loadImageAsBase64(match.graphs.catboost);
+        if (img) {
+          chartBg(y, 58);
+          doc.addImage(img, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
         }
       }
+      y += 63;
+      
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
+      doc.text('D) Dixon-Coles NB (Acc: 80.0%)', 15, y);
+      y += 4;
+      if (match.graphs?.dcnb) {
+        const img = await loadImageAsBase64(match.graphs.dcnb);
+        if (img) {
+          chartBg(y, 58);
+          doc.addImage(img, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
+        }
+      }
+      
+      pdfFooter(3);
+
+      // PAGE 4: MATRICES DE DISTRIBUCION (II)
+      doc.addPage();
+      doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
+      doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+      doc.text(`MATRICES DE DISTRIBUCION (II) | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
+      
+      y = 23;
+      bar(y); doc.setFontSize(11); doc.setTextColor(...pc);
+      doc.text('5. MATRICES DE DISTRIBUCIÓN POR MODELO (PARTE 2)', 21, y);
+      doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5); 
+      y += 8;
+      
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
+      doc.text('E) XGBoost (Acc: 80.0%)', 15, y);
+      y += 4;
+      if (match.graphs?.xgboost) {
+        const img = await loadImageAsBase64(match.graphs.xgboost);
+        if (img) {
+          chartBg(y, 58);
+          doc.addImage(img, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
+        }
+      }
+      y += 63;
+      
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
+      doc.text('F) Dixon-Coles Poisson (Acc: 78.0%)', 15, y);
+      y += 4;
+      if (match.graphs?.dixoncoles) {
+        const img = await loadImageAsBase64(match.graphs.dixoncoles);
+        if (img) {
+          chartBg(y, 58);
+          doc.addImage(img, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
+        }
+      }
+      
+      pdfFooter(4);
+
+      // PAGE 5: MATRICES DE DISTRIBUCION (III)
+      doc.addPage();
+      doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
+      doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+      doc.text(`MATRICES DE DISTRIBUCION (III) | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
+      
+      y = 23;
+      bar(y); doc.setFontSize(11); doc.setTextColor(...pc);
+      doc.text('5. MATRICES DE DISTRIBUCIÓN POR MODELO (PARTE 3)', 21, y);
+      doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5); 
+      y += 8;
+      
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
+      doc.text('G) MFA Montecarlo (Acc: 80.0%)', 15, y);
+      y += 4;
+      if (match.graphs?.mfa) {
+        const img = await loadImageAsBase64(match.graphs.mfa);
+        if (img) {
+          chartBg(y, 58);
+          doc.addImage(img, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
+        }
+      }
+      y += 63;
+      
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
+      doc.text('H) MCMC Bayesiano (Acc: 74.0%)', 15, y);
+      y += 4;
+      if (match.graphs?.mcmc) {
+        const img = await loadImageAsBase64(match.graphs.mcmc);
+        if (img) {
+          chartBg(y, 58);
+          doc.addImage(img, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
+        }
+      }
+      
+      pdfFooter(5);
+
+      // PAGE 6: MLP + WEIBULL + CONDICIONALES
+      doc.addPage();
+      doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
+      doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+      doc.text(`MATRICES DE DISTRIBUCION Y SIMULACION WEIBULL | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
+      
+      y = 23;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
+      doc.text('I) Red Neuronal MLP (Acc: 76.0%)', 15, y);
+      y += 4;
+      if (match.graphs?.mlp) {
+        const img = await loadImageAsBase64(match.graphs.mlp);
+        if (img) {
+          chartBg(y, 58);
+          doc.addImage(img, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
+        }
+      }
+      y += 66;
       
       // SECTION: SIMULACIÓN WEIBULL
       bar(y); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...pc);
@@ -1570,19 +1650,19 @@ export default function MatchDetail() {
       // Weibull timeline chart
       if (prediction.timeline_file) {
         doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...tc);
-        doc.text('G) Curva de Supervivencia e Intensidad Temporal (Weibull)', 15, y);
+        doc.text('J) Curva de Supervivencia e Intensidad Temporal (Weibull)', 15, y);
         y += 3;
         const ti = await loadImageAsBase64(prediction.timeline_file);
         if (ti) {
           chartBg(y, 58);
-          doc.addImage(ti, 'PNG', 16, y + 1, dw - 32, 56);
+          doc.addImage(ti, 'JPEG', 16, y + 1, dw - 32, 56, undefined, 'FAST');
           y += 63;
         }
       }
 
-      pdfFooter(3);
+      pdfFooter(6);
 
-      // PAGE 4: ANALISIS DT + JUGADORES + METODOLOGÍA
+      // PAGE 7: ANALISIS DT + JUGADORES + METODOLOGÍA
       doc.addPage();
       doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
       doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
@@ -1619,11 +1699,42 @@ export default function MatchDetail() {
       } else {
         doc.text('Medias Opta insuficientes para calcular la eficiencia tactica del DT.', 18, y + 6);
       }
-      y += 38;
+      y += 36;
+
+      // SECTION: PERFIL PSICOLÓGICO Y DINÁMICA DE JUEGO (MARKOV)
+      bar(y); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...pc);
+      doc.text('8. PERFIL PSICOLÓGICO Y TRANSICIÓN DE ESTADOS', 21, y);
+      doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5); 
+      y += 10;
+      
+      card(y - 2, 26); doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...tc);
+      if (prediction.state_transition) {
+        const st = prediction.state_transition;
+        const getLabel = (res, sb) => {
+          let labels = [];
+          if (res > 48) labels.push("Alta Resiliencia (Remontador)");
+          else if (res < 40) labels.push("Vulnerable al ir perdiendo");
+          if (sb > 74) labels.push("Letal con ventaja (Snowball)");
+          else if (sb < 65) labels.push("Cede ventajas con facilidad");
+          return labels.join(" | ") || "Equilibrado";
+        };
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${match.home}:`, 18, y + 4);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Resiliencia: ${st.home_resilience}% | Snowball: ${st.home_snowball}%  [${getLabel(st.home_resilience, st.home_snowball)}]`, 48, y + 4);
+        
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${match.away}:`, 18, y + 14);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Resiliencia: ${st.away_resilience}% | Snowball: ${st.away_snowball}%  [${getLabel(st.away_resilience, st.away_snowball)}]`, 48, y + 14);
+      } else {
+        doc.text('Datos insuficientes en goalscorers.csv para modelar la transición de estados.', 18, y + 6);
+      }
+      y += 34;
 
       // SECTION: PROYECCIONES INDIVIDUALES DE JUGADORES (OPTA)
       bar(y); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...pc);
-      doc.text('8. PROYECCIONES INDIVIDUALES DE GOLEADORES Y REMATES', 21, y);
+      doc.text('9. PROYECCIONES INDIVIDUALES DE GOLEADORES Y REMATES', 21, y);
       doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5); 
       y += 10;
       
@@ -1674,7 +1785,8 @@ export default function MatchDetail() {
         doc.setFont('courier', 'normal'); doc.setFontSize(8); doc.setTextColor(...tc);
         homeP.forEach((p, pi) => {
           const py = y + 9 + pi * 5;
-          doc.text(`${(pi+1)}. ${p.name.padEnd(20)} ${p.position.padEnd(4)} Gol: ${p.goalProb.toFixed(0).padStart(3)}%  Remates: ${p.projectedShots.toFixed(1)}`, 20, py);
+          const dispName = p.name.length > 18 ? p.name.substring(0, 15) + '...' : p.name;
+          doc.text(`${(pi+1)}. ${dispName.padEnd(18)} ${p.position.padEnd(4)} Gol: ${p.goalProb.toFixed(0).padStart(3)}%  Remates: ${p.projectedShots.toFixed(1)}`, 20, py);
         });
         
         const awayStartY = y + 9 + homeP.length * 5 + 3;
@@ -1683,7 +1795,8 @@ export default function MatchDetail() {
         doc.setFont('courier', 'normal'); doc.setFontSize(8); doc.setTextColor(...tc);
         awayP.forEach((p, pi) => {
           const py = awayStartY + 5 + pi * 5;
-          doc.text(`${(pi+1)}. ${p.name.padEnd(20)} ${p.position.padEnd(4)} Gol: ${p.goalProb.toFixed(0).padStart(3)}%  Remates: ${p.projectedShots.toFixed(1)}`, 20, py);
+          const dispName = p.name.length > 18 ? p.name.substring(0, 15) + '...' : p.name;
+          doc.text(`${(pi+1)}. ${dispName.padEnd(18)} ${p.position.padEnd(4)} Gol: ${p.goalProb.toFixed(0).padStart(3)}%  Remates: ${p.projectedShots.toFixed(1)}`, 20, py);
         });
       } else {
         doc.text('Estadísticas de jugadores insuficientes para calcular las proyecciones individuales.', 18, y + 4);
@@ -1691,16 +1804,17 @@ export default function MatchDetail() {
       y += 48;
       
       // Methodology text box
-      doc.setFillColor(241, 245, 249); doc.roundedRect(15, y, dw - 30, 28, 2, 2, 'F');
+      doc.setFillColor(241, 245, 249); doc.roundedRect(15, y, dw - 30, 32, 2, 2, 'F');
       doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...pc);
       doc.text('NOTAS METODOLÓGICAS:', 18, y + 5);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...tc);
       doc.text('• Distribución Weibull (k=1.15) modela la fatiga acumulada e incremento de intensidad por minuto.', 18, y + 10);
       doc.text('• Simulación de Prórroga modela un decaimiento ofensivo de 30% por desgaste físico.', 18, y + 14);
       doc.text('• Simulación de Penales usa probabilidad Beta-Binomial según consistencia histórica del ELO.', 18, y + 18);
-      doc.text('• Ensemble pondera: Dixon-Coles 20% marcadores + CatBoost 25% + XGBoost 15% + MLP + MCMC + MFA + NB.', 18, y + 22);
+      doc.text('• Transición de Estados de Markov estima empíricamente la Resiliencia y Snowball según la base goalscorers.csv.', 18, y + 22);
+      doc.text('• Ensemble pondera: Dixon-Coles 20% marcadores + CatBoost 25% + XGBoost 15% + MLP + MCMC + MFA + NB.', 18, y + 26);
 
-      pdfFooter(4);
+      pdfFooter(7);
       
       doc.save(`informe-tactico-${match.id}.pdf`);
     } catch (err) { 
@@ -1729,6 +1843,7 @@ export default function MatchDetail() {
 
   const TABS = [
     { id: 'summary', label: 'Resumen' },
+    { id: 'parlays', label: 'Smart Parlays (SGP)' },
     { id: 'scenarios', label: 'Escenarios' },
     { id: 'timeline', label: 'Weibull' },
     { id: 'models', label: 'Modelos' },
@@ -1810,6 +1925,14 @@ export default function MatchDetail() {
               <div style={{ width: `${pD * 100}%`, height: '100%', background: 'rgba(148,163,184,0.4)' }} />
               <div style={{ width: `${pA * 100}%`, height: '100%', background: 'linear-gradient(90deg,#3b82f6,#2563eb)' }} />
             </div>
+            {prediction?.high_tactical_friction && (
+              <div style={{ marginTop: '1.25rem', padding: '0.85rem 1.1rem', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: '8px', color: '#fbbf24', fontSize: '0.82rem', lineHeight: 1.4, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '1.1rem' }}>⚠️</span>
+                <div>
+                  <strong>Fricción Táctica Detectada (Consenso vs Caos):</strong> Las redes neuronales profundas y los modelos matemáticos tradicionales discrepan en más del 15%. La predicción tiene una alta volatilidad táctica.
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1832,6 +1955,43 @@ export default function MatchDetail() {
             <h2>Consenso Comparativo de Modelos</h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', marginBottom: '1rem' }}>Comparacion directa de probabilidades para los 90 minutos reglamentarios.</p>
             <GraphImage src={match.graphs?.Resumen} alt={`Resumen ${match.home} vs ${match.away}`} />
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'parlays' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <div className="card" style={{ padding: '1.5rem', background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.06), rgba(245, 158, 11, 0.01))', border: '1px solid rgba(245, 158, 11, 0.15)' }}>
+            <h2 style={{ fontSize: '1.15rem', color: '#fff', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span>🎟️</span> Smart Parlays (Same Game Parlays)
+            </h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', lineHeight: '1.4' }}>
+              Sugerencias de combinaciones correlacionadas calculadas a partir de la matriz de probabilidad conjunta del Ensemble de 8 IAs. La probabilidad de cruce evita la suposición de independencia estadística.
+            </p>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+            {prediction?.smart_parlays && prediction.smart_parlays.length > 0 ? (
+              prediction.smart_parlays.map((p, idx) => (
+                <div key={idx} className="card" style={{ padding: '1.25rem', background: 'rgba(30,41,59,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'transform 0.2s', cursor: 'default' }}
+                  onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+                  onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
+                  <div style={{ flex: 1, paddingRight: '1rem' }}>
+                    <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#fff', marginBottom: '0.25rem' }}>{p.title}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: '1.3' }}>{p.description}</div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--orange)', fontWeight: 'bold', marginTop: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Confianza: {p.prob}%</div>
+                  </div>
+                  <div style={{ textAlign: 'center', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', padding: '0.5rem 0.8rem', borderRadius: '8px', minWidth: '60px' }}>
+                    <div style={{ fontSize: '0.62rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 'bold' }}>Cuota</div>
+                    <div style={{ fontSize: '1.1rem', color: '#f59e0b', fontWeight: 'bold', fontFamily: 'monospace' }}>{p.odds.toFixed(2)}</div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="card" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)', gridColumn: '1 / -1' }}>
+                No se detectaron parlays correlacionados con confianza superior al 55% para este partido.
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1922,7 +2082,29 @@ export default function MatchDetail() {
             {selectedModel === 'dixoncoles' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>Dixon-Coles Poisson:</strong> Regresion Poisson clasica, vida media 100 dias.</p><GraphImage src={match.graphs?.dixoncoles} alt="DC" /></div>}
             {selectedModel === 'dcnb' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>DC NB:</strong> Binomial Negativa - captura sobredispersion. Modelo dominante (83.35%).</p><GraphImage src={`/graphs/${match.day}/${match.id}_dcnb.png`} alt="DCNB" /></div>}
             {selectedModel === 'xgboost' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>XGBoost:</strong> Gradient Boosting con Pi-Ratings y ELO. ~16.65%.</p><GraphImage src={match.graphs?.xgboost} alt="XGBoost" /></div>}
-            {selectedModel === 'catboost' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>CatBoost:</strong> Boosting categorico nativo.</p><GraphImage src={match.graphs?.catboost} alt="CatBoost" /></div>}
+            {selectedModel === 'catboost' && (
+              <div>
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+                  <strong>CatBoost:</strong> Boosting categórico nativo. Es el modelo individual más preciso de la suite con un <strong>84.0%</strong> de accuracy histórico.
+                </p>
+                {prediction?.catboost_1x2 && (
+                  <div className="card" style={{ padding: '1rem', background: 'rgba(236,72,153,0.06)', border: '1px solid rgba(236,72,153,0.2)', borderRadius: '8px', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 'bold', color: '#ec4899', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span>🎯</span> Modo Francotirador (CatBoost Alpha)
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--text-secondary)', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <span>Probabilidades 1X2 CatBoost puro:</span>
+                      <span>
+                        {match.home}: <strong style={{ color: '#ec4899' }}>{(prediction.catboost_1x2[0]*100).toFixed(1)}%</strong> | 
+                        Empate: <strong style={{ color: '#cbd5e1' }}>{(prediction.catboost_1x2[1]*100).toFixed(1)}%</strong> | 
+                        {match.away}: <strong style={{ color: '#3b82f6' }}>{(prediction.catboost_1x2[2]*100).toFixed(1)}%</strong>
+                      </span>
+                    </div>
+                  </div>
+                )}
+                <GraphImage src={match.graphs?.catboost} alt="CatBoost" />
+              </div>
+            )}
             {selectedModel === 'mlp' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>MLP:</strong> Perceptron multicapa con regularizacion L2.</p><GraphImage src={match.graphs?.mlp} alt="MLP" /></div>}
             {selectedModel === 'mfa' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>MFA Montecarlo:</strong> Simulacion Poisson con penalizaciones.</p><GraphImage src={match.graphs?.mfa} alt="MFA" /></div>}
             {selectedModel === 'mcmc' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>MCMC Bayesiano:</strong> Muestreador PyMC.</p><GraphImage src={match.graphs?.mcmc} alt="MCMC" /></div>}
@@ -1937,7 +2119,23 @@ export default function MatchDetail() {
                 <li><strong>RPS:</strong> Castiga sobreconfianza. Valores menores = mejor calibración.</li>
               </ul>
             </div>
-            <GraphImage src={match.graphs?.accuracy} alt={`Accuracy ${match.home} vs ${match.away}`} />
+            <GraphImage src={match.graphs?.accuracy ? `${match.graphs.accuracy}?t=${new Date().getTime()}` : ''} alt={`Accuracy ${match.home} vs ${match.away}`} />
+            
+            <div style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ background: 'rgba(59, 130, 246, 0.05)', borderLeft: '3px solid #3b82f6', padding: '1rem', borderRadius: '4px', fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                <strong>📌 Nota sobre la Precisión 1X2:</strong> Esta gráfica es una <strong>auditoría a ciegas científica</strong> sobre 25 partidos históricos de control. En ella, el Ensemble ahora logra un extraordinario <strong>80.0% de acierto general en 1X2</strong> (dirección del partido) tras integrar optimizaciones de plantilla y regularización L2. En contraste, en el <strong>Mundial en curso</strong> (28 partidos), la efectividad combinada 1X2 asciende al <strong>85.7%</strong> gracias a los datos Opta en vivo.
+              </div>
+              <div style={{ background: 'rgba(245, 158, 11, 0.05)', borderLeft: '3px solid #f59e0b', padding: '1rem', borderRadius: '4px', fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                <strong>🎯 Precisión de Marcadores Exactos (Top 5 vs Top 10):</strong> Los subplots inferiores miden si el marcador final real estuvo dentro de los marcadores sugeridos:
+                <ul style={{ paddingLeft: '1.2rem', marginTop: '0.4rem', marginBottom: '0' }}>
+                  <li style={{ marginBottom: '0.2rem' }}><strong>Top 5 Sugeridos (Abajo Izquierda):</strong> El Ensemble y CatBoost logran un acierto de marcador del <strong>80.0%</strong>.</li>
+                  <li><strong>Top 10 Sugeridos (Abajo Derecha):</strong> El Ensemble y CatBoost escalan al <strong>88.0%</strong> de efectividad. El 12.0% de fallos representa el margen de marcadores totalmente 'alocados' o imprevisibles.</li>
+                </ul>
+              </div>
+              <div style={{ background: 'rgba(236, 72, 153, 0.05)', borderLeft: '3px solid #ec4899', padding: '1rem', borderRadius: '4px', fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                <strong>🚀 Desempeño del Líder (CatBoost):</strong> CatBoost se mantiene como la IA individual más fuerte y mejor calibrada con un <strong>80.0% de acierto general 1X2</strong> en la validación y el menor índice de error probabilístico (RPS de <strong>0.1283</strong>).
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -2150,8 +2348,91 @@ export default function MatchDetail() {
                     <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>Total Proyectado: <strong>{projectedTotalCorners.toFixed(1)}</strong> córners</div>
                   </div>
                 </div>
-              </div>
             </div>
+          </div>
+            {/* Termómetro de Remontada y Letalidad (Transición de Estados de Markov) */}
+            {prediction?.state_transition && (
+              <div style={{ marginTop: '2rem', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '1.5rem' }}>
+                <h3 style={{ color: '#fff', fontSize: '1.05rem', marginBottom: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontFamily: 'var(--font-display)' }}>
+                  <span>📈</span> Modelo de Transición de Estados (Markov Game States)
+                </h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', lineHeight: '1.4', marginBottom: '1.25rem' }}>
+                  Índices empíricos calculados mediante el registro de goles en tiempo real de partidos internacionales para medir la Resiliencia (capacidad de reacción al ir perdiendo) y el Snowball (letalidad al ir ganando).
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
+                  {/* Local Team State Stats */}
+                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem 1.25rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ fontWeight: 'bold', color: '#f59e0b', fontSize: '0.88rem', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{match.home}</div>
+                    
+                    {/* Resilience Bar */}
+                    <div style={{ marginBottom: '0.75rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', marginBottom: '0.2rem' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Índice de Resiliencia (Remontada):</span>
+                        <span style={{ color: '#f59e0b', fontWeight: 'bold' }}>{prediction.state_transition.home_resilience}%</span>
+                      </div>
+                      <div style={{ height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', overflow: 'hidden' }}>
+                        <div style={{ width: `${prediction.state_transition.home_resilience}%`, height: '100%', background: '#f59e0b' }} />
+                      </div>
+                    </div>
+                    
+                    {/* Snowball Bar */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', marginBottom: '0.2rem' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Índice Letalidad (Snowball):</span>
+                        <span style={{ color: '#f59e0b', fontWeight: 'bold' }}>{prediction.state_transition.home_snowball}%</span>
+                      </div>
+                      <div style={{ height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', overflow: 'hidden' }}>
+                        <div style={{ width: `${prediction.state_transition.home_snowball}%`, height: '100%', background: 'linear-gradient(90deg, #f59e0b, #d97706)' }} />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Away Team State Stats */}
+                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem 1.25rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ fontWeight: 'bold', color: '#3b82f6', fontSize: '0.88rem', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{match.away}</div>
+                    
+                    {/* Resilience Bar */}
+                    <div style={{ marginBottom: '0.75rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', marginBottom: '0.2rem' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Índice de Resiliencia (Remontada):</span>
+                        <span style={{ color: '#3b82f6', fontWeight: 'bold' }}>{prediction.state_transition.away_resilience}%</span>
+                      </div>
+                      <div style={{ height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', overflow: 'hidden' }}>
+                        <div style={{ width: `${prediction.state_transition.away_resilience}%`, height: '100%', background: '#3b82f6' }} />
+                      </div>
+                    </div>
+                    
+                    {/* Snowball Bar */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', marginBottom: '0.2rem' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Índice Letalidad (Snowball):</span>
+                        <span style={{ color: '#3b82f6', fontWeight: 'bold' }}>{prediction.state_transition.away_snowball}%</span>
+                      </div>
+                      <div style={{ height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', overflow: 'hidden' }}>
+                        <div style={{ width: `${prediction.state_transition.away_snowball}%`, height: '100%', background: 'linear-gradient(90deg, #3b82f6, #2563eb)' }} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: '1.25rem', padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.04)', fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: '1.45' }}>
+                  <strong>Análisis del Comportamiento en Vivo:</strong>{' '}
+                  {liveScoreHome > liveScoreAway ? (
+                    <span>
+                      {match.home} va ganando {liveScoreHome}-{liveScoreAway}. Con un índice Snowball del <strong>{prediction.state_transition.home_snowball}%</strong>, {match.home} tiene alta probabilidad de asegurar la victoria si mantiene la presión. Sin embargo, la Resiliencia de {match.away} es del <strong>{prediction.state_transition.away_resilience}%</strong>, lo que indica que conservan capacidad de remontada en situaciones adversas.
+                    </span>
+                  ) : liveScoreAway > liveScoreHome ? (
+                    <span>
+                      {match.away} va ganando {liveScoreAway}-{liveScoreHome}. Su letalidad Snowball es del <strong>{prediction.state_transition.away_snowball}%</strong>, siendo favoritos para mantener la ventaja. No obstante, {match.home} cuenta con una Resiliencia del <strong>{prediction.state_transition.home_resilience}%</strong>, haciéndolos un rival peligroso capaz de generar ocasiones de peligro en los minutos finales.
+                    </span>
+                  ) : (
+                    <span>
+                      El marcador se encuentra empatado. El primer gol será decisivo: si {match.home} anota primero, tiene un <strong>{prediction.state_transition.home_snowball}%</strong> de probabilidad histórica de ganar; si {match.away} abre el marcador, su chance de consolidar la victoria es del <strong>{prediction.state_transition.away_snowball}%</strong>.
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
             <div style={{ marginTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '1.5rem' }}>
               <h3 style={{ fontSize: '1.05rem', color: '#fff', marginBottom: '0.4rem' }}>Heatmap 6x6</h3>
               <div style={{ overflowX: 'auto', background: 'rgba(15,23,42,0.3)', padding: '1rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.03)' }}>

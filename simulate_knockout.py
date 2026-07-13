@@ -8,7 +8,8 @@ import time
 from predict_matches import (
     montecarlo_mfa_matrix, 
     compute_elo_ratings,
-    SPANISH_TO_ENGLISH
+    SPANISH_TO_ENGLISH,
+    simulate_knockout_resolution
 )
 
 RESULTS_TO_CSV = {
@@ -61,8 +62,11 @@ def simulate_knockout_match(h, a, elo_h, elo_a):
     
     # In knockout, no draws allowed. 
     if goals_h == goals_a:
-        # Simulate Extra Time / Penalties using a simple ELO-weighted coin flip
-        prob_h_advances = 1 / (1 + 10 ** ((elo_h - elo_a) / 400)) # Standard ELO expected score
+        # Simulate Extra Time / Penalties using real Poisson/Beta-Binomial resolution
+        prob_et_h, prob_et_a, prob_pk_h, prob_pk_a = simulate_knockout_resolution(
+            float(elo_h), float(elo_a), float(lh), float(la)
+        )
+        prob_h_advances = prob_et_h + prob_pk_h
         if np.random.rand() < prob_h_advances:
             goals_h += 1
         else:
