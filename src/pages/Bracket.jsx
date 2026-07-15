@@ -113,6 +113,7 @@ export default function Bracket() {
     'esp-bel': 'España',          // Jugado, avanzó España (2-1 vs Bélgica)
     'nor-eng': 'Inglaterra',      // Jugado, avanzó Inglaterra (1-2 AET vs Noruega)
     'arg-sui': 'Argentina',       // Jugado, avanzó Argentina (3-1 AET vs Suiza)
+    'fra-esp': 'España',          // Jugado, avanzó España (0-2 vs Francia)
   };
 
   // Pre-calcular los resultados de 16avos de final
@@ -181,8 +182,8 @@ export default function Bracket() {
   const qR2 = simulateEloMatch(octR3.winner, octR4.winner, 'arg-sui');
 
   // 3. Semifinales
-  const semiL = simulateEloMatch(qL1.winner, qL2.winner, 'semi-L');
-  const semiR = simulateEloMatch(qR1.winner, qR2.winner, 'semi-R');
+  const semiL = simulateEloMatch(qL1.winner, qL2.winner, 'fra-esp');
+  const semiR = simulateEloMatch(qR1.winner, qR2.winner, 'eng-arg');
 
   // 4. Gran Final
   const grandFinal = simulateEloMatch(semiL.winner, semiR.winner, 'final');

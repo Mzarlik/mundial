@@ -1796,6 +1796,7 @@ if __name__ == '__main__':
         {'date': '2026-07-07', 'home_team': 'Argentina', 'away_team': 'Egypt', 'home_score': 3, 'away_score': 2, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-07-07', 'home_team': 'Switzerland', 'away_team': 'Colombia', 'home_score': 0, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
         {'date': '2026-07-09', 'home_team': 'France', 'away_team': 'Morocco', 'home_score': 2, 'away_score': 0, 'tournament': 'FIFA World Cup', 'neutral': True},
+        {'date': '2026-07-14', 'home_team': 'France', 'away_team': 'Spain', 'home_score': 0, 'away_score': 2, 'tournament': 'FIFA World Cup', 'neutral': True},
     ])
     real_matches['date'] = pd.to_datetime(real_matches['date'])
     df_all = pd.concat([df_all, real_matches], ignore_index=True)
@@ -1934,16 +1935,6 @@ if __name__ == '__main__':
 
     n_test = 0
     opt_data = []
-    
-    real_played_pairs = {
-        ('South Africa', 'Canada'), ('Brazil', 'Japan'), ('Germany', 'Paraguay'), ('Netherlands', 'Morocco'),
-        ('Ivory Coast', 'Norway'), ('France', 'Sweden'), ('Mexico', 'Ecuador'), ('United States', 'Bosnia and Herzegovina'),
-        ('Belgium', 'Senegal'), ('England', 'DR Congo'), ('Portugal', 'Croatia'), ('Spain', 'Austria'),
-        ('Switzerland', 'Algeria'), ('Australia', 'Egypt'), ('Argentina', 'Cape Verde'), ('Colombia', 'Ghana'),
-        ('Paraguay', 'France'), ('Canada', 'Morocco'), ('Brazil', 'Norway'), ('Mexico', 'England'),
-        ('Portugal', 'Spain'), ('United States', 'Belgium'), ('Argentina', 'Egypt'), ('Switzerland', 'Colombia'),
-        ('France', 'Morocco')
-    }
 
     for m_id, (goals_h, goals_a) in simulated_results.items():
         match_obj = next((m for m in matches if m['id'] == m_id), None)
@@ -1952,19 +1943,21 @@ if __name__ == '__main__':
             
         h = match_obj['home']
         a = match_obj['away']
-        h_eng_temp = SPANISH_TO_ENGLISH.get(h, h)
-        a_eng_temp = SPANISH_TO_ENGLISH.get(a, a)
-        pair = (h_eng_temp, a_eng_temp)
-        rev_pair = (a_eng_temp, h_eng_temp)
-        if pair not in real_played_pairs and rev_pair not in real_played_pairs:
-            continue
-        host = 0.0
-        is_comp = 1.0
-        
         h_eng = SPANISH_TO_ENGLISH.get(h, h)
         a_eng = SPANISH_TO_ENGLISH.get(a, a)
         match_date = pd.to_datetime(match_obj['date'])
         
+        # Evaluar únicamente partidos que se jugaron en la vida real
+        is_played_real = False
+        for rm in real_matches.itertuples():
+            if (rm.home_team == h_eng and rm.away_team == a_eng) or (rm.home_team == a_eng and rm.away_team == h_eng):
+                is_played_real = True
+                break
+        if not is_played_real:
+            continue
+            
+        host = 0.0
+        is_comp = 1.0
         o = resultado_real(goals_h, goals_a)
         elo_h = get_elo_at_date(h_eng, match_date, elo_by_team, final_elos)
         elo_a = get_elo_at_date(a_eng, match_date, elo_by_team, final_elos)
@@ -2075,8 +2068,8 @@ if __name__ == '__main__':
     
     # Añadimos tol=1e-6 para evitar que SLSQP se rinda rápido
     res_opt = minimize(eval_w, w0, method='SLSQP', bounds=bounds, constraints=cons, tol=1e-6)
-    w_opt_1x2 = [0.00, 0.40, 0.00, 0.25, 0.00, 0.35, 0.00]
-    w_opt_score = [0.20, 0.45, 0.00, 0.15, 0.00, 0.20, 0.00]
+    w_opt_1x2 = [0.0170, 0.3762, 0.0163, 0.2760, 0.1123, 0.1806, 0.0216]
+    w_opt_score = [0.0170, 0.3762, 0.0163, 0.2760, 0.1123, 0.1806, 0.0216]
     
     print("\n[OPTIMIZACIÓN] Ponderación de Ensemble con Separación de Tareas:")
     print("  --> Para Resultados 1X2 (Ganador/Empate):")
@@ -2256,8 +2249,8 @@ if __name__ == '__main__':
         M_mfa, lh_mfa, la_mfa = montecarlo_mfa_matrix(h_eng, a_eng, elo_h, elo_a, form_h_val, form_a_val, host)
         
         # Ensemble Optimizado con pesos separados
-        w_opt_1x2 = [0.00, 0.55, 0.00, 0.20, 0.00, 0.25, 0.00]
-        w_opt_score = [0.20, 0.45, 0.00, 0.15, 0.00, 0.20, 0.00]
+        w_opt_1x2 = [0.0170, 0.3762, 0.0163, 0.2760, 0.1123, 0.1806, 0.0216]
+        w_opt_score = [0.0170, 0.3762, 0.0163, 0.2760, 0.1123, 0.1806, 0.0216]
         
         M_ens_1x2 = (M_dc * w_opt_1x2[0] + M_dcnb * w_opt_1x2[1] + M_mc * w_opt_1x2[2] + M_xgb * w_opt_1x2[3] + M_mlp * w_opt_1x2[4] + M_cb * w_opt_1x2[5] + M_mfa * w_opt_1x2[6])
         M_ens = (M_dc * w_opt_score[0] + M_dcnb * w_opt_score[1] + M_mc * w_opt_score[2] + M_xgb * w_opt_score[3] + M_mlp * w_opt_score[4] + M_cb * w_opt_score[5] + M_mfa * w_opt_score[6])
@@ -2335,9 +2328,10 @@ if __name__ == '__main__':
                 is_played = True
                 break
                 
-        # Saltar renderizado de gráficos si es fase de grupos para optimizar velocidad, o si ya se jugó y existen las imágenes
+        # Saltar renderizado de gráficos si es fase de grupos para optimizar velocidad,
+        # pero regenerar siempre la fase eliminatoria para evitar inconsistencias de caché de imágenes.
         is_group_stage = 'jornada' in day.lower()
-        skip_plotting = is_group_stage or (is_played and os.path.exists(timeline_out) and os.path.exists(ens_out))
+        skip_plotting = is_group_stage
         
         # Generar simulación de línea de tiempo Weibull
         weibull_data = simulate_match_timeline_weibull(exp_goles_h, exp_goles_a, h, a, timeline_out, save_plot=not skip_plotting, is_knockout=not is_group_stage, elo_h=elo_h, elo_a=elo_a)

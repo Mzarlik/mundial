@@ -550,7 +550,13 @@ function StatsAndFormPanel({ prediction, home, away }) {
     { label: away, prob: pA, color: '#3b82f6' },
   ];
   const sorted = [...outcomes].sort((a, b) => b.prob - a.prob);
-  const dcLabel = sorted[0].label === home && sorted[1].label === away ? `${home} o ${away}` : sorted[0].label === home || sorted[1].label === home ? `${home} o Empate` : `${away} o Empate`;
+  const first = sorted[0].label;
+  const second = sorted[1].label;
+  const dcLabel = (first !== 'Empate' && second !== 'Empate') 
+    ? `${home} o ${away}` 
+    : (first === home || second === home) 
+      ? `${home} o Empate` 
+      : `${away} o Empate`;
   const dcProb = sorted[0].prob + sorted[1].prob;
   const homeGD = (prediction.home_form_gf || 0) - (prediction.home_form_ga || 0);
   const awayGD = (prediction.away_form_gf || 0) - (prediction.away_form_ga || 0);
@@ -960,11 +966,55 @@ function OptaTacticComparisonPanel({ home, away, playerStats }) {
       </p>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginBottom: '1.5rem' }}>
-        <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px', padding: '1rem' }}>
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Córners Esperados</div>
-          <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#fff', margin: '0.2rem 0' }}>{expCornersTotal.toFixed(1)}</div>
-          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-            {home}: {homeAvg.avgCorners.toFixed(1)} | {away}: {awayAvg.avgCorners.toFixed(1)}
+        <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column', justifyBetween: 'space-between', gap: '0.75rem' }}>
+          <div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Córners Esperados</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', margin: '0.2rem 0' }}>
+              <span style={{ fontSize: '2rem', fontWeight: 'bold', color: '#fbbf24' }}>{expCornersTotal.toFixed(1)}</span>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>totales</span>
+            </div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
+              {match.homeCode.toUpperCase()}: <strong>{homeAvg.avgCorners.toFixed(1)}</strong> | {match.awayCode.toUpperCase()}: <strong>{awayAvg.avgCorners.toFixed(1)}</strong>
+            </div>
+          </div>
+
+          {/* Escala Visual Proporcional de Córners */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+            <div style={{ height: '8px', width: '100%', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', overflow: 'hidden', display: 'flex' }}>
+              <div 
+                style={{ 
+                  width: `${(homeAvg.avgCorners / expCornersTotal) * 100}%`, 
+                  background: 'linear-gradient(90deg, #f59e0b, #fbbf24)', 
+                  transition: 'width 0.5s ease-in-out' 
+                }} 
+              />
+              <div 
+                style={{ 
+                  width: `${(awayAvg.avgCorners / expCornersTotal) * 100}%`, 
+                  background: 'linear-gradient(90deg, #3b82f6, #60a5fa)', 
+                  transition: 'width 0.5s ease-in-out' 
+                }} 
+              />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: '500' }}>
+              <span>Local ({((homeAvg.avgCorners / expCornersTotal) * 100).toFixed(0)}%)</span>
+              <span>Vis. ({((awayAvg.avgCorners / expCornersTotal) * 100).toFixed(0)}%)</span>
+            </div>
+          </div>
+
+          {/* Indicador de Nivel de Intensidad de Córners */}
+          <div style={{ 
+            marginTop: '0.25rem', 
+            padding: '0.4rem 0.6rem', 
+            background: expCornersTotal > 10.0 ? 'rgba(239,68,68,0.06)' : expCornersTotal >= 8.0 ? 'rgba(16,185,129,0.06)' : 'rgba(148,163,184,0.06)',
+            border: expCornersTotal > 10.0 ? '1px solid rgba(239,68,68,0.2)' : expCornersTotal >= 8.0 ? '1px solid rgba(16,185,129,0.2)' : '1px solid rgba(148,163,184,0.2)',
+            borderRadius: '6px',
+            fontSize: '0.72rem',
+            textAlign: 'center',
+            fontWeight: '600',
+            color: expCornersTotal > 10.0 ? '#f87171' : expCornersTotal >= 8.0 ? '#34d399' : '#94a3b8'
+          }}>
+            🎯 Escala: {expCornersTotal > 10.0 ? 'Volumen Alto (Over Favorable)' : expCornersTotal >= 8.0 ? 'Volumen Medio' : 'Volumen Bajo (Under Favorable)'}
           </div>
         </div>
 
@@ -2078,20 +2128,62 @@ export default function MatchDetail() {
                   onClick={() => setSelectedModel(m.id)}>{m.name}</button>
               ))}
             </div>
-            {selectedModel === 'ensemble' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>Ensemble:</strong> Pondera con SLSQP. Dominado por Dixon-Coles NB y XGBoost.</p><GraphImage src={match.graphs?.ensemble} alt="Ensemble" /></div>}
-            {selectedModel === 'dixoncoles' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>Dixon-Coles Poisson:</strong> Regresion Poisson clasica, vida media 100 dias.</p><GraphImage src={match.graphs?.dixoncoles} alt="DC" /></div>}
-            {selectedModel === 'dcnb' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>DC NB:</strong> Binomial Negativa - captura sobredispersion. Modelo dominante (83.35%).</p><GraphImage src={`/graphs/${match.day}/${match.id}_dcnb.png`} alt="DCNB" /></div>}
-            {selectedModel === 'xgboost' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>XGBoost:</strong> Gradient Boosting con Pi-Ratings y ELO. ~16.65%.</p><GraphImage src={match.graphs?.xgboost} alt="XGBoost" /></div>}
+            {selectedModel === 'ensemble' && (
+              <div>
+                <div className="card" style={{ padding: '1rem', background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '8px', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 'bold', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🏆 Consenso del Ensamble (Accuracy: 84.62%)</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: '1.3' }}>
+                    <strong>A qué hacer caso:</strong> Es la combinación ponderada óptima de los 7 submodelos. Es el modelo definitivo para apostar al resultado final (1X2) y para elegir parlays basados en los marcadores más lógicos y seguros.
+                  </div>
+                </div>
+                <GraphImage src={match.graphs?.ensemble} alt="Ensemble" />
+              </div>
+            )}
+            {selectedModel === 'dixoncoles' && (
+              <div>
+                <div className="card" style={{ padding: '1rem', background: 'rgba(148,163,184,0.06)', border: '1px solid rgba(148,163,184,0.2)', borderRadius: '8px', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 'bold', color: '#cbd5e1', textTransform: 'uppercase', letterSpacing: '0.05em' }}>📊 Dixon-Coles Poisson (Accuracy: 69.2%)</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: '1.3' }}>
+                    <strong>A qué hacer caso:</strong> Utiliza regresión de Poisson pura basada en medias históricas y atenuación de ELO. Es excelente para estimar promedios de goles y tendencias para el mercado Over/Under.
+                  </div>
+                </div>
+                <GraphImage src={match.graphs?.dixoncoles} alt="DC" />
+              </div>
+            )}
+            {selectedModel === 'dcnb' && (
+              <div>
+                <div className="card" style={{ padding: '1rem', background: 'rgba(244,63,94,0.06)', border: '1px solid rgba(244,63,94,0.2)', borderRadius: '8px', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 'bold', color: '#f43f5e', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🛡️ Dixon-Coles NB (Accuracy: 76.9%)</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: '1.3' }}>
+                    <strong>A qué hacer caso:</strong> Implementa una distribución Binomial Negativa que captura la sobredispersión de goles. Es el mejor modelo para identificar la posibilidad de marcadores atípicos (goleadas) y empates de alta puntuación.
+                  </div>
+                </div>
+                <GraphImage src={`/graphs/${match.day}/${match.id}_dcnb.png`} alt="DCNB" />
+              </div>
+            )}
+            {selectedModel === 'xgboost' && (
+              <div>
+                <div className="card" style={{ padding: '1rem', background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '8px', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 'bold', color: '#10b981', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🌳 XGBoost Regressor (Accuracy: 80.8%)</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: '1.3' }}>
+                    <strong>A qué hacer caso:</strong> Árboles de decisión que integran Pi-Ratings, diferencia de ELO y rachas de forma reciente de los últimos 5 partidos. Es idóneo para encontrar valor en cuotas de doble oportunidad o para detectar posibles sorpresas cuando un equipo grande viene en baja.
+                  </div>
+                </div>
+                <GraphImage src={match.graphs?.xgboost} alt="XGBoost" />
+              </div>
+            )}
             {selectedModel === 'catboost' && (
               <div>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-                  <strong>CatBoost:</strong> Boosting categórico nativo. Es el modelo individual más preciso de la suite con un <strong>84.0%</strong> de accuracy histórico.
-                </p>
+                <div className="card" style={{ padding: '1rem', background: 'rgba(236,72,153,0.06)', border: '1px solid rgba(236,72,153,0.2)', borderRadius: '8px', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 'bold', color: '#ec4899', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <span>🎯</span> Modo Francotirador (CatBoost Alpha - Accuracy: 80.8%)
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: '1.3' }}>
+                    <strong>A qué hacer caso:</strong> Optimización de variables categóricas nativas. Es el modelo individual más equilibrado para predecir el ganador directo del partido (1X2) reduciendo el sesgo por localía.
+                  </div>
+                </div>
                 {prediction?.catboost_1x2 && (
-                  <div className="card" style={{ padding: '1rem', background: 'rgba(236,72,153,0.06)', border: '1px solid rgba(236,72,153,0.2)', borderRadius: '8px', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    <div style={{ fontSize: '0.82rem', fontWeight: 'bold', color: '#ec4899', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                      <span>🎯</span> Modo Francotirador (CatBoost Alpha)
-                    </div>
+                  <div className="card" style={{ padding: '0.75rem 1rem', background: 'rgba(236,72,153,0.02)', border: '1px solid rgba(236,72,153,0.1)', borderRadius: '8px', marginBottom: '1.25rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--text-secondary)', flexWrap: 'wrap', gap: '0.5rem' }}>
                       <span>Probabilidades 1X2 CatBoost puro:</span>
                       <span>
@@ -2105,9 +2197,39 @@ export default function MatchDetail() {
                 <GraphImage src={match.graphs?.catboost} alt="CatBoost" />
               </div>
             )}
-            {selectedModel === 'mlp' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>MLP:</strong> Perceptron multicapa con regularizacion L2.</p><GraphImage src={match.graphs?.mlp} alt="MLP" /></div>}
-            {selectedModel === 'mfa' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>MFA Montecarlo:</strong> Simulacion Poisson con penalizaciones.</p><GraphImage src={match.graphs?.mfa} alt="MFA" /></div>}
-            {selectedModel === 'mcmc' && <div><p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}><strong>MCMC Bayesiano:</strong> Muestreador PyMC.</p><GraphImage src={match.graphs?.mcmc} alt="MCMC" /></div>}
+            {selectedModel === 'mlp' && (
+              <div>
+                <div className="card" style={{ padding: '1rem', background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.2)', borderRadius: '8px', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 'bold', color: '#8b5cf6', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🧠 Red Neuronal MLP (Accuracy: 80.8%)</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: '1.3' }}>
+                    <strong>A qué hacer caso:</strong> Perceptrón multicapa con regularización L2 extrema. Modela la interacción táctica compleja y la disparidad de plantillas. Es excelente para predecir si un equipo dominará tácticamente el centro del campo y sofocará al rival.
+                  </div>
+                </div>
+                <GraphImage src={match.graphs?.mlp} alt="MLP" />
+              </div>
+            )}
+            {selectedModel === 'mfa' && (
+              <div>
+                <div className="card" style={{ padding: '1rem', background: 'rgba(14,165,233,0.06)', border: '1px solid rgba(14,165,233,0.2)', borderRadius: '8px', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 'bold', color: '#0ea5e9', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🎲 Simulación Montecarlo MFA (Accuracy: 80.8%)</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: '1.3' }}>
+                    <strong>A qué hacer caso:</strong> Simulador probabilístico que penaliza por fatiga en vivo y localía neutral. Es el mejor modelo para proyectar el minuto promedio del primer gol y las apuestas en vivo de "Siguiente Gol".
+                  </div>
+                </div>
+                <GraphImage src={match.graphs?.mfa} alt="MFA" />
+              </div>
+            )}
+            {selectedModel === 'mcmc' && (
+              <div>
+                <div className="card" style={{ padding: '1rem', background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: '8px', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 'bold', color: '#3b82f6', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🪐 MCMC Bayesiano PyMC (Accuracy: 76.9%)</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: '1.3' }}>
+                    <strong>A qué hacer caso:</strong> Muestreador bayesiano de Monte Carlo por Cadenas de Markov. Es ideal para evaluar el rango real de incertidumbre defensiva u ofensiva de cada equipo nacional en condiciones climáticas específicas.
+                  </div>
+                </div>
+                <GraphImage src={match.graphs?.mcmc} alt="MCMC" />
+              </div>
+            )}
           </div>
 
           <div className="graph-section" style={{ borderLeft: '4px solid var(--accent)', marginTop: '1rem' }}>

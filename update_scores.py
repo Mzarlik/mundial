@@ -64,7 +64,9 @@ updates = [
     ("2026-06-18", "Ghana", "Panama", 1, 0),
     ("2026-06-23", "England", "Ghana", 0, 0),
     # 16avos de Final
-    ("2026-07-01", "England", "DR Congo", 2, 1)
+    ("2026-07-01", "England", "DR Congo", 2, 1),
+    # Semifinal
+    ("2026-07-14", "France", "Spain", 0, 2)
 ]
 
 print("Reading CSV...")
@@ -78,11 +80,11 @@ for _, home, away, hs, as_ in updates:
       df.loc[mask, 'away_score'] = as_
       updated_count += 1
     else:
-      mask_reverse = df['date'].str.startswith('2026-') & (df['home_team'] == away) & (df['away_team'] == home)
-      if mask_reverse.sum() > 0:
-        df.loc[mask_reverse, 'home_score'] = as_
-        df.loc[mask_reverse, 'away_score'] = hs
-        updated_count += 1
+        mask_reverse = df['date'].str.startswith('2026-') & (df['home_team'] == away) & (df['away_team'] == home)
+        if mask_reverse.sum() > 0:
+            df.loc[mask_reverse, 'home_score'] = as_
+            df.loc[mask_reverse, 'away_score'] = hs
+            updated_count += 1
         else:
             print(f"Match not found: {home} vs {away}")
 
