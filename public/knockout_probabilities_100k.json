@@ -1,5 +1,5 @@
 {
-  "iterations": 50000,
+  "iterations": 100000,
   "probabilities": [
     {
       "team": "España",
@@ -8,8 +8,8 @@
       "r16": 100.0,
       "qf": 100.0,
       "sf": 100.0,
-      "final": 100.0,
-      "champion": 61.0
+      "final": 62.8,
+      "champion": 38.2
     },
     {
       "team": "Argentina",
@@ -18,18 +18,8 @@
       "r16": 100.0,
       "qf": 100.0,
       "sf": 100.0,
-      "final": 71.0,
-      "champion": 31.6
-    },
-    {
-      "team": "Inglaterra",
-      "code": "gb-eng",
-      "elo": 2095.308177986714,
-      "r16": 100.0,
-      "qf": 100.0,
-      "sf": 100.0,
-      "final": 29.0,
-      "champion": 7.4
+      "final": 71.1,
+      "champion": 35.1
     },
     {
       "team": "Francia",
@@ -38,8 +28,18 @@
       "r16": 100.0,
       "qf": 100.0,
       "sf": 100.0,
-      "final": 0.0,
-      "champion": 0.0
+      "final": 37.2,
+      "champion": 18.4
+    },
+    {
+      "team": "Inglaterra",
+      "code": "gb-eng",
+      "elo": 2095.308177986714,
+      "r16": 100.0,
+      "qf": 100.0,
+      "sf": 100.0,
+      "final": 28.9,
+      "champion": 8.3
     },
     {
       "team": "Marruecos",

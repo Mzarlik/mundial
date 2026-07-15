@@ -4,6 +4,7 @@ import { flagUrl } from '../config/matches';
 export default function SwissSystem() {
   const [data, setData] = useState(null);
   const [mcData, setMcData] = useState(null);
+  const [mcData100k, setMcData100k] = useState(null);
   const [activeTab, setActiveTab] = useState('standings');
   const [loading, setLoading] = useState(true);
 
@@ -26,6 +27,11 @@ export default function SwissSystem() {
       .then(res => res.json())
       .then(d => setMcData(d))
       .catch(err => console.error("Error loading knockout data:", err));
+
+    fetch('/knockout_probabilities_100k.json')
+      .then(res => res.json())
+      .then(d => setMcData100k(d))
+      .catch(err => console.error("Error loading 100k knockout data:", err));
   }, []);
 
   if (loading) {
@@ -80,7 +86,14 @@ export default function SwissSystem() {
           onClick={() => setActiveTab('knockout')}
           style={{background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: '1rem', color: 'inherit'}}
         >
-          🎲 Eliminatorias: Probabilidades
+          🎲 Eliminatorias: Probabilidades (50k)
+        </button>
+        <button 
+          className={`day-tab ${activeTab === 'knockout100k' ? 'active' : ''}`}
+          onClick={() => setActiveTab('knockout100k')}
+          style={{background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: '1rem', color: 'inherit'}}
+        >
+          🎲 Experimento (100k)
         </button>
       </div>
 
@@ -184,6 +197,60 @@ export default function SwissSystem() {
             </thead>
             <tbody>
               {mcData.probabilities.map((team, idx) => (
+                <tr key={team.team} style={{borderBottom: '1px solid var(--border-color)'}}>
+                  <td style={{padding: '0.75rem 0.5rem', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold'}}>
+                    <img src={flagUrl(team.code)} alt={team.team} style={{width: '24px', borderRadius: '2px'}} />
+                    {team.team}
+                  </td>
+                  <td style={{padding: '0.75rem 0.5rem', color: 'var(--text-muted)', textAlign: 'center'}}>{Math.round(team.elo)}</td>
+                  
+                  {/* Heatmap effect for probabilities */}
+                  <td style={{padding: '0.75rem 0.5rem', textAlign: 'center', background: `rgba(46, 204, 113, ${team.r16/100 * 0.3})`}}>
+                    {team.r16}%
+                  </td>
+                  <td style={{padding: '0.75rem 0.5rem', textAlign: 'center', background: `rgba(46, 204, 113, ${team.qf/100 * 0.4})`}}>
+                    {team.qf}%
+                  </td>
+                  <td style={{padding: '0.75rem 0.5rem', textAlign: 'center', background: `rgba(46, 204, 113, ${team.sf/100 * 0.5})`}}>
+                    {team.sf}%
+                  </td>
+                  <td style={{padding: '0.75rem 0.5rem', textAlign: 'center', background: `rgba(52, 152, 219, ${team.final/100 * 0.6})`}}>
+                    {team.final}%
+                  </td>
+                  <td style={{padding: '0.75rem 0.5rem', fontWeight: '800', color: '#fbbf24', textAlign: 'center', background: `rgba(241, 196, 15, ${team.champion/100 * 0.4})` }}>
+                    {team.champion}%
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {activeTab === 'knockout100k' && mcData100k && (
+        <div className="card" style={{overflowX: 'auto', marginBottom: '2rem'}}>
+          <div style={{padding: '1rem', borderBottom: '1px solid var(--border-color)'}}>
+            <h3 style={{margin: 0, color: 'var(--accent)'}}>
+              Probabilidades de Avance (Experimento de {mcData100k.iterations.toLocaleString()} simulaciones)
+            </h3>
+            <p style={{margin: '0.5rem 0 0 0', fontSize: '0.9rem', color: 'var(--text-muted)'}}>
+              Basado en emparejamientos dinámicos estocásticos a partir de 16avos de final. Se incluyen clasificados oficiales en partidos ya jugados.
+            </p>
+          </div>
+          <table style={{width: '100%', borderCollapse: 'collapse', textAlign: 'left'}}>
+            <thead>
+              <tr style={{borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)'}}>
+                <th style={{padding: '1rem 0.5rem'}}>Selección</th>
+                <th style={{padding: '1rem 0.5rem', textAlign: 'center'}}>ELO</th>
+                <th style={{padding: '1rem 0.5rem', textAlign: 'center'}}>Octavos</th>
+                <th style={{padding: '1rem 0.5rem', textAlign: 'center'}}>Cuartos</th>
+                <th style={{padding: '1rem 0.5rem', textAlign: 'center'}}>Semis</th>
+                <th style={{padding: '1rem 0.5rem', textAlign: 'center'}}>Final</th>
+                <th style={{padding: '1rem 0.5rem', color: '#f1c40f', textAlign: 'center'}}>🏆 Campeón</th>
+              </tr>
+            </thead>
+            <tbody>
+              {mcData100k.probabilities.map((team, idx) => (
                 <tr key={team.team} style={{borderBottom: '1px solid var(--border-color)'}}>
                   <td style={{padding: '0.75rem 0.5rem', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold'}}>
                     <img src={flagUrl(team.code)} alt={team.team} style={{width: '24px', borderRadius: '2px'}} />

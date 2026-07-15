@@ -165,8 +165,8 @@ const getOptaModifiers = (teamName, avgStats, goalsStats) => {
   const totalXG = avgStats.avgXG * avgStats.matchesPlayed;
   const totalXGConceded = avgStats.avgXGConceded * avgStats.matchesPlayed;
   
-  const att = (totalXG + 1.0) / (goalsStats.scored + 1.0);
-  const dfn = (totalXGConceded + 1.0) / (goalsStats.conceded + 1.0);
+  const att = (goalsStats.scored + 1.0) / (totalXG + 1.0);
+  const dfn = (goalsStats.conceded + 1.0) / (totalXGConceded + 1.0);
   
   return { att, dfn };
 };
@@ -1000,7 +1000,7 @@ function ScenariosPanel({ prediction, home, away }) {
   );
 }
 
-function OptaTacticComparisonPanel({ home, away, playerStats }) {
+function OptaTacticComparisonPanel({ home, away, playerStats, match }) {
   const homeAvg = getTeamOptaStats(home, playerStats);
   const awayAvg = getTeamOptaStats(away, playerStats);
   
@@ -1021,8 +1021,8 @@ function OptaTacticComparisonPanel({ home, away, playerStats }) {
   const expCornersTotal = homeAvg.avgCorners + awayAvg.avgCorners;
 
   const getEfficiencyText = (mod) => {
-    if (mod > 1.25) return "Poco efectivo (Crea mucho pero no concreta. Peligroso en volumen)";
-    if (mod < 0.8) return "Ultra contundente (Muy clínico de cara al arco o con alta dosis de suerte)";
+    if (mod > 1.25) return "Ultra contundente (Muy clínico de cara al arco o con alta dosis de suerte)";
+    if (mod < 0.8) return "Poco efectivo (Crea mucho pero no concreta. Peligroso en volumen)";
     return "Equilibrado (Fiel a la expectativa de goles generada)";
   };
 
@@ -1396,7 +1396,7 @@ export default function MatchDetail() {
       
       doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(100, 100, 100);
       doc.text(`Ajuste Táctico Aplicado en Lambda/Mu: ${match.home} (Att: ${homeMods.att.toFixed(3)} / Dfn: ${homeMods.dfn.toFixed(3)}) | ${match.away} (Att: ${awayMods.att.toFixed(3)} / Dfn: ${awayMods.dfn.toFixed(3)})`, 18, y + 50);
-      doc.text(`*Fórmula: (xG Acumulado + 1.0) / (Goles Acumulados + 1.0) - Laplace Smooth con peso w=0.30`, 18, y + 55);
+      doc.text(`*Fórmula: (Goles Acumulados + 1.0) / (xG Acumulado + 1.0) - Laplace Smooth con peso w=0.30`, 18, y + 55);
 
       y += 68;
       
@@ -2000,8 +2000,8 @@ export default function MatchDetail() {
       card(y - 2, 28); doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...tc);
       if (homeAvg && awayAvg) {
         const getStyleText = (mod) => {
-          if (mod > 1.25) return "Poco efectivo (Crea mucho pero no concreta. Peligroso en volumen)";
-          if (mod < 0.8) return "Ultra contundente (Muy clínico de cara al arco)";
+          if (mod > 1.25) return "Ultra contundente (Muy clínico de cara al arco)";
+          if (mod < 0.8) return "Poco efectivo (Crea mucho pero no concreta. Peligroso en volumen)";
           return "Equilibrado (Fiel a la expectativa de goles generada)";
         };
         doc.setFont('helvetica', 'bold');
@@ -2218,7 +2218,7 @@ export default function MatchDetail() {
           {activeTab === 'summary' && (
         <div>
           <StatsAndFormPanel prediction={prediction} home={match.home} away={match.away} />
-          <OptaTacticComparisonPanel home={match.home} away={match.away} playerStats={playerStats} />
+          <OptaTacticComparisonPanel home={match.home} away={match.away} playerStats={playerStats} match={match} />
           <StadiumEnvironmentPanel venue={match.venue} stadiumsClimate={stadiumsClimate} />
           <div className="graph-section">
             <h2>Consenso Comparativo de Modelos</h2>
