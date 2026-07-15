@@ -1,15 +1,33 @@
 {
-  "iterations": 10000,
+  "iterations": 50000,
   "probabilities": [
     {
+<<<<<<< Updated upstream
+=======
+      "team": "Argentina",
+      "code": "ar",
+      "elo": 2138.4709739801533,
+      "r16": 100.0,
+      "qf": 100.0,
+      "sf": 100.0,
+      "final": 70.8,
+      "champion": 35.8
+    },
+    {
+>>>>>>> Stashed changes
       "team": "España",
       "code": "es",
       "elo": 2165.6213013249776,
       "r16": 100.0,
       "qf": 100.0,
       "sf": 100.0,
+<<<<<<< Updated upstream
       "final": 100.0,
       "champion": 60.8
+=======
+      "final": 57.9,
+      "champion": 34.1
+>>>>>>> Stashed changes
     },
     {
       "team": "Argentina",
@@ -18,8 +36,13 @@
       "r16": 100.0,
       "qf": 100.0,
       "sf": 100.0,
+<<<<<<< Updated upstream
       "final": 71.3,
       "champion": 31.7
+=======
+      "final": 42.1,
+      "champion": 21.7
+>>>>>>> Stashed changes
     },
     {
       "team": "Inglaterra",
@@ -28,6 +51,7 @@
       "r16": 100.0,
       "qf": 100.0,
       "sf": 100.0,
+<<<<<<< Updated upstream
       "final": 28.7,
       "champion": 7.5
     },
@@ -40,6 +64,10 @@
       "sf": 100.0,
       "final": 0.0,
       "champion": 0.0
+=======
+      "final": 29.2,
+      "champion": 8.4
+>>>>>>> Stashed changes
     },
     {
       "team": "Marruecos",

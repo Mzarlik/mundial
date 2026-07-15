@@ -27,7 +27,7 @@ const TEAM_SYNONYMS = {
   "iran": ["iran", "ir iran"],
   "irán": ["iran", "ir iran"],
   "curazao": ["curacao", "curaçao"],
-  "rd congo": ["congo dr", "dr congo", "congo"],
+  "rd congo": ["congo dr", "dr congo", "congo", "democratic republic of the congo"],
   "paises bajos": ["netherlands", "holland"],
   "países bajos": ["netherlands", "holland"],
   "cabo verde": ["cape verde", "cabo verde"],
@@ -169,6 +169,76 @@ const getOptaModifiers = (teamName, avgStats, goalsStats) => {
   const dfn = (totalXGConceded + 1.0) / (goalsStats.conceded + 1.0);
   
   return { att, dfn };
+};
+
+const getGraphPath = (match, type) => {
+  if (match.graphs) {
+    if (match.graphs[type]) return match.graphs[type];
+    const key = Object.keys(match.graphs).find(k => k.toLowerCase() === type.toLowerCase());
+    if (key) return match.graphs[key];
+  }
+  const typeLower = type.toLowerCase();
+  return `/graphs/${match.day}/${match.id}_${typeLower}.png`;
+};
+
+const getTeamMarketValue = (teamName, marketValues) => {
+  if (!marketValues || !teamName) return null;
+  const keywords = getKeywords(teamName);
+  for (let kw of keywords) {
+    if (marketValues[kw]) return marketValues[kw];
+  }
+  const norm = teamName.toLowerCase().trim();
+  if (marketValues[norm]) return marketValues[norm];
+  
+  const eng = SPANISH_TO_ENGLISH[teamName];
+  if (eng && marketValues[eng.toLowerCase()]) return marketValues[eng.toLowerCase()];
+  
+  const matchedKey = Object.keys(marketValues).find(k => keywords.includes(k));
+  if (matchedKey) return marketValues[matchedKey];
+  
+  return null;
+};
+
+const getTopPassers = (teamName, playerStatsData) => {
+  if (!playerStatsData || !teamName) return [];
+  const keywords = getKeywords(teamName);
+  const playersMap = {};
+  
+  Object.keys(playerStatsData).forEach(matchKey => {
+    const entry = playerStatsData[matchKey];
+    if (!entry || !entry.teams || !entry.players) return;
+    
+    const homeKeywords = getKeywords(entry.teams[0]);
+    const awayKeywords = getKeywords(entry.teams[1]);
+    const isHome = homeKeywords.some(kw => keywords.includes(kw));
+    const isAway = awayKeywords.some(kw => keywords.includes(kw));
+    
+    if (!isHome && !isAway) return;
+    
+    const teamNameInStats = isHome ? entry.teams[0] : entry.teams[1];
+    
+    entry.players.forEach(p => {
+      if (p.team === teamNameInStats) {
+        const name = p.name;
+        if (!playersMap[name]) {
+          playersMap[name] = { name: p.name, position: p.position || 'MF', totalPasses: 0, matches: 0 };
+        }
+        playersMap[name].totalPasses += p.accurate_passes || 0;
+        playersMap[name].matches++;
+      }
+    });
+  });
+  
+  const list = Object.keys(playersMap).map(name => {
+    const p = playersMap[name];
+    return {
+      name: p.name,
+      position: p.position,
+      avgPasses: p.totalPasses / p.matches
+    };
+  });
+  
+  return list.sort((a, b) => b.avgPasses - a.avgPasses).slice(0, 3);
 };
 
 const loadImageAsBase64 = (url) =>
@@ -1194,6 +1264,7 @@ export default function MatchDetail() {
 
   const [playerStats, setPlayerStats] = useState(null);
   const [stadiumsClimate, setStadiumsClimate] = useState(null);
+  const [marketValues, setMarketValues] = useState({});
 
   useEffect(() => {
     fetch('/data/predictions.json')
@@ -1210,6 +1281,28 @@ export default function MatchDetail() {
       .then(r => r.json())
       .then(data => setStadiumsClimate(data))
       .catch(e => console.error('Error loading stadiums climate', e));
+
+    fetch('/data/market_values.csv')
+      .then(r => r.text())
+      .then(csvText => {
+        const lines = csvText.split('\n');
+        const parsed = {};
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+          const parts = line.split(',');
+          if (parts.length >= 5) {
+            const team = parts[0].trim();
+            const squadSize = parseInt(parts[1].trim()) || 0;
+            const avgAge = parseFloat(parts[2].trim()) || 0.0;
+            const marketValueStr = parts[3].trim();
+            const marketValueNum = parseFloat(parts[4].trim()) || 0.0;
+            parsed[team.toLowerCase()] = { squadSize, avgAge, marketValueStr, marketValueNum };
+          }
+        }
+        setMarketValues(parsed);
+      })
+      .catch(e => console.error('Error loading market values', e));
   }, [matchId]);
 
   const downloadPDF = async () => {
@@ -1260,7 +1353,7 @@ export default function MatchDetail() {
       doc.setFillColor(...pc); doc.rect(0, 0, dw, 40, 'F');
       doc.setTextColor(255, 255, 255); 
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
-      doc.text('COPA MUNDIAL FIFA 2026 - INFORME TÁCTICO AVANZADO (OPTA + ML)', 15, 13);
+      doc.text('COPA MUNDIAL FIFA 2026 - INFORME TÁCTICO AVANZADO COMPLETO', 15, 13);
       
       doc.setFontSize(20); 
       doc.text(`${match.home.toUpperCase()} vs ${match.away.toUpperCase()}`, 15, 25);
@@ -1302,14 +1395,83 @@ export default function MatchDetail() {
       doc.text(`PROBABILIDADES EN REGLAMENTO: ${match.home} ${(pH * 100).toFixed(1)}% | Empate ${(pD * 100).toFixed(1)}% | ${match.away} ${(pA * 100).toFixed(1)}%`, 18, y + 44);
       
       doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(100, 100, 100);
-      doc.text(`Ajuste Tactico Aplicado en Lambda/Mu: ${match.home} (Att: ${homeMods.att.toFixed(3)} / Dfn: ${homeMods.dfn.toFixed(3)}) | ${match.away} (Att: ${awayMods.att.toFixed(3)} / Dfn: ${awayMods.dfn.toFixed(3)})`, 18, y + 50);
-      doc.text(`*Formula: (xG Acumulado + 1.0) / (Goles Acumulados + 1.0) - Laplace Smooth con peso w=0.30`, 18, y + 55);
+      doc.text(`Ajuste Táctico Aplicado en Lambda/Mu: ${match.home} (Att: ${homeMods.att.toFixed(3)} / Dfn: ${homeMods.dfn.toFixed(3)}) | ${match.away} (Att: ${awayMods.att.toFixed(3)} / Dfn: ${awayMods.dfn.toFixed(3)})`, 18, y + 50);
+      doc.text(`*Fórmula: (xG Acumulado + 1.0) / (Goles Acumulados + 1.0) - Laplace Smooth con peso w=0.30`, 18, y + 55);
 
       y += 68;
       
-      // SECTION 2: MÉTRICAS Y RENDIMIENTO TÁCTICO ACUMULADO (OPTA)
+      // SECTION 2: CONDICIONES CLIMÁTICAS Y ALTITUD (ESTADIO)
       bar(y); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...pc);
-      doc.text('2. COMPARATIVA DE RENDIMIENTO ACUMULADO (OPTA)', 21, y);
+      doc.text('2. CONDICIONES CLIMÁTICAS Y ALTITUD (ESTADIO)', 21, y);
+      doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5);
+      y += 10;
+      
+      const vInfo = stadiumsClimate?.[match.venue];
+      if (vInfo) {
+        card(y - 2, 34); doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...tc);
+        doc.text(`• Sede/Estadio: ${match.venue}`, 18, y + 4);
+        doc.text(`• Altitud: ${vInfo.altitude_m} metros sobre el nivel del mar`, 18, y + 10);
+        doc.text(`• Temperatura en Junio: Promedio ${vInfo.avg_temp_june_c.toFixed(1)}°C | Efectiva ${vInfo.effective_temp_c.toFixed(1)}°C (Techo/AC: ${vInfo.roof_ac ? 'Sí' : 'No'})`, 18, y + 16);
+        doc.text(`• Humedad en Junio: Promedio ${vInfo.avg_humidity_june_pct.toFixed(1)}% | Efectiva ${vInfo.effective_humidity_pct.toFixed(1)}%`, 18, y + 22);
+        doc.setFont('helvetica', 'bold'); doc.setTextColor(...ac);
+        doc.text(`• Índice de Desgaste Físico (Taxing Score): ${(vInfo.taxing_score * 100).toFixed(1)}% (Desgaste acumulativo)`, 18, y + 28);
+      } else {
+        card(y - 2, 14); doc.setFont('helvetica', 'italic'); doc.setFontSize(9); doc.setTextColor(100, 100, 100);
+        doc.text('Datos de clima y altitud no disponibles para esta sede.', 18, y + 6);
+      }
+      y += 42;
+      
+      // SECTION 3: VALORES DE MERCADO DE LAS PLANTILLAS
+      bar(y); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...pc);
+      doc.text('3. VALORES DE MERCADO Y DATOS DE PLANTILLA', 21, y);
+      doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5);
+      y += 10;
+      
+      const mvHome = getTeamMarketValue(match.home, marketValues);
+      const mvAway = getTeamMarketValue(match.away, marketValues);
+      
+      if (mvHome || mvAway) {
+        card(y - 2, 28); doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...tc);
+        if (mvHome) {
+          doc.text(`• ${match.home}: Valor de Plantilla: ${mvHome.marketValueStr} | Jugadores: ${mvHome.squadSize || 'N/D'} | Edad Promedio: ${mvHome.avgAge > 0 ? mvHome.avgAge.toFixed(1) : 'N/D'}`, 18, y + 5);
+        } else {
+          doc.text(`• ${match.home}: Valor de Plantilla no disponible en Transfermarkt`, 18, y + 5);
+        }
+        if (mvAway) {
+          doc.text(`• ${match.away}: Valor de Plantilla: ${mvAway.marketValueStr} | Jugadores: ${mvAway.squadSize || 'N/D'} | Edad Promedio: ${mvAway.avgAge > 0 ? mvAway.avgAge.toFixed(1) : 'N/D'}`, 18, y + 13);
+        } else {
+          doc.text(`• ${match.away}: Valor de Plantilla no disponible en Transfermarkt`, 18, y + 13);
+        }
+        if (mvHome && mvAway && mvHome.marketValueNum > 0 && mvAway.marketValueNum > 0) {
+          const ratio = mvHome.marketValueNum / mvAway.marketValueNum;
+          const ratioStr = ratio > 1 ? `${ratio.toFixed(1)} veces superior` : `${(1/ratio).toFixed(1)} veces inferior`;
+          doc.setFont('helvetica', 'bold'); doc.setTextColor(...bc);
+          doc.text(`• Ratio de Presupuesto: ${match.home} es ${ratioStr} respecto a ${match.away}`, 18, y + 21);
+        }
+      } else {
+        card(y - 2, 14); doc.setFont('helvetica', 'italic'); doc.setFontSize(9); doc.setTextColor(100, 100, 100);
+        doc.text('Datos de valor de mercado no cargados o no disponibles.', 18, y + 6);
+      }
+      
+      const totalPages = 9;
+      const pdfFooter = (pg) => {
+        doc.setDrawColor(200, 210, 220); doc.line(15, dh - 18, dw - 15, dh - 18);
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5); doc.setTextColor(150, 150, 150);
+        doc.text('Informe Generado por Antigravity ML Ensemble Engine | Datos en tiempo real', 15, dh - 12); 
+        doc.text(`Página ${pg} de ${totalPages}`, dw - 30, dh - 6);
+      };
+      
+      pdfFooter(1);
+
+      // PAGE 2: RENDIMIENTO ACUMULADO Y CÓRNERS (OPTA)
+      doc.addPage();
+      doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
+      doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+      doc.text(`COMPARATIVA DE RENDIMIENTO Y CÓRNERS | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
+      
+      y = 23;
+      bar(y); doc.setFontSize(11); doc.setTextColor(...pc);
+      doc.text('4. COMPARATIVA DE RENDIMIENTO ACUMULADO (OPTA)', 21, y);
       doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5);
       y += 10;
       
@@ -1320,10 +1482,10 @@ export default function MatchDetail() {
         const cAway = awayAvg.avgCorners;
         
         doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...tc);
-        doc.text(`Metrica Tactica (Por Partido)`, 18, y + 4);
+        doc.text(`Métrica Táctica (Por Partido)`, 18, y + 4);
         doc.text(match.home, 90, y + 4);
         doc.text(match.away, 140, y + 4);
-        doc.text("Proyeccion / Total", 175, y + 4);
+        doc.text("Proyección / Total", 175, y + 4);
         
         doc.setFont('helvetica', 'normal');
         doc.setDrawColor(...bl); doc.line(18, y + 6, dw - 18, y + 6);
@@ -1348,7 +1510,7 @@ export default function MatchDetail() {
         // Row 3 (Zebra Background)
         doc.setFillColor(245, 247, 250); doc.rect(16, y + 20, dw - 32, 6.5, 'F');
         doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...tc);
-        doc.text(`3. Accion Creadora (SCA):`, 18, y + 24.5);
+        doc.text(`3. Acción Creadora (SCA):`, 18, y + 24.5);
         doc.setFont('courier', 'normal');
         doc.text(homeAvg.avgSCA.toFixed(1).padStart(5), 90, y + 24.5);
         doc.text(awayAvg.avgSCA.toFixed(1).padStart(5), 140, y + 24.5);
@@ -1363,7 +1525,7 @@ export default function MatchDetail() {
         doc.text("-".padStart(5), 175, y + 30.5);
         
         doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(110, 110, 110);
-        doc.text(`Muestra calculada dinamicamente a partir de los datos en player_stats.json para la Copa del Mundo.`, 18, y + 37);
+        doc.text(`Muestra calculada dinámicamente a partir de los datos en player_stats.json para la Copa del Mundo.`, 18, y + 37);
         y += 48;
       } else {
         card(y - 2, 14); doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(100, 100, 100);
@@ -1371,9 +1533,71 @@ export default function MatchDetail() {
         y += 22;
       }
       
-      // SECTION 3: TOP MARCADORES Y MERCADOS
+      // SECTION 5: TABLA DE PROBABILIDAD DE CÓRNERS ESPERADOS (POISSON CONTINUO)
       bar(y); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...pc);
-      doc.text('3. PROYECCION DE GOLES Y MARCADORES MAS PROBABLES', 21, y);
+      doc.text('5. TABLA DE PROBABILIDAD DE CÓRNERS (POISSON CONTINUO)', 21, y);
+      doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5);
+      y += 10;
+      
+      if (homeAvg && awayAvg) {
+        card(y - 2, 60); doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...tc);
+        
+        const lambdaCorners = homeAvg.avgCorners + awayAvg.avgCorners;
+        
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...tc);
+        doc.text("Línea de Córner", 18, y + 4);
+        doc.text("Probabilidad Menos (Under)", 70, y + 4);
+        doc.text("Probabilidad Más (Over)", 135, y + 4);
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setDrawColor(...bl); doc.line(18, y + 6, dw - 18, y + 6);
+        
+        const getOverCornersProb = (line, lambda) => {
+          const needed = Math.floor(line);
+          let probUnder = 0.0;
+          for (let k = 0; k <= needed; k++) {
+            probUnder += poissonProb(k, lambda);
+          }
+          return {
+            under: probUnder * 100,
+            over: (1 - probUnder) * 100
+          };
+        };
+        
+        const lines = [7.5, 8.5, 9.5, 10.5, 11.5];
+        lines.forEach((l, lidx) => {
+          const probs = getOverCornersProb(l, lambdaCorners);
+          const ry = y + 7 + lidx * 8;
+          if (lidx % 2 === 0) {
+            doc.setFillColor(245, 247, 250); doc.rect(16, ry, dw - 32, 7.5, 'F');
+          }
+          doc.setFontSize(8.5); doc.setTextColor(...tc);
+          doc.text(`Córners ${l}`, 18, ry + 5.5);
+          doc.setFont('courier', 'normal');
+          doc.text(`${probs.under.toFixed(1)}%`, 75, ry + 5.5);
+          doc.setFont('courier', 'bold'); doc.setTextColor(...bc);
+          doc.text(`${probs.over.toFixed(1)}%`, 140, ry + 5.5);
+          doc.setFont('helvetica', 'normal');
+        });
+        
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(110, 110, 110);
+        doc.text(`Proyección total de córners sumada: ${lambdaCorners.toFixed(2)} córners esperados.`, 18, y + 54);
+      } else {
+        card(y - 2, 14); doc.setFont('helvetica', 'italic'); doc.setFontSize(9); doc.setTextColor(100, 100, 100);
+        doc.text('Medias de córners insuficientes para calcular la distribución de Poisson.', 18, y + 6);
+      }
+      
+      pdfFooter(2);
+
+      // PAGE 3: PROYECCIONES DE GOLES Y JUGADORES
+      doc.addPage();
+      doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
+      doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+      doc.text(`PROYECCIONES DE GOLES Y RENDIMIENTO INDIVIDUAL | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
+      
+      y = 23;
+      bar(y); doc.setFontSize(11); doc.setTextColor(...pc);
+      doc.text('6. PROYECCIÓN DE GOLES Y MERCADOS MÁS PROBABLES', 21, y);
       doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5);
       y += 10;
       
@@ -1401,7 +1625,7 @@ export default function MatchDetail() {
         doc.text(`Sugerencia IA 1X2: ${sug} (${(prob * 100).toFixed(1)}%)`, 18, y + 26);
       } else {
         doc.setFont('helvetica', 'italic'); doc.setTextColor(100, 100, 100);
-        doc.text(`Sugerencia IA 1X2: Sin ventaja estadistica suficiente en el mercado 1X2.`, 18, y + 26);
+        doc.text(`Sugerencia IA 1X2: Sin ventaja estadística suficiente en el mercado 1X2.`, 18, y + 26);
       }
 
       // Sugerencia IA Córners / Combo
@@ -1414,79 +1638,119 @@ export default function MatchDetail() {
         doc.text(`Proyeccion Combo Opta: Over 600 Pases + 16 Remates (${Math.round(totPasses)} pases / ${totShots.toFixed(1)} remates de promedio total)`, 18, y + 36);
       }
       y += 42;
-
-      // SECTION 4: TERMOMETRO DE SEÑALES DE VALOR EN EL MERCADO
+      
+      // SECTION 7: PROYECCIONES INDIVIDUALES DE GOLEADORES Y REMATES
       bar(y); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...pc);
-      doc.text('4. TERMOMETRO DE SENALES DE VALOR EN EL MERCADO (+EV)', 21, y);
+      doc.text('7. PROYECCIONES INDIVIDUALES DE GOLEADORES Y REMATES', 21, y);
       doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5);
       y += 10;
       
-      card(y - 2, 40); doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...tc);
-      
-      // Reconstruct signals list
-      const pdfSignals = [];
-      const maxP = Math.max(pH, pD, pA);
-      if (maxP === pH && pH > 0.5) pdfSignals.push({ label: `Victoria ${match.home}`, val: (pH * 100).toFixed(1), desc: 'Solida ventaja local' });
-      else if (maxP === pA && pA > 0.5) pdfSignals.push({ label: `Victoria ${match.away}`, val: (pA * 100).toFixed(1), desc: 'Ventaja visitante confirmada' });
-      else pdfSignals.push({ label: 'Resultado Incierto', val: (pD * 100).toFixed(1), desc: 'Sin favorito claro' });
-      
-      if (prediction.over25 !== undefined) {
-        const ov = prediction.over25;
-        if (ov > 0.62) pdfSignals.push({ label: 'Over 2.5 Goles', val: (ov * 100).toFixed(1), desc: `xG total: ${(lH + lA).toFixed(2)}` });
-        else pdfSignals.push({ label: 'Under 2.5 Goles', val: ((1 - ov) * 100).toFixed(1), desc: `xG total: ${(lH + lA).toFixed(2)}` });
-      }
-      if (btts > 0.55) pdfSignals.push({ label: 'BTTS (Ambos Anotan)', val: (btts * 100).toFixed(1), desc: 'Alta prob. gol en ambos arcos' });
-      
-      const dc1 = pH + pD, dc2 = pA + pD;
-      const bDC = dc1 > dc2 ? dc1 : dc2, bDCL = dc1 > dc2 ? `${match.home} o Empate` : `${match.away} o Empate`;
-      if (bDC > 0.78) pdfSignals.push({ label: 'Doble Oportunidad', val: (bDC * 100).toFixed(1), desc: bDCL });
-
-      if (homeAvg && awayAvg) {
-        const totC = homeAvg.avgCorners + awayAvg.avgCorners;
-        const isOver = totC > 8.5;
-        pdfSignals.push({
-          label: isOver ? 'Over 8.5 Corners' : 'Under 9.5 Corners',
-          val: isOver ? '76.8' : '69.4',
-          desc: `Total proyectado: ${totC.toFixed(1)} corners`
+      card(y - 2, 40); doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...tc);
+      const getTopPlayers = (teamName, expectedGoals) => {
+        const engTeam = SPANISH_TO_ENGLISH[teamName] || teamName;
+        const teamKeyLower = engTeam.toLowerCase();
+        const playersMap = {};
+        let teamMatchesPlayed = 0;
+        Object.keys(playerStats).forEach(matchKey => {
+          const entry = playerStats[matchKey];
+          const isHome = entry.teams[0].toLowerCase() === teamKeyLower;
+          const isAway = entry.teams[1].toLowerCase() === teamKeyLower;
+          if (isHome || isAway) {
+            teamMatchesPlayed++;
+            entry.players.forEach(p => {
+              if (p.team.toLowerCase() === teamKeyLower) {
+                const name = p.name;
+                if (!playersMap[name]) {
+                  playersMap[name] = { name: p.name, position: p.position || 'MF', totalShots: 0, totalXG: 0, matches: 0 };
+                }
+                playersMap[name].totalShots += (p.shots_inside_box || 0) + (p.shots_outside_box || 0);
+                playersMap[name].totalXG += p.expected_goals || 0.0;
+                playersMap[name].matches++;
+              }
+            });
+          }
         });
-        
-        const totPasses = homeAvg.avgPasses + awayAvg.avgPasses;
-        const totShots = homeAvg.avgShots + awayAvg.avgShots;
-        pdfSignals.push({
-          label: 'Combo Opta',
-          val: '81.2',
-          desc: `${Math.round(totPasses)} pases y ${totShots.toFixed(1)} remates`
+        if (teamMatchesPlayed === 0) return [];
+        const list = Object.keys(playersMap).map(name => {
+          const p = playersMap[name];
+          const avgShots = p.totalShots / p.matches;
+          const avgXG = p.totalXG / p.matches;
+          const playerExpectedGoals = expectedGoals ? avgXG * (expectedGoals / 1.5) : avgXG;
+          const goalProb = 1 - Math.exp(-playerExpectedGoals);
+          return { name: p.name, position: p.position, projectedShots: expectedGoals ? avgShots * (expectedGoals / 1.5) + (avgShots * 0.2) : avgShots, goalProb: Math.min(0.99, Math.max(0.01, goalProb)) * 100 };
         });
-      }
-
-      let sigY = y + 4;
-      pdfSignals.forEach((sig, sidx) => {
-        if (sidx < 5) {
-          doc.setFont('helvetica', 'bold');
-          doc.text(`• ${sig.label}:`, 18, sigY);
-          doc.setFont('helvetica', 'normal');
-          doc.text(`${sig.val}% de prob. (${sig.desc})`, 75, sigY);
-          sigY += 6.5;
-        }
-      });
-      
-      doc.setDrawColor(200, 210, 220); doc.line(15, dh - 18, dw - 15, dh - 18);
-      doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5); doc.setTextColor(150, 150, 150);
-      doc.text('Informe Generado por Antigravity ML Ensemble Engine | Datos en tiempo real', 15, dh - 12); 
-      doc.text('Página 1 de 3', dw - 30, dh - 6);
-      
-      // Helper: draw a dark background behind chart images so white text is readable
-      const chartBg = (cy, ch) => { doc.setFillColor(15, 23, 42); doc.roundedRect(14, cy - 1, dw - 28, ch + 2, 2, 2, 'F'); };
-      
-      const totalPages = 7;
-      const pdfFooter = (pg) => {
-        doc.setDrawColor(200, 210, 220); doc.line(15, dh - 18, dw - 15, dh - 18);
-        doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5); doc.setTextColor(150, 150, 150);
-        doc.text('Informe Generado por Antigravity ML Ensemble Engine | Datos en tiempo real', 15, dh - 12); 
-        doc.text(`Página ${pg} de ${totalPages}`, dw - 30, dh - 6);
+        return list.sort((a, b) => b.goalProb - a.goalProb).slice(0, 3);
       };
 
-      // PAGE 2: CONSENSO Y MODELO ENSEMBLE
+      const homeP = getTopPlayers(match.home, prediction ? prediction.exp_goles_home : 1.3);
+      const awayP = getTopPlayers(match.away, prediction ? prediction.exp_goles_away : 1.1);
+
+      if (homeP.length > 0 || awayP.length > 0) {
+        // Home players table
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...ac);
+        doc.text(match.home, 18, y + 4);
+        doc.setFont('courier', 'normal'); doc.setFontSize(8); doc.setTextColor(...tc);
+        homeP.forEach((p, pi) => {
+          const py = y + 9 + pi * 5;
+          const dispName = p.name.length > 18 ? p.name.substring(0, 15) + '...' : p.name;
+          doc.text(`${(pi+1)}. ${dispName.padEnd(18)} ${p.position.padEnd(4)} Gol: ${p.goalProb.toFixed(0).padStart(3)}%  Remates: ${p.projectedShots.toFixed(1)}`, 20, py);
+        });
+        
+        const awayStartY = y + 9 + homeP.length * 5 + 3;
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...bc);
+        doc.text(match.away, 18, awayStartY);
+        doc.setFont('courier', 'normal'); doc.setFontSize(8); doc.setTextColor(...tc);
+        awayP.forEach((p, pi) => {
+          const py = awayStartY + 5 + pi * 5;
+          const dispName = p.name.length > 18 ? p.name.substring(0, 15) + '...' : p.name;
+          doc.text(`${(pi+1)}. ${dispName.padEnd(18)} ${p.position.padEnd(4)} Gol: ${p.goalProb.toFixed(0).padStart(3)}%  Remates: ${p.projectedShots.toFixed(1)}`, 20, py);
+        });
+      } else {
+        doc.text('Estadísticas de jugadores insuficientes para calcular las proyecciones individuales.', 18, y + 4);
+      }
+      y += 44;
+
+      // SECTION 8: JUGADORES CLAVE EN LA DISTRIBUCIÓN (PASES PRECISOS)
+      bar(y); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...pc);
+      doc.text('8. JUGADORES CLAVE EN LA DISTRIBUCIÓN (PASES PRECISOS)', 21, y);
+      doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5);
+      y += 10;
+      
+      const homePassers = getTopPassers(match.home, playerStats);
+      const awayPassers = getTopPassers(match.away, playerStats);
+      
+      if (homePassers.length > 0 || awayPassers.length > 0) {
+        card(y - 2, 40); doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...tc);
+        
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...ac);
+        doc.text(match.home, 18, y + 4);
+        doc.setFont('courier', 'normal'); doc.setFontSize(8); doc.setTextColor(...tc);
+        homePassers.forEach((p, pi) => {
+          const py = y + 9 + pi * 5;
+          const dispName = p.name.length > 18 ? p.name.substring(0, 15) + '...' : p.name;
+          doc.text(`${(pi+1)}. ${dispName.padEnd(18)} ${p.position.padEnd(4)} Pases Completos Promedio: ${p.avgPasses.toFixed(1)} / partido`, 20, py);
+        });
+        
+        const awayStartY = y + 9 + homePassers.length * 5 + 3;
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...bc);
+        doc.text(match.away, 18, awayStartY);
+        doc.setFont('courier', 'normal'); doc.setFontSize(8); doc.setTextColor(...tc);
+        awayPassers.forEach((p, pi) => {
+          const py = awayStartY + 5 + pi * 5;
+          const dispName = p.name.length > 18 ? p.name.substring(0, 15) + '...' : p.name;
+          doc.text(`${(pi+1)}. ${dispName.padEnd(18)} ${p.position.padEnd(4)} Pases Completos Promedio: ${p.avgPasses.toFixed(1)} / partido`, 20, py);
+        });
+      } else {
+        card(y - 2, 14); doc.setFont('helvetica', 'italic'); doc.setFontSize(9); doc.setTextColor(100, 100, 100);
+        doc.text('Estadísticas de jugadores insuficientes para calcular las proyecciones de distribución.', 18, y + 6);
+      }
+      
+      pdfFooter(3);
+
+      // Helper: draw a dark background behind chart images so white text is readable
+      const chartBg = (cy, ch) => { doc.setFillColor(15, 23, 42); doc.roundedRect(14, cy - 1, dw - 28, ch + 2, 2, 2, 'F'); };
+
+      // PAGE 4: CONSENSO Y MODELO ENSEMBLE
       doc.addPage();
       doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
       doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
@@ -1494,36 +1758,38 @@ export default function MatchDetail() {
       
       y = 23; 
       bar(y); doc.setFontSize(11); doc.setTextColor(...pc);
-      doc.text('4. CONSENSO COMPARATIVO DE PROBABILIDADES 1X2', 21, y);
+      doc.text('9. CONSENSO COMPARATIVO DE PROBABILIDADES 1X2', 21, y);
       doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5); 
       y += 8;
       
-      if (match.graphs?.Resumen) {
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
-        doc.text('A) Resumen Comparativo de los 8 Modelos', 15, y); 
-        y += 4;
-        const ri = await loadImageAsBase64(match.graphs.Resumen);
-        if (ri) { 
-          chartBg(y, 58);
-          doc.addImage(ri, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST'); 
-          y += 63;
-        }
+      const resumenPath = getGraphPath(match, 'Resumen');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
+      doc.text('A) Resumen Comparativo de los 8 Modelos', 15, y); 
+      y += 4;
+      const ri = await loadImageAsBase64(resumenPath);
+      if (ri) { 
+        chartBg(y, 58);
+        doc.addImage(ri, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST'); 
+      } else {
+        doc.rect(16, y, dw - 32, 58); doc.text("[Gráfica no disponible]", 85, y + 30);
       }
+      y += 63;
       
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
       doc.text('B) Ensemble (Promedio Ponderado - SLSQP)', 15, y); 
       y += 4;
-      if (match.graphs?.ensemble) {
-        const img = await loadImageAsBase64(match.graphs.ensemble);
-        if (img) {
-          chartBg(y, 58);
-          doc.addImage(img, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
-        }
+      const ensemblePath = getGraphPath(match, 'ensemble');
+      const imgEns = await loadImageAsBase64(ensemblePath);
+      if (imgEns) {
+        chartBg(y, 58);
+        doc.addImage(imgEns, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
+      } else {
+        doc.rect(16, y, dw - 32, 58); doc.text("[Gráfica no disponible]", 85, y + 30);
       }
       
-      pdfFooter(2);
+      pdfFooter(4);
 
-      // PAGE 3: MATRICES DE DISTRIBUCION (I)
+      // PAGE 5: MATRICES DE DISTRIBUCION (I)
       doc.addPage();
       doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
       doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
@@ -1531,36 +1797,38 @@ export default function MatchDetail() {
       
       y = 23;
       bar(y); doc.setFontSize(11); doc.setTextColor(...pc);
-      doc.text('5. MATRICES DE DISTRIBUCIÓN POR MODELO (PARTE 1)', 21, y);
+      doc.text('10. MATRICES DE DISTRIBUCIÓN POR MODELO (PARTE 1)', 21, y);
       doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5); 
       y += 8;
       
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
       doc.text('C) CatBoost (Acc: 84.0%)', 15, y);
       y += 4;
-      if (match.graphs?.catboost) {
-        const img = await loadImageAsBase64(match.graphs.catboost);
-        if (img) {
-          chartBg(y, 58);
-          doc.addImage(img, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
-        }
+      const cbPath = getGraphPath(match, 'catboost');
+      const imgCb = await loadImageAsBase64(cbPath);
+      if (imgCb) {
+        chartBg(y, 58);
+        doc.addImage(imgCb, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
+      } else {
+        doc.rect(16, y, dw - 32, 58); doc.text("[Gráfica no disponible]", 85, y + 30);
       }
       y += 63;
       
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
       doc.text('D) Dixon-Coles NB (Acc: 80.0%)', 15, y);
       y += 4;
-      if (match.graphs?.dcnb) {
-        const img = await loadImageAsBase64(match.graphs.dcnb);
-        if (img) {
-          chartBg(y, 58);
-          doc.addImage(img, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
-        }
+      const dcnbPath = getGraphPath(match, 'dcnb');
+      const imgDcnb = await loadImageAsBase64(dcnbPath);
+      if (imgDcnb) {
+        chartBg(y, 58);
+        doc.addImage(imgDcnb, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
+      } else {
+        doc.rect(16, y, dw - 32, 58); doc.text("[Gráfica no disponible]", 85, y + 30);
       }
       
-      pdfFooter(3);
+      pdfFooter(5);
 
-      // PAGE 4: MATRICES DE DISTRIBUCION (II)
+      // PAGE 6: MATRICES DE DISTRIBUCION (II)
       doc.addPage();
       doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
       doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
@@ -1568,36 +1836,38 @@ export default function MatchDetail() {
       
       y = 23;
       bar(y); doc.setFontSize(11); doc.setTextColor(...pc);
-      doc.text('5. MATRICES DE DISTRIBUCIÓN POR MODELO (PARTE 2)', 21, y);
+      doc.text('11. MATRICES DE DISTRIBUCIÓN POR MODELO (PARTE 2)', 21, y);
       doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5); 
       y += 8;
       
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
       doc.text('E) XGBoost (Acc: 80.0%)', 15, y);
       y += 4;
-      if (match.graphs?.xgboost) {
-        const img = await loadImageAsBase64(match.graphs.xgboost);
-        if (img) {
-          chartBg(y, 58);
-          doc.addImage(img, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
-        }
+      const xgbPath = getGraphPath(match, 'xgboost');
+      const imgXgb = await loadImageAsBase64(xgbPath);
+      if (imgXgb) {
+        chartBg(y, 58);
+        doc.addImage(imgXgb, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
+      } else {
+        doc.rect(16, y, dw - 32, 58); doc.text("[Gráfica no disponible]", 85, y + 30);
       }
       y += 63;
       
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
       doc.text('F) Dixon-Coles Poisson (Acc: 78.0%)', 15, y);
       y += 4;
-      if (match.graphs?.dixoncoles) {
-        const img = await loadImageAsBase64(match.graphs.dixoncoles);
-        if (img) {
-          chartBg(y, 58);
-          doc.addImage(img, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
-        }
+      const dcPath = getGraphPath(match, 'dixoncoles');
+      const imgDc = await loadImageAsBase64(dcPath);
+      if (imgDc) {
+        chartBg(y, 58);
+        doc.addImage(imgDc, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
+      } else {
+        doc.rect(16, y, dw - 32, 58); doc.text("[Gráfica no disponible]", 85, y + 30);
       }
       
-      pdfFooter(4);
+      pdfFooter(6);
 
-      // PAGE 5: MATRICES DE DISTRIBUCION (III)
+      // PAGE 7: MATRICES DE DISTRIBUCION (III)
       doc.addPage();
       doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
       doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
@@ -1605,36 +1875,38 @@ export default function MatchDetail() {
       
       y = 23;
       bar(y); doc.setFontSize(11); doc.setTextColor(...pc);
-      doc.text('5. MATRICES DE DISTRIBUCIÓN POR MODELO (PARTE 3)', 21, y);
+      doc.text('12. MATRICES DE DISTRIBUCIÓN POR MODELO (PARTE 3)', 21, y);
       doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5); 
       y += 8;
       
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
       doc.text('G) MFA Montecarlo (Acc: 80.0%)', 15, y);
       y += 4;
-      if (match.graphs?.mfa) {
-        const img = await loadImageAsBase64(match.graphs.mfa);
-        if (img) {
-          chartBg(y, 58);
-          doc.addImage(img, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
-        }
+      const mfaPath = getGraphPath(match, 'mfa');
+      const imgMfa = await loadImageAsBase64(mfaPath);
+      if (imgMfa) {
+        chartBg(y, 58);
+        doc.addImage(imgMfa, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
+      } else {
+        doc.rect(16, y, dw - 32, 58); doc.text("[Gráfica no disponible]", 85, y + 30);
       }
       y += 63;
       
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
       doc.text('H) MCMC Bayesiano (Acc: 74.0%)', 15, y);
       y += 4;
-      if (match.graphs?.mcmc) {
-        const img = await loadImageAsBase64(match.graphs.mcmc);
-        if (img) {
-          chartBg(y, 58);
-          doc.addImage(img, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
-        }
+      const mcmcPath = getGraphPath(match, 'mcmc');
+      const imgMcmc = await loadImageAsBase64(mcmcPath);
+      if (imgMcmc) {
+        chartBg(y, 58);
+        doc.addImage(imgMcmc, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
+      } else {
+        doc.rect(16, y, dw - 32, 58); doc.text("[Gráfica no disponible]", 85, y + 30);
       }
       
-      pdfFooter(5);
+      pdfFooter(7);
 
-      // PAGE 6: MLP + WEIBULL + CONDICIONALES
+      // PAGE 8: MLP + WEIBULL + CONDICIONALES
       doc.addPage();
       doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
       doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
@@ -1644,18 +1916,19 @@ export default function MatchDetail() {
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
       doc.text('I) Red Neuronal MLP (Acc: 76.0%)', 15, y);
       y += 4;
-      if (match.graphs?.mlp) {
-        const img = await loadImageAsBase64(match.graphs.mlp);
-        if (img) {
-          chartBg(y, 58);
-          doc.addImage(img, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
-        }
+      const mlpPath = getGraphPath(match, 'mlp');
+      const imgMlp = await loadImageAsBase64(mlpPath);
+      if (imgMlp) {
+        chartBg(y, 58);
+        doc.addImage(imgMlp, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
+      } else {
+        doc.rect(16, y, dw - 32, 58); doc.text("[Gráfica no disponible]", 85, y + 30);
       }
       y += 66;
       
       // SECTION: SIMULACIÓN WEIBULL
       bar(y); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...pc);
-      doc.text('6. SIMULACIÓN DE TIEMPO REAL (WEIBULL) Y CONDICIONALES', 21, y);
+      doc.text('13. SIMULACIÓN DE TIEMPO REAL (WEIBULL) Y CONDICIONALES', 21, y);
       doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5); 
       y += 8;
       
@@ -1698,66 +1971,64 @@ export default function MatchDetail() {
       }
       
       // Weibull timeline chart
-      if (prediction.timeline_file) {
+      const timelinePath = getGraphPath(match, 'timeline');
+      const ti = await loadImageAsBase64(timelinePath);
+      if (ti) {
         doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...tc);
         doc.text('J) Curva de Supervivencia e Intensidad Temporal (Weibull)', 15, y);
         y += 3;
-        const ti = await loadImageAsBase64(prediction.timeline_file);
-        if (ti) {
-          chartBg(y, 58);
-          doc.addImage(ti, 'JPEG', 16, y + 1, dw - 32, 56, undefined, 'FAST');
-          y += 63;
-        }
+        chartBg(y, 56);
+        doc.addImage(ti, 'JPEG', 16, y + 1, dw - 32, 54, undefined, 'FAST');
       }
+      
+      pdfFooter(8);
 
-      pdfFooter(6);
-
-      // PAGE 7: ANALISIS DT + JUGADORES + METODOLOGÍA
+      // PAGE 9: ANALISIS DT + JUGADORES + METODOLOGÍA + ACCURACY
       doc.addPage();
       doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
       doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
-      doc.text(`EFICIENCIA TÁCTICA Y GOLEADORES | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
+      doc.text(`EFICIENCIA TÁCTICA, TRANSICIÓN Y VALIDACIÓN | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
 
       y = 23;
 
       // SECTION: ANALISIS DE EFICIENCIA Y ESTILO TACTICO DEL DT (OPTA)
       bar(y); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...pc);
-      doc.text('7. ANALISIS DE EFICIENCIA Y ESTILO TACTICO DEL DT', 21, y);
+      doc.text('14. ANALISIS DE EFICIENCIA Y ESTILO TACTICO DEL DT', 21, y);
       doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5); 
       y += 10;
       
-      card(y - 2, 30); doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...tc);
+      card(y - 2, 28); doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...tc);
       if (homeAvg && awayAvg) {
         const getStyleText = (mod) => {
           if (mod > 1.25) return "Poco efectivo (Crea mucho pero no concreta. Peligroso en volumen)";
-          if (mod < 0.8) return "Ultra contundente (Muy clinico de cara al arco)";
+          if (mod < 0.8) return "Ultra contundente (Muy clínico de cara al arco)";
           return "Equilibrado (Fiel a la expectativa de goles generada)";
         };
         doc.setFont('helvetica', 'bold');
-        doc.text(`${match.home}:`, 18, y + 5);
+        doc.text(`${match.home}:`, 18, y + 4);
         doc.setFont('helvetica', 'normal');
-        doc.text(`Multiplicador: ${homeMods.att.toFixed(3)}`, 55, y + 5);
+        doc.text(`Multiplicador: ${homeMods.att.toFixed(3)}`, 55, y + 4);
         doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(100,100,100);
-        doc.text(getStyleText(homeMods.att), 18, y + 11);
+        doc.text(getStyleText(homeMods.att), 18, y + 10);
         
         doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
-        doc.text(`${match.away}:`, 18, y + 19);
+        doc.text(`${match.away}:`, 18, y + 17);
         doc.setFont('helvetica', 'normal');
-        doc.text(`Multiplicador: ${awayMods.att.toFixed(3)}`, 55, y + 19);
+        doc.text(`Multiplicador: ${awayMods.att.toFixed(3)}`, 55, y + 17);
         doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(100,100,100);
-        doc.text(getStyleText(awayMods.att), 18, y + 25);
+        doc.text(getStyleText(awayMods.att), 18, y + 23);
       } else {
-        doc.text('Medias Opta insuficientes para calcular la eficiencia tactica del DT.', 18, y + 6);
+        doc.text('Medias Opta insuficientes para calcular la eficiencia táctica del DT.', 18, y + 6);
       }
-      y += 36;
+      y += 34;
 
       // SECTION: PERFIL PSICOLÓGICO Y DINÁMICA DE JUEGO (MARKOV)
       bar(y); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...pc);
-      doc.text('8. PERFIL PSICOLÓGICO Y TRANSICIÓN DE ESTADOS', 21, y);
+      doc.text('15. PERFIL PSICOLÓGICO Y TRANSICIÓN DE ESTADOS', 21, y);
       doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5); 
       y += 10;
       
-      card(y - 2, 26); doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...tc);
+      card(y - 2, 24); doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...tc);
       if (prediction.state_transition) {
         const st = prediction.state_transition;
         const getLabel = (res, sb) => {
@@ -1780,94 +2051,42 @@ export default function MatchDetail() {
       } else {
         doc.text('Datos insuficientes en goalscorers.csv para modelar la transición de estados.', 18, y + 6);
       }
-      y += 34;
-
-      // SECTION: PROYECCIONES INDIVIDUALES DE JUGADORES (OPTA)
-      bar(y); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...pc);
-      doc.text('9. PROYECCIONES INDIVIDUALES DE GOLEADORES Y REMATES', 21, y);
-      doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5); 
-      y += 10;
-      
-      card(y - 2, 40); doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...tc);
-      if (playerStats) {
-        const getTopPlayers = (teamName, expectedGoals) => {
-          const engTeam = SPANISH_TO_ENGLISH[teamName] || teamName;
-          const teamKeyLower = engTeam.toLowerCase();
-          const playersMap = {};
-          let teamMatchesPlayed = 0;
-          Object.keys(playerStats).forEach(matchKey => {
-            const entry = playerStats[matchKey];
-            const isHome = entry.teams[0].toLowerCase() === teamKeyLower;
-            const isAway = entry.teams[1].toLowerCase() === teamKeyLower;
-            if (isHome || isAway) {
-              teamMatchesPlayed++;
-              entry.players.forEach(p => {
-                if (p.team.toLowerCase() === teamKeyLower) {
-                  const name = p.name;
-                  if (!playersMap[name]) {
-                    playersMap[name] = { name: p.name, position: p.position || 'MF', totalShots: 0, totalXG: 0, matches: 0 };
-                  }
-                  playersMap[name].totalShots += (p.shots_inside_box || 0) + (p.shots_outside_box || 0);
-                  playersMap[name].totalXG += p.expected_goals || 0.0;
-                  playersMap[name].matches++;
-                }
-              });
-            }
-          });
-          if (teamMatchesPlayed === 0) return [];
-          const list = Object.keys(playersMap).map(name => {
-            const p = playersMap[name];
-            const avgShots = p.totalShots / p.matches;
-            const avgXG = p.totalXG / p.matches;
-            const playerExpectedGoals = expectedGoals ? avgXG * (expectedGoals / 1.5) : avgXG;
-            const goalProb = 1 - Math.exp(-playerExpectedGoals);
-            return { name: p.name, position: p.position, projectedShots: expectedGoals ? avgShots * (expectedGoals / 1.5) + (avgShots * 0.2) : avgShots, goalProb: Math.min(0.99, Math.max(0.01, goalProb)) * 100 };
-          });
-          return list.sort((a, b) => b.goalProb - a.goalProb).slice(0, 3);
-        };
-
-        const homeP = getTopPlayers(match.home, prediction ? prediction.exp_goles_home : 1.3);
-        const awayP = getTopPlayers(match.away, prediction ? prediction.exp_goles_away : 1.1);
-
-        // Home players table
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...ac);
-        doc.text(match.home, 18, y + 4);
-        doc.setFont('courier', 'normal'); doc.setFontSize(8); doc.setTextColor(...tc);
-        homeP.forEach((p, pi) => {
-          const py = y + 9 + pi * 5;
-          const dispName = p.name.length > 18 ? p.name.substring(0, 15) + '...' : p.name;
-          doc.text(`${(pi+1)}. ${dispName.padEnd(18)} ${p.position.padEnd(4)} Gol: ${p.goalProb.toFixed(0).padStart(3)}%  Remates: ${p.projectedShots.toFixed(1)}`, 20, py);
-        });
-        
-        const awayStartY = y + 9 + homeP.length * 5 + 3;
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...bc);
-        doc.text(match.away, 18, awayStartY);
-        doc.setFont('courier', 'normal'); doc.setFontSize(8); doc.setTextColor(...tc);
-        awayP.forEach((p, pi) => {
-          const py = awayStartY + 5 + pi * 5;
-          const dispName = p.name.length > 18 ? p.name.substring(0, 15) + '...' : p.name;
-          doc.text(`${(pi+1)}. ${dispName.padEnd(18)} ${p.position.padEnd(4)} Gol: ${p.goalProb.toFixed(0).padStart(3)}%  Remates: ${p.projectedShots.toFixed(1)}`, 20, py);
-        });
-      } else {
-        doc.text('Estadísticas de jugadores insuficientes para calcular las proyecciones individuales.', 18, y + 4);
-      }
-      y += 48;
+      y += 30;
       
       // Methodology text box
-      doc.setFillColor(241, 245, 249); doc.roundedRect(15, y, dw - 30, 32, 2, 2, 'F');
+      doc.setFillColor(241, 245, 249); doc.roundedRect(15, y, dw - 30, 24, 2, 2, 'F');
       doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...pc);
-      doc.text('NOTAS METODOLÓGICAS:', 18, y + 5);
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...tc);
-      doc.text('• Distribución Weibull (k=1.15) modela la fatiga acumulada e incremento de intensidad por minuto.', 18, y + 10);
-      doc.text('• Simulación de Prórroga modela un decaimiento ofensivo de 30% por desgaste físico.', 18, y + 14);
-      doc.text('• Simulación de Penales usa probabilidad Beta-Binomial según consistencia histórica del ELO.', 18, y + 18);
-      doc.text('• Transición de Estados de Markov estima empíricamente la Resiliencia y Snowball según la base goalscorers.csv.', 18, y + 22);
-      doc.text('• Ensemble pondera: Dixon-Coles 20% marcadores + CatBoost 25% + XGBoost 15% + MLP + MCMC + MFA + NB.', 18, y + 26);
+      doc.text('NOTAS METODOLÓGICAS:', 18, y + 4);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.2); doc.setTextColor(...tc);
+      doc.text('• Distribución Weibull (k=1.15) modela la fatiga acumulada e incremento de intensidad por minuto.', 18, y + 8);
+      doc.text('• Simulación de Prórroga modela un decaimiento ofensivo de 30% por desgaste físico.', 18, y + 12);
+      doc.text('• Simulación de Penales usa probabilidad Beta-Binomial según consistencia histórica del ELO.', 18, y + 16);
+      doc.text('• Transición de Estados de Markov estima empíricamente la Resiliencia y Snowball según la base goalscorers.csv.', 18, y + 20);
+      y += 30;
 
-      pdfFooter(7);
+      // SECTION 16: VALIDACIÓN DE ACUERTO HISTÓRICO (ACCURACY)
+      bar(y); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...pc);
+      doc.text('16. VALIDACIÓN DE ACUERTO HISTÓRICO DE LOS MODELOS', 21, y);
+      doc.setDrawColor(...bl); doc.line(15, y + 2.5, dw - 15, y + 2.5);
+      y += 8;
+      
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
+      doc.text('K) Gráfico de Precisión y Control de Error (RPS sobre 914 partidos)', 15, y);
+      y += 4;
+      const accuracyPath = getGraphPath(match, 'accuracy');
+      const imgAcc = await loadImageAsBase64(accuracyPath);
+      if (imgAcc) {
+        chartBg(y, 65);
+        doc.addImage(imgAcc, 'JPEG', 16, y, dw - 32, 65, undefined, 'FAST');
+      } else {
+        doc.rect(16, y, dw - 32, 65); doc.text("[Gráfica de Validación no disponible]", 75, y + 32);
+      }
+
+      pdfFooter(9);
       
       doc.save(`informe-tactico-${match.id}.pdf`);
     } catch (err) { 
+      doc.save(`informe-tactico-${match.id}.pdf`); // fallback save
       console.error('PDF error:', err); 
       alert('Error al generar el informe táctico PDF.'); 
     } finally { 
