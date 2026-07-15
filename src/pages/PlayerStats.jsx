@@ -221,6 +221,7 @@ export default function PlayerStats() {
       if (activeTab === 'corners') return b.corner_kicks - a.corner_kicks;
       if (activeTab === 'tackles') return b.tackles - a.tackles;
       if (activeTab === 'fouls') return b.fouls_against - a.fouls_against;
+      if (activeTab === 'defensive') return (b.tackles + b.fouls_against) - (a.tackles + a.fouls_against);
       return 0;
     });
 
@@ -403,6 +404,13 @@ export default function PlayerStats() {
               >
                 🩹 Faltas
               </button>
+              <button
+                className={`day-tab ${activeTab === 'defensive' ? 'active' : ''}`}
+                onClick={() => setActiveTab('defensive')}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: '0.5rem 1rem' }}
+              >
+                🛡️ Defensivo
+              </button>
             </div>
           </div>
 
@@ -418,8 +426,8 @@ export default function PlayerStats() {
                   <th style={{ padding: '1rem', textAlign: 'center', color: activeTab === 'sca' ? 'var(--accent)' : 'inherit' }}>Acciones Creación (SCA)</th>
                   <th style={{ padding: '1rem', textAlign: 'center', color: activeTab === 'duels' ? 'var(--accent)' : 'inherit' }}>Duelos Ganados</th>
                   <th style={{ padding: '1rem', textAlign: 'center', color: activeTab === 'corners' ? 'var(--accent)' : 'inherit' }}>Córners</th>
-                  <th style={{ padding: '1rem', textAlign: 'center', color: activeTab === 'tackles' ? 'var(--accent)' : 'inherit' }}>Entradas (Tackles)</th>
-                  <th style={{ padding: '1rem', textAlign: 'center', color: activeTab === 'fouls' ? 'var(--accent)' : 'inherit' }}>Faltas Rec.</th>
+                  <th style={{ padding: '1rem', textAlign: 'center', color: activeTab === 'tackles' || activeTab === 'defensive' ? 'var(--accent)' : 'inherit' }}>Entradas (Tackles)</th>
+                  <th style={{ padding: '1rem', textAlign: 'center', color: activeTab === 'fouls' || activeTab === 'defensive' ? 'var(--accent)' : 'inherit' }}>Faltas Rec.</th>
                   <th style={{ padding: '1rem', textAlign: 'center' }}>Tiros (Área / Fuera)</th>
                 </tr>
               </thead>
@@ -453,10 +461,10 @@ export default function PlayerStats() {
                       <td style={{ padding: '1rem', textAlign: 'center', fontWeight: activeTab === 'corners' ? 'bold' : 'normal', color: activeTab === 'corners' ? 'var(--accent)' : 'inherit', fontFamily: 'monospace' }}>
                         {p.corner_kicks}
                       </td>
-                      <td style={{ padding: '1rem', textAlign: 'center', fontWeight: activeTab === 'tackles' ? 'bold' : 'normal', color: activeTab === 'tackles' ? 'var(--accent)' : 'inherit', fontFamily: 'monospace' }}>
+                      <td style={{ padding: '1rem', textAlign: 'center', fontWeight: activeTab === 'tackles' || activeTab === 'defensive' ? 'bold' : 'normal', color: activeTab === 'tackles' || activeTab === 'defensive' ? 'var(--accent)' : 'inherit', fontFamily: 'monospace' }}>
                         {p.tackles}
                       </td>
-                      <td style={{ padding: '1rem', textAlign: 'center', fontWeight: activeTab === 'fouls' ? 'bold' : 'normal', color: activeTab === 'fouls' ? 'var(--accent)' : 'inherit', fontFamily: 'monospace' }}>
+                      <td style={{ padding: '1rem', textAlign: 'center', fontWeight: activeTab === 'fouls' || activeTab === 'defensive' ? 'bold' : 'normal', color: activeTab === 'fouls' || activeTab === 'defensive' ? 'var(--accent)' : 'inherit', fontFamily: 'monospace' }}>
                         {p.fouls_against}
                       </td>
                       <td style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem', fontFamily: 'monospace' }}>
