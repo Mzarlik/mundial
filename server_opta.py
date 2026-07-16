@@ -1,3 +1,5 @@
+# Para activar el entorno virtual (.venv) en Windows PowerShell:
+# (Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned) ; (& c:\xampp\htdocs\mundial\.venv\Scripts\Activate.ps1)
 # Comando para levantar el servidor: python server_opta.py
 import os
 import sys
