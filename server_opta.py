@@ -1,3 +1,4 @@
+# Comando para levantar el servidor: python server_opta.py
 import os
 import sys
 import re

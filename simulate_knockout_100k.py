@@ -253,15 +253,23 @@ def run_knockout_montecarlo():
     print(f"[INFO] Iniciando Monte Carlo de {ITERATIONS} iteraciones del Cuadro Eliminatorio...")
     start_t = time.time()
     
+    # Pre-calcular ganadores de dieciseisavos conocidos para evitar validaciones redundantes dentro del bucle
+    known_r32_winners = {}
+    sim_r32_matches = []
+    for match_id, m in r32_dict.items():
+        if match_id in real_results:
+            winner = m['home'] if real_results[match_id] == 'home' else m['away']
+            known_r32_winners[match_id] = winner
+            teams[winner]['r16'] += ITERATIONS
+        else:
+            sim_r32_matches.append(m)
+
     for it in range(ITERATIONS):
         # Round of 32
-        r32_winners = {}
-        for match_id, m in r32_dict.items():
-            if match_id in real_results:
-                winner = m['home'] if real_results[match_id] == 'home' else m['away']
-            else:
-                winner = simulate_knockout_match(m['home'], m['away'], teams[m['home']]['elo'], teams[m['away']]['elo'])
-            r32_winners[match_id] = winner
+        r32_winners = known_r32_winners.copy()
+        for m in sim_r32_matches:
+            winner = simulate_knockout_match(m['home'], m['away'], teams[m['home']]['elo'], teams[m['away']]['elo'])
+            r32_winners[m['id']] = winner
             teams[winner]['r16'] += 1
             
         # Round of 16 (Octavos -> Cuartos)
