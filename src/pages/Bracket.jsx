@@ -135,13 +135,15 @@ export default function Bracket() {
 
   // Simulación de una llave por ELO
   const simulateEloMatch = (teamA, teamB, matchId = null) => {
-    if (teamA === 'TBD' || !teamA) return { winner: teamB || 'TBD', probA: 0, probB: 100 };
-    if (teamB === 'TBD' || !teamB) return { winner: teamA, probA: 100, probB: 0 };
+    if (teamA === 'TBD' || !teamA) return { winner: teamB || 'TBD', loser: 'TBD', probA: 0, probB: 100 };
+    if (teamB === 'TBD' || !teamB) return { winner: teamA, loser: 'TBD', probA: 100, probB: 0 };
     
     if (matchId && realResults[matchId]) {
       const winner = realResults[matchId];
+      const loser = winner === teamA ? teamB : teamA;
       return {
         winner,
+        loser,
         probA: winner === teamA ? 100 : 0,
         probB: winner === teamB ? 100 : 0,
         eloA: getTeamElo(teamA),
@@ -155,6 +157,7 @@ export default function Bracket() {
     const probB = 100 - probA;
     return {
       winner: probA >= probB ? teamA : teamB,
+      loser: probA >= probB ? teamB : teamA,
       probA,
       probB,
       eloA,
@@ -185,7 +188,10 @@ export default function Bracket() {
   const semiL = simulateEloMatch(qL1.winner, qL2.winner, 'fra-esp');
   const semiR = simulateEloMatch(qR1.winner, qR2.winner, 'eng-arg');
 
-  // 4. Gran Final
+  // 4. Tercer Lugar
+  const thirdPlace = simulateEloMatch(semiL.loser, semiR.loser, 'match-63');
+
+  // 5. Gran Final
   const grandFinal = simulateEloMatch(semiL.winner, semiR.winner, 'final');
 
   const getMatchBySlugId = (slugId) => {
@@ -201,7 +207,7 @@ export default function Bracket() {
   };
 
   // Helper para renderizar una tarjeta de partido simulación
-  const renderSimMatch = (teamA, teamB, resultObj, isR32 = false, r32MatchObj = null) => {
+  const renderSimMatch = (teamA, teamB, resultObj, isR32 = false, r32MatchObj = null, overrideId = null) => {
     const codeA = r32MatchObj ? r32MatchObj.homeCode : getTeamCode(teamA);
     const codeB = r32MatchObj ? r32MatchObj.awayCode : getTeamCode(teamB);
 
@@ -210,10 +216,14 @@ export default function Bracket() {
     const winner = isR32 ? r32Results[r32MatchObj.id]?.winner : resultObj.winner;
 
     // Buscar si existe un partido en la lista precalculada (MATCHES) para esta combinación
-    const matchObj = r32MatchObj || MATCHES.find(m => 
+    let matchObj = r32MatchObj || MATCHES.find(m =>
       (m.home === teamA && m.away === teamB) || 
       (m.home === teamB && m.away === teamA)
     );
+
+    if (overrideId) {
+      matchObj = { id: overrideId };
+    }
 
     const hasHoveredTeam = hoveredTeam && (teamA === hoveredTeam || teamB === hoveredTeam);
     const isHoveredA = hoveredTeam && teamA === hoveredTeam;
@@ -379,7 +389,13 @@ export default function Bracket() {
               </div>
               <div>
                 <div className="bracket-round-title">Gran Final</div>
-                {renderSimMatch(semiL.winner, semiR.winner, grandFinal)}
+                {renderSimMatch(semiL.winner, semiR.winner, grandFinal, false, null, 'match-64')}
+              </div>
+
+              {/* TERCER LUGAR */}
+              <div style={{ marginTop: '2rem', padding: '1rem', borderTop: '1px dashed rgba(255,255,255,0.2)' }}>
+                <div className="bracket-round-title" style={{ fontSize: '0.8rem', color: '#9ca3af' }}>Tercer Lugar</div>
+                {renderSimMatch(semiL.loser, semiR.loser, thirdPlace, false, null, 'match-63')}
               </div>
             </div>
           </div>
@@ -489,7 +505,16 @@ export default function Bracket() {
               5. Gran Final
             </h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', marginTop: '1rem' }}>
-              {renderSimMatch(semiL.winner, semiR.winner, grandFinal)}
+              {renderSimMatch(semiL.winner, semiR.winner, grandFinal, false, null, 'match-64')}
+            </div>
+          </div>
+
+          <div className="bracket-round-section" style={{ marginBottom: '2rem' }}>
+            <h2 className="bracket-round-title" style={{ fontSize: '1rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem', textAlign: 'left', color: '#9ca3af' }}>
+              Partido por el Tercer Lugar
+            </h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', marginTop: '1rem' }}>
+              {renderSimMatch(semiL.loser, semiR.loser, thirdPlace, false, null, 'match-63')}
             </div>
           </div>
         </div>
