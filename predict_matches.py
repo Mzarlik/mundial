@@ -898,22 +898,27 @@ def clip_lambda(val):
     return max(0.35, min(3.2, val))
 
 def train_mlp_goals(X, yh, ya):
-    # La Red Neuronal ahora utiliza todas las 21 características (incluyendo Market Values normalizados)
+    # Red Neuronal v2: arquitectura moderadamente más profunda con adam + early_stopping.
+    # lbfgs causó overfitting severo (42.3% accuracy) con arquitectura (128,64,32).
+    # Solución: mantener adam con early_stopping, ampliar arquitectura a (96, 48),
+    # reducir alpha de 2.5 -> 1.0 para dar más capacidad sin sobreajustar.
     X_mlp = X
     scaler = StandardScaler().fit(X_mlp)
     X_s = scaler.transform(X_mlp)
-    # Calibramos la arquitectura a (48, 24) y la penalización L2 alpha a 2.5 para generalizar mejor sin sobreajustar
     params = dict(
-        hidden_layer_sizes=(48, 24),
-        activation='relu',
-        max_iter=500,
-        alpha=2.5,
+        hidden_layer_sizes=(96, 48),
+        activation='tanh',
+        solver='adam',
+        max_iter=800,
+        alpha=1.0,
         early_stopping=True,
-        validation_fraction=0.15,
-        n_iter_no_change=15,
+        validation_fraction=0.12,
+        n_iter_no_change=20,
         random_state=42
     )
     return scaler, MLPRegressor(**params).fit(X_s, yh), MLPRegressor(**params).fit(X_s, ya)
+
+
 
 def train_catboost_goals(X, yh, ya, teams_h, teams_a, sample_weight=None):
     import pandas as pd

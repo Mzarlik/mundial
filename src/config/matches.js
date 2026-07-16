@@ -218,32 +218,10 @@ export const MATCHES = [
    graphs:{mcmc:"/graphs/semis/fra-esp_mcmc.png", xgboost:"/graphs/semis/fra-esp_xgboost.png", accuracy:"/graphs/semis/fra-esp_accuracy.png", Resumen:"/graphs/semis/fra-esp_resumen.png", mlp:"/graphs/semis/fra-esp_mlp.png", ensemble:"/graphs/semis/fra-esp_ensemble.png", catboost:"/graphs/semis/fra-esp_catboost.png", dixoncoles:"/graphs/semis/fra-esp_dixoncoles.png", mfa:"/graphs/semis/fra-esp_mfa.png"},colabLink:"https://github.com/Malpi/mundial"},
   {id:"eng-arg",day:"semis",date:"2026-07-14",homeCode:"gb-eng",awayCode:"ar",home:"Inglaterra",away:"Argentina",group:"Semifinales",time:"time",venue:"Lincoln Financial Field, Filadelfia",
    graphs:{mcmc:"/graphs/semis/eng-arg_mcmc.png", xgboost:"/graphs/semis/eng-arg_xgboost.png", accuracy:"/graphs/semis/eng-arg_accuracy.png", Resumen:"/graphs/semis/eng-arg_resumen.png", mlp:"/graphs/semis/eng-arg_mlp.png", ensemble:"/graphs/semis/eng-arg_ensemble.png", catboost:"/graphs/semis/eng-arg_catboost.png", dixoncoles:"/graphs/semis/eng-arg_dixoncoles.png", mfa:"/graphs/semis/eng-arg_mfa.png"},colabLink:"https://github.com/Malpi/mundial"},
-  {
-    id: 'match-63',
-    day: 'Tercer Lugar',
-    date: '2026-07-18',
-    home: 'Perdedor Semifinal 1',
-    away: 'Perdedor Semifinal 2',
-    homeCode: 'TBD',
-    awayCode: 'TBD',
-    mcmc: 'graphs/Tercer Lugar/match-63_mcmc.png',
-    xgboost: 'graphs/Tercer Lugar/match-63_xgboost.png',
-    accuracy: 'graphs/Tercer Lugar/match-63_accuracy.png',
-    Resumen: 'graphs/Tercer Lugar/match-63_resumen.png'
-  },
-  {
-    id: 'match-64',
-    day: 'Gran Final',
-    date: '2026-07-19',
-    home: 'Ganador Semifinal 1',
-    away: 'Ganador Semifinal 2',
-    homeCode: 'TBD',
-    awayCode: 'TBD',
-    mcmc: 'graphs/Gran Final/match-64_mcmc.png',
-    xgboost: 'graphs/Gran Final/match-64_xgboost.png',
-    accuracy: 'graphs/Gran Final/match-64_accuracy.png',
-    Resumen: 'graphs/Gran Final/match-64_resumen.png'
-  }
+  {id:"fra-eng",day:"tercer_lugar",date:"2026-07-18",homeCode:"fr",awayCode:"gb-eng",home:"Francia",away:"Inglaterra",group:"Tercer Lugar",time:"time",venue:"MetLife Stadium, East Rutherford",
+   graphs:{mcmc:"/graphs/tercer_lugar/fra-eng_mcmc.png", xgboost:"/graphs/tercer_lugar/fra-eng_xgboost.png", accuracy:"/graphs/tercer_lugar/fra-eng_accuracy.png", Resumen:"/graphs/tercer_lugar/fra-eng_resumen.png", mlp:"/graphs/tercer_lugar/fra-eng_mlp.png", ensemble:"/graphs/tercer_lugar/fra-eng_ensemble.png", catboost:"/graphs/tercer_lugar/fra-eng_catboost.png", dixoncoles:"/graphs/tercer_lugar/fra-eng_dixoncoles.png", mfa:"/graphs/tercer_lugar/fra-eng_mfa.png"},colabLink:"https://github.com/Malpi/mundial"},
+  {id:"esp-arg",day:"final",date:"2026-07-19",homeCode:"es",awayCode:"ar",home:"España",away:"Argentina",group:"Gran Final",time:"time",venue:"MetLife Stadium, East Rutherford",
+   graphs:{mcmc:"/graphs/final/esp-arg_mcmc.png", xgboost:"/graphs/final/esp-arg_xgboost.png", accuracy:"/graphs/final/esp-arg_accuracy.png", Resumen:"/graphs/final/esp-arg_resumen.png", mlp:"/graphs/final/esp-arg_mlp.png", ensemble:"/graphs/final/esp-arg_ensemble.png", catboost:"/graphs/final/esp-arg_catboost.png", dixoncoles:"/graphs/final/esp-arg_dixoncoles.png", mfa:"/graphs/final/esp-arg_mfa.png"},colabLink:"https://github.com/Malpi/mundial"}
 ];
 
 export function getMatchesByDay(dayId) { return MATCHES.filter(m => m.day === dayId); }
