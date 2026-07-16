@@ -221,7 +221,7 @@ export default function Bracket() {
       (m.home === teamB && m.away === teamA)
     );
 
-    if (overrideId) {
+    if (overrideId && !matchObj) {
       matchObj = { id: overrideId };
     }
 

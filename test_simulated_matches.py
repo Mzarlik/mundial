@@ -101,9 +101,16 @@ def main():
     dc_nb_final = pm.fit_dixon_coles_nb(df_all[(df_all.date >= pm.DESDE) & (df_all.date < pm.MATCH_DATE)], pm.MATCH_DATE)
     mc_final = pm.fit_mcmc(df_all[(df_all.date >= pm.DESDE_BAYES) & (df_all.date < pm.MATCH_DATE)], final_elos, draws=1500, tune=1500)
     X_f, yh_f, ya_f, th_f, ta_f = pm.build_dataset(dc_final, pm.MATCH_DATE, df_all, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis)
-    reg_home, reg_away = pm.train_xgb_goals(X_f, yh_f, ya_f)
-    scaler_f, mlp_home, mlp_away = pm.train_mlp_goals(X_f, yh_f, ya_f)
-    cb_home, cb_away = pm.train_catboost_goals(X_f, yh_f, ya_f, th_f, ta_f)
+    n_samples = len(X_f)
+    decay_lambda = 0.0003
+    time_weights = np.exp(-decay_lambda * (n_samples - np.arange(n_samples)))
+    for idx_w in range(n_samples):
+        if idx_w >= (n_samples - 25):
+            time_weights[idx_w] *= 3.0
+    time_weights = time_weights / np.mean(time_weights)
+    reg_home, reg_away = pm.train_xgb_goals(X_f, yh_f, ya_f, sample_weight=time_weights)
+    scaler_f, mlp_home, mlp_away = pm.train_mlp_goals(X_f, yh_f, ya_f, sample_weight=time_weights)
+    cb_home, cb_away = pm.train_catboost_goals(X_f, yh_f, ya_f, th_f, ta_f, sample_weight=time_weights)
     
     # PASO 1: Recolectar datos y optimizar pesos del Ensamble
     opt_data = []

@@ -299,7 +299,12 @@ def main():
             )
 
             reg_home, reg_away = predict_matches.train_xgb_goals(X_f, yh_f, ya_f)
-            scaler_f, mlp_home, mlp_away = predict_matches.train_mlp_goals(X_f, yh_f, ya_f)
+            time_weights_mlp = np.exp(-0.0003 * (len(X_f) - np.arange(len(X_f))))
+            for idx_w in range(len(X_f)):
+                if idx_w >= (len(X_f) - 25):
+                    time_weights_mlp[idx_w] *= 3.0
+            time_weights_mlp = time_weights_mlp / np.mean(time_weights_mlp)
+            scaler_f, mlp_home, mlp_away = predict_matches.train_mlp_goals(X_f, yh_f, ya_f, sample_weight=time_weights_mlp)
             cb_home, cb_away = predict_matches.train_catboost_goals(X_f, yh_f, ya_f, th_f, ta_f)
 
             # 5. Ejecutar validación sobre los partidos reales jugados

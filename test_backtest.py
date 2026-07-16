@@ -71,17 +71,25 @@ def evaluate_tournament(df_all, start_date, end_date, tournament_name):
     print("[INFO] Building Train Dataset...")
     X_train, yh_train, ya_train, th_train, ta_train = pm.build_dataset(dc_model, cutoff, df_train, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis)
     
+    n_samples = len(X_train)
+    decay_lambda = 0.0003
+    time_weights = np.exp(-decay_lambda * (n_samples - np.arange(n_samples)))
+    for idx_w in range(n_samples):
+        if idx_w >= (n_samples - 25):
+            time_weights[idx_w] *= 3.0
+    time_weights = time_weights / np.mean(time_weights)
+    
     print("[INFO] Muestreando MCMC Bayesiano (PyMC)... Esto puede tardar ~1 min (draws=1500, tune=1500)...")
     mc_model = pm.fit_mcmc(df_train[df_train.date >= pm.DESDE_BAYES], final_elos, draws=1500, tune=1500)
     
     print("[INFO] Training XGBoost (early stopping)...")
-    model_h, model_a = pm.train_xgb_goals(X_train, yh_train, ya_train)
+    model_h, model_a = pm.train_xgb_goals(X_train, yh_train, ya_train, sample_weight=time_weights)
     
     print("[INFO] Training Red Neuronal (MLP)...")
-    scaler, mlp_h, mlp_a = pm.train_mlp_goals(X_train, yh_train, ya_train)
+    scaler, mlp_h, mlp_a = pm.train_mlp_goals(X_train, yh_train, ya_train, sample_weight=time_weights)
     
     print("[INFO] Training CatBoost...")
-    cb_h, cb_a = pm.train_catboost_goals(X_train, yh_train, ya_train, th_train, ta_train)
+    cb_h, cb_a = pm.train_catboost_goals(X_train, yh_train, ya_train, th_train, ta_train, sample_weight=time_weights)
     
     print("[INFO] Evaluating all models on Tournament...")
     

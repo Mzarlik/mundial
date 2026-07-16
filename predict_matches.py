@@ -897,23 +897,28 @@ def clip_lambda(val):
     # Acota los goles esperados de media a un rango razonable [0.35, 3.2] para evitar que distribuciones extremas arruinen el RPS
     return max(0.35, min(3.2, val))
 
-def train_mlp_goals(X, yh, ya):
-    # Red Neuronal v2: arquitectura moderadamente más profunda con adam + early_stopping.
-    # lbfgs causó overfitting severo (42.3% accuracy) con arquitectura (128,64,32).
-    # Solución: mantener adam con early_stopping, ampliar arquitectura a (96, 48),
-    # reducir alpha de 2.5 -> 1.0 para dar más capacidad sin sobreajustar.
-    X_mlp = X
-    scaler = StandardScaler().fit(X_mlp)
-    X_s = scaler.transform(X_mlp)
+def train_mlp_goals(X, yh, ya, sample_weight=None):
+    # Red Neuronal v3: arquitectura más profunda (128,64,32) con relu + adam + early_stopping.
+    # Se resamplean los datos según sample_weight para emular ponderación temporal
+    # (sklearn MLPRegressor no soporta sample_weight directamente).
+    if sample_weight is not None:
+        n = len(X)
+        rng = np.random.RandomState(42)
+        idx = rng.choice(n, size=n, p=sample_weight / sample_weight.sum(), replace=True)
+        X = X[idx]
+        yh = yh[idx]
+        ya = ya[idx]
+    scaler = StandardScaler().fit(X)
+    X_s = scaler.transform(X)
     params = dict(
-        hidden_layer_sizes=(96, 48),
-        activation='tanh',
+        hidden_layer_sizes=(128, 64, 32),
+        activation='relu',
         solver='adam',
-        max_iter=800,
-        alpha=1.0,
+        max_iter=2000,
+        alpha=0.5,
         early_stopping=True,
         validation_fraction=0.12,
-        n_iter_no_change=20,
+        n_iter_no_change=25,
         random_state=42
     )
     return scaler, MLPRegressor(**params).fit(X_s, yh), MLPRegressor(**params).fit(X_s, ya)
@@ -1872,8 +1877,8 @@ if __name__ == '__main__':
     reg_home, reg_away = train_xgb_goals(X_f, yh_f, ya_f, sample_weight=time_weights)
     print(f"[INFO] XGBoost entrenado con {len(X_f)} partidos.")
     
-    print("[INFO] Entrenando Red Neuronal (MLP) global...")
-    scaler_f, mlp_home, mlp_away = train_mlp_goals(X_f, yh_f, ya_f)
+    print("[INFO] Entrenando Red Neuronal (MLP) global con sample_weights...")
+    scaler_f, mlp_home, mlp_away = train_mlp_goals(X_f, yh_f, ya_f, sample_weight=time_weights)
     print("[INFO] Entrenando CatBoost global...")
     cb_home, cb_away = train_catboost_goals(X_f, yh_f, ya_f, th_f, ta_f, sample_weight=time_weights)
     
