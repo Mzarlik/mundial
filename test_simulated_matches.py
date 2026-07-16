@@ -38,12 +38,10 @@ def main():
                 'Argentina': 'arg', 'Algeria': 'alg', 'Austria': 'aut', 'Jordan': 'jor', 'Portugal': 'por', 'DR Congo': 'cod',
                 'Uzbekistan': 'uzb', 'Colombia': 'col', 'England': 'eng', 'Croatia': 'cro', 'Ghana': 'gha', 'Panama': 'pan'
             }
-            for _, row in df_sim.iterrows():
-                gh = row['Goles Local']
-                ga = row['Goles Visitante']
+            for loc, vis, gh, ga in df_sim[['Local', 'Visitante', 'Goles Local', 'Goles Visitante']].itertuples(index=False, name=None):
                 if pd.notna(gh) and pd.notna(ga) and str(gh).strip() != '' and str(ga).strip() != '':
-                    h_abbr = TEAM_TO_ID_ABBR.get(row['Local'], row['Local'][:3].lower())
-                    a_abbr = TEAM_TO_ID_ABBR.get(row['Visitante'], row['Visitante'][:3].lower())
+                    h_abbr = TEAM_TO_ID_ABBR.get(loc, str(loc)[:3].lower())
+                    a_abbr = TEAM_TO_ID_ABBR.get(vis, str(vis)[:3].lower())
                     m_id = f"{h_abbr}-{a_abbr}"
                     simulated_results[m_id] = (int(gh), int(ga))
         except Exception as e:
