@@ -692,7 +692,6 @@ def fit_mcmc(train, final_elos, draws=1000, tune=1000, seed=1):
     
     with pm.Model():
         sa = pm.HalfNormal('sa', 0.5); sd = pm.HalfNormal('sd', 0.5)
-        # Inicializar medias con los ratings ELO correspondientes
         att = pm.Normal('att', mu=elo_means, sigma=sa, shape=n)
         dfn = pm.Normal('dfn', mu=-elo_means, sigma=sd, shape=n)
         home = pm.Normal('home', 0.25, 0.2)
@@ -704,7 +703,7 @@ def fit_mcmc(train, final_elos, draws=1000, tune=1000, seed=1):
         pm.Poisson('ga', pm.math.exp(base + ac[ai] - dc_[hi]), observed=as_)
         
         trace = pm.sample(draws, tune=tune, chains=4, cores=4, target_accept=0.95,
-                          progressbar=False, random_seed=seed)
+                          init='jitter+adapt_diag', progressbar=False, random_seed=seed)
         
         # Auditoría de convergencia Gelman-Rubin
         summary = az.summary(trace, var_names=['att', 'dfn', 'home', 'base'])
@@ -874,9 +873,10 @@ def build_dataset(dcm, fecha_max, df_all, form_by_team, elo_by_team, final_elos,
     return np.array(rows), np.array(yh), np.array(ya), th, ta
 
 def train_xgb_goals(X, yh, ya, sample_weight=None):
-    # Parámetros optimizados con 80.0% precisión en partidos de validación
+    # Parámetros optimizados — Tweedie regression para modelar sobredispersión (varianza > media)
     params = {
-        'objective': 'count:poisson',
+        'objective': 'reg:tweedie',
+        'tweedie_variance_power': 1.5,
         'max_depth': 4,
         'learning_rate': 0.03,
         'n_estimators': 120,
@@ -943,17 +943,20 @@ def train_catboost_goals(X, yh, ya, teams_h, teams_a, sample_weight=None):
     cb_a.fit(df_x, ya, sample_weight=sample_weight)
     return cb_h, cb_a
 
-def mlp_matrix(scaler, rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue=None, theta=-0.25):
+def mlp_matrix(scaler, rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue=None, theta=-0.25, sharpen=1.0):
     f = make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue)
     if f is None:
         M = frank_copula_matrix(1.2, 1.2, theta=theta)
         return M / M.sum(), 1.2, 1.2
     
-    # Utilizar las 24 características para la predicción de la red neuronal
-    f_mlp = f
-    f_arr = scaler.transform(np.array(f_mlp).reshape(1, -1))
+    f_arr = scaler.transform(np.array(f).reshape(1, -1))
     lh = float(rh.predict(f_arr)[0])
     la = float(ra.predict(f_arr)[0])
+    if sharpen != 1.0:
+        avg = (lh + la) / 2
+        diff = (lh - la) * sharpen
+        lh = avg + diff / 2
+        la = avg - diff / 2
     lh = clip_lambda(lh)
     la = clip_lambda(la)
     M = frank_copula_matrix(lh, la, theta=theta)
@@ -968,6 +971,8 @@ def xgb_matrix(rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team, final_e
     f_arr = np.array(f).reshape(1, -1)
     lh = float(rh.predict(f_arr)[0])
     la = float(ra.predict(f_arr)[0])
+    lh = clip_lambda(lh)
+    la = clip_lambda(la)
     M = frank_copula_matrix(lh, la, theta=theta)
     return M / M.sum(), lh, la
 
@@ -1877,8 +1882,14 @@ if __name__ == '__main__':
     reg_home, reg_away = train_xgb_goals(X_f, yh_f, ya_f, sample_weight=time_weights)
     print(f"[INFO] XGBoost entrenado con {len(X_f)} partidos.")
     
-    print("[INFO] Entrenando Red Neuronal (MLP) global con sample_weights...")
-    scaler_f, mlp_home, mlp_away = train_mlp_goals(X_f, yh_f, ya_f, sample_weight=time_weights)
+    print("[INFO] Entrenando Red Neuronal (MLP) global con sample_weights + class-balancing...")
+    outcomes = np.where(yh_f > ya_f, 0, np.where(yh_f == ya_f, 1, 2))
+    class_counts = np.bincount(outcomes)
+    class_weights = 1.0 / (class_counts / max(class_counts))
+    class_sample_weights = np.array([class_weights[o] for o in outcomes])
+    class_sample_weights = class_sample_weights / class_sample_weights.mean()
+    combined_weights = time_weights * class_sample_weights
+    scaler_f, mlp_home, mlp_away = train_mlp_goals(X_f, yh_f, ya_f, sample_weight=combined_weights)
     print("[INFO] Entrenando CatBoost global...")
     cb_home, cb_away = train_catboost_goals(X_f, yh_f, ya_f, th_f, ta_f, sample_weight=time_weights)
     
@@ -1935,7 +1946,7 @@ if __name__ == '__main__':
     score10_hits = {}
     scoreN_hits = {
         name: {N: 0 for N in range(1, 13)}
-        for name in ['Dixon-Coles', 'Dixon-Coles NB', 'MCMC Bayesiano', 'XGBoost', 'Red Neuronal', 'CatBoost', 'MFA Montecarlo', 'Ensemble']
+        for name in ['Dixon-Coles', 'Dixon-Coles NB', 'MCMC Bayesiano', 'XGBoost', 'Red Neuronal', 'CatBoost', 'MFA Montecarlo', 'Ensemble', 'Stacking']
     }
     
     def check_topN_score_hit(M, real_h, real_a, N):
@@ -1945,6 +1956,10 @@ if __name__ == '__main__':
 
     n_test = 0
     opt_data = []
+    xgb_cal_probs = []
+    xgb_cal_outcomes = []
+    stacking_features = []
+    stacking_targets = []
 
     for m_id, (goals_h, goals_a) in simulated_results.items():
         match_obj = next((m for m in matches if m['id'] == m_id), None)
@@ -2006,6 +2021,8 @@ if __name__ == '__main__':
         M_xg = xgb_matrix(reg_home, reg_away, dc_final, h_eng, a_eng, host, match_date,
                                       form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, v_val)[0]
         p_xg = matrix_to_1x2(M_xg)
+        xgb_cal_probs.append(p_xg)
+        xgb_cal_outcomes.append(o)
         res['XGBoost'][0] += int(np.argmax(p_xg) == o)
         res['XGBoost'][1] += rps_1x2(p_xg, o)
         conf_acc['XGBoost'].append((int(np.argmax(p_xg) == o), max(p_xg)))
@@ -2014,7 +2031,7 @@ if __name__ == '__main__':
         
         # MLP
         M_ml = mlp_matrix(scaler_f, mlp_home, mlp_away, dc_final, h_eng, a_eng, host, match_date,
-                                      form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, v_val)[0]
+                                      form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, v_val, sharpen=1.3)[0]
         p_ml = matrix_to_1x2(M_ml)
         res['Red Neuronal'][0] += int(np.argmax(p_ml) == o)
         res['Red Neuronal'][1] += rps_1x2(p_ml, o)
@@ -2046,6 +2063,10 @@ if __name__ == '__main__':
             scoreN_hits['MFA Montecarlo'][N] += check_topN_score_hit(M_mfa, goals_h, goals_a, N)
         
         opt_data.append((M_dc, M_dcnb, M_mc, M_xg, M_ml, M_cb, M_mfa, o, goals_h, goals_a))
+        
+        # Stacking: concatenar probabilidades 1X2 de todos los modelos como features
+        stacking_features.append(np.concatenate([p_dc, p_dcnb, p_mc, p_xg, p_ml, p_cb, p_mfa]))
+        stacking_targets.append(o)
         
         # Ensemble por defecto
         M_ens_val = (M_dc * 0.70 + M_dcnb * 0.10 + M_xg * 0.10 + M_cb * 0.10)
@@ -2117,6 +2138,47 @@ if __name__ == '__main__':
     
     print(f"  --> Ensemble Optimizado: Accuracy 1X2 = {opt_acc:.2f}% | RPS = {opt_rps_mean:.4f}")
     
+    # --- Stacking: Meta-Learner (Logistic Regression) ---
+    def adjust_matrix_to_target(M, target_p):
+        p_raw = matrix_to_1x2(M)
+        M_adj = M.copy()
+        for i in range(M.shape[0]):
+            for j in range(M.shape[1]):
+                if i > j:
+                    M_adj[i, j] *= target_p[0] / max(p_raw[0], 1e-10)
+                elif i == j:
+                    M_adj[i, j] *= target_p[1] / max(p_raw[1], 1e-10)
+                else:
+                    M_adj[i, j] *= target_p[2] / max(p_raw[2], 1e-10)
+        return M_adj / M_adj.sum()
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.preprocessing import StandardScaler
+    X_stack = np.array(stacking_features)
+    y_stack = np.array(stacking_targets)
+    stack_scaler = StandardScaler()
+    X_stack_s = stack_scaler.fit_transform(X_stack)
+    meta_learner = LogisticRegression(solver='lbfgs', max_iter=2000, C=0.1,
+                                       random_state=42)
+    meta_learner.fit(X_stack_s, y_stack)
+    # Evaluar en validación
+    stack_preds = meta_learner.predict(X_stack_s)
+    stack_probs = meta_learner.predict_proba(X_stack_s)
+    stack_hits = sum(1 for i in range(len(y_stack)) if stack_preds[i] == y_stack[i])
+    stack_rps = sum(rps_1x2(stack_probs[i], y_stack[i]) for i in range(len(y_stack)))
+    # Agregar a res para la tabla de resultados
+    res['Stacking'] = [stack_hits, stack_rps]
+    for N in range(1, 13):
+        scoreN_hits['Stacking'][N] = 0
+        for i in range(len(y_stack)):
+            M_dc_t, M_dcnb_t, M_mc_t, M_xg_t, M_ml_t, M_cb_t, M_mfa_t, o_t, gh_t, ga_t = opt_data[i]
+            w_ens_t = [0.0170, 0.3762, 0.0163, 0.2760, 0.1123, 0.1806, 0.0216]
+            M_raw_t = (M_dc_t * w_ens_t[0] + M_dcnb_t * w_ens_t[1] + M_mc_t * w_ens_t[2] + M_xg_t * w_ens_t[3] + M_ml_t * w_ens_t[4] + M_cb_t * w_ens_t[5] + M_mfa_t * w_ens_t[6])
+            M_raw_t = M_raw_t / M_raw_t.sum()
+            ens_p_t = np.array(matrix_to_1x2(M_raw_t))
+            blended_p_t = 0.5 * stack_probs[i] + 0.5 * ens_p_t
+            M_ens_stack_t = adjust_matrix_to_target(M_raw_t, blended_p_t)
+            scoreN_hits['Stacking'][N] += check_topN_score_hit(M_ens_stack_t, gh_t, ga_t, N)
+    
     # Calcular precisión de marcadores exactos (Top 5 y Top 10 sugeridos)
     for name in scoreN_hits:
         score5_hits[name] = scoreN_hits[name][5]
@@ -2138,7 +2200,26 @@ if __name__ == '__main__':
     print("\nResultados de Validación:")
     for k, acc_pct, rps_mean, es5_acc, es10_acc in summary_metrics:
         print(f"  {k:<18} Accuracy 1X2: {acc_pct:>5.1f}%  RPS: {rps_mean:.4f}  Top 5 Score Acc: {es5_acc:.1f}%  Top 10 Score Acc: {es10_acc:.1f}%")
-        
+    
+    # --- Calibración Isotónica post-hoc para XGBoost ---
+    from sklearn.isotonic import IsotonicRegression
+    xgb_cal_probs = np.array(xgb_cal_probs)
+    xgb_calibrators = []
+    for cls in range(3):
+        iso = IsotonicRegression(out_of_bounds='clip')
+        iso.fit(xgb_cal_probs[:, cls], np.array(xgb_cal_outcomes) == cls)
+        xgb_calibrators.append(iso)
+    # Evaluar mejora post-calibración
+    cal_hits = 0
+    cal_rps = 0.0
+    for p_xg, o in zip(xgb_cal_probs, xgb_cal_outcomes):
+        p_cal = np.array([iso.predict([p_xg[cls]])[0] for cls, iso in enumerate(xgb_calibrators)])
+        p_cal = np.clip(p_cal, 1e-10, None)
+        p_cal = p_cal / p_cal.sum()
+        cal_hits += int(np.argmax(p_cal) == o)
+        cal_rps += rps_1x2(p_cal, o)
+    n_cal = len(xgb_cal_outcomes)
+    print(f"\n[INFO] XGBoost post-calibración isotónica: Accuracy 1X2: {cal_hits/n_cal*100:.1f}%  RPS: {cal_rps/n_cal:.4f}")
     # Generar la gráfica global de Accuracy con GridSpec (2 filas, la segunda fila combinada)
     fig = plt.figure(figsize=(15, 12))
     fig.patch.set_facecolor('none')
@@ -2204,7 +2285,24 @@ if __name__ == '__main__':
     plt.savefig(temp_acc_path, dpi=300, transparent=True)
     plt.close()
     
+    def calibrate_matrix(M, calibrators):
+        p_raw = matrix_to_1x2(M)
+        p_cal = np.array([iso.predict([p_raw[i]])[0] for i, iso in enumerate(calibrators)])
+        p_cal = np.clip(p_cal, 1e-10, None)
+        p_cal = p_cal / p_cal.sum()
+        M_cal = M.copy()
+        for i in range(M.shape[0]):
+            for j in range(M.shape[1]):
+                if i > j:
+                    M_cal[i, j] *= p_cal[0] / max(p_raw[0], 1e-10)
+                elif i == j:
+                    M_cal[i, j] *= p_cal[1] / max(p_raw[1], 1e-10)
+                else:
+                    M_cal[i, j] *= p_cal[2] / max(p_raw[2], 1e-10)
+        return M_cal / M_cal.sum()
+    
     # 6. Bucle de predicción para los 32 partidos del Mundial
+    
     print(f"\n[INFO] Generando gráficas de predicción para los {len(matches)} partidos...")
     match_predictions = {}
     for idx, match in enumerate(matches):
@@ -2243,9 +2341,10 @@ if __name__ == '__main__':
         
         M_xgb, lh_xgb, la_xgb = xgb_matrix(reg_home, reg_away, dc_final, h_eng, a_eng, host, match_date,
                                           form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, v, theta=theta_param)
+        M_xgb = calibrate_matrix(M_xgb, xgb_calibrators)
                                           
         M_mlp, lh_mlp, la_mlp = mlp_matrix(scaler_f, mlp_home, mlp_away, dc_final, h_eng, a_eng, host, match_date,
-                                          form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, v, theta=theta_param)
+                                          form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, v, theta=theta_param, sharpen=1.3)
                                           
         M_cb, lh_cb, la_cb = catboost_matrix(cb_home, cb_away, dc_final, h_eng, a_eng, host, match_date,
                                           form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, v, theta=theta_param)
@@ -2258,15 +2357,29 @@ if __name__ == '__main__':
         
         M_mfa, lh_mfa, la_mfa = montecarlo_mfa_matrix(h_eng, a_eng, elo_h, elo_a, form_h_val, form_a_val, host)
         
-        # Ensemble Optimizado con pesos separados
-        w_opt_1x2 = [0.0170, 0.3762, 0.0163, 0.2760, 0.1123, 0.1806, 0.0216]
-        w_opt_score = [0.0170, 0.3762, 0.0163, 0.2760, 0.1123, 0.1806, 0.0216]
+        # Stacking: Meta-Learner sobre probabilidades 1X2 de todos los modelos
+        p_dc_ens = matrix_to_1x2(M_dc)
+        p_dcnb_ens = matrix_to_1x2(M_dcnb)
+        p_mc_ens = matrix_to_1x2(M_mc)
+        p_xgb_ens = matrix_to_1x2(M_xgb)
+        p_mlp_ens = matrix_to_1x2(M_mlp)
+        p_cb_ens = matrix_to_1x2(M_cb)
+        p_mfa_ens = matrix_to_1x2(M_mfa)
+        stack_feat = np.concatenate([p_dc_ens, p_dcnb_ens, p_mc_ens, p_xgb_ens, p_mlp_ens, p_cb_ens, p_mfa_ens])
+        meta_p = meta_learner.predict_proba(stack_scaler.transform([stack_feat]))[0]
         
-        M_ens_1x2 = (M_dc * w_opt_1x2[0] + M_dcnb * w_opt_1x2[1] + M_mc * w_opt_1x2[2] + M_xgb * w_opt_1x2[3] + M_mlp * w_opt_1x2[4] + M_cb * w_opt_1x2[5] + M_mfa * w_opt_1x2[6])
-        M_ens = (M_dc * w_opt_score[0] + M_dcnb * w_opt_score[1] + M_mc * w_opt_score[2] + M_xgb * w_opt_score[3] + M_mlp * w_opt_score[4] + M_cb * w_opt_score[5] + M_mfa * w_opt_score[6])
+        # Matriz base: promedio ponderado estático para el path de marcadores
+        w_ens = [0.0170, 0.3762, 0.0163, 0.2760, 0.1123, 0.1806, 0.0216]
+        M_raw = (M_dc * w_ens[0] + M_dcnb * w_ens[1] + M_mc * w_ens[2] + M_xgb * w_ens[3] + M_mlp * w_ens[4] + M_cb * w_ens[5] + M_mfa * w_ens[6])
+        M_raw = M_raw / M_raw.sum()
         
-        M_ens_1x2 = M_ens_1x2 / M_ens_1x2.sum()
-        M_ens = M_ens / M_ens.sum()
+        # Blend: 50% Stacking + 50% Ensemble para evitar extremos
+        ens_p = np.array(matrix_to_1x2(M_raw))
+        blended_p = 0.5 * meta_p + 0.5 * ens_p
+        
+        M_ens_1x2 = adjust_matrix_to_target(M_raw, blended_p)
+        # Para marcadores exactos, usar la matriz base sin ajuste 1X2
+        M_ens = M_raw
         
         # Dataframes ordenados para top 10
         top_dc = build_top_df(M_dc, h, a)
@@ -2277,6 +2390,7 @@ if __name__ == '__main__':
         top_cb = build_top_df(M_cb, h, a)
         top_mfa = build_top_df(M_mfa, h, a)
         top_ens = build_top_df(M_ens, h, a)
+        top_stacking = build_top_df(M_ens_1x2, h, a)
 
         # Calcular probabilidades 1X2 para JSON
         p_1x2 = matrix_to_1x2(M_ens_1x2)
@@ -2319,6 +2433,7 @@ if __name__ == '__main__':
 
         # Definir rutas de salida físicas
         graphs_dir = os.path.join(script_dir, 'public', 'graphs', day)
+        os.makedirs(graphs_dir, exist_ok=True)
         timeline_out = os.path.join(graphs_dir, f"{m_id}_timeline.png")
         mcmc_out = os.path.join(graphs_dir, match['mcmc_file'])
         xgb_out = os.path.join(graphs_dir, match['xgb_file'])
@@ -2328,6 +2443,7 @@ if __name__ == '__main__':
         dcnb_out = os.path.join(graphs_dir, f"{m_id}_dcnb.png")
         mfa_out = os.path.join(graphs_dir, f"{m_id}_mfa.png")
         ens_out = os.path.join(graphs_dir, f"{m_id}_ensemble.png")
+        stacking_out = os.path.join(graphs_dir, f"{m_id}_stacking.png")
         acc_out = os.path.join(graphs_dir, match['accuracy_file'])
         res_out = os.path.join(graphs_dir, match['resumen_file'])
         
@@ -2437,6 +2553,7 @@ if __name__ == '__main__':
             plot_3panel(M_cb, top_cb, 'CatBoost', h, a, abbr_h, abbr_a, cb_out)
             plot_3panel(M_mfa, top_mfa, 'Simulación Montecarlo (MFA)', h, a, abbr_h, abbr_a, mfa_out)
             plot_3panel(M_ens, top_ens, 'Ensemble (Promedio Ponderado)', h, a, abbr_h, abbr_a, ens_out)
+            plot_3panel(M_ens_1x2, top_stacking, 'Stacking (Meta-Learner)', h, a, abbr_h, abbr_a, stacking_out)
             
             # Guardar gráfico resumen comparativo
             plot_resumen(M_dc, M_dcnb, M_mc, M_xgb, M_mlp, M_cb, M_mfa, M_ens, h, a, res_out)

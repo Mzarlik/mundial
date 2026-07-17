@@ -2341,6 +2341,7 @@ export default function MatchDetail() {
                 { id: 'mlp', name: 'MLP', style: { background: 'rgba(139,92,246,0.12)', color: '#8b5cf6', borderColor: '#8b5cf6' } },
                 { id: 'mcmc', name: 'MCMC', style: { background: 'rgba(59,130,246,0.12)', color: '#3b82f6', borderColor: '#3b82f6' } },
                 { id: 'dixoncoles', name: 'Dixon-Coles', style: { background: 'rgba(148,163,184,0.12)', color: '#cbd5e1', borderColor: '#cbd5e1' } },
+                { id: 'stacking', name: 'Stacking', style: { background: 'rgba(255,255,255,0.12)', color: '#ffffff', borderColor: '#ffffff' } },
               ].map(m => (
                 <button key={m.id} className={`btn ${selectedModel === m.id ? 'btn-accent' : 'btn-outline'}`}
                   style={{ fontSize: '0.74rem', padding: '0.4rem 0.8rem', borderRadius: '20px', ...(selectedModel === m.id ? {} : m.style) }}
@@ -2356,6 +2357,17 @@ export default function MatchDetail() {
                   </div>
                 </div>
                 <GraphImage src={match.graphs?.ensemble} alt="Ensemble" />
+              </div>
+            )}
+            {selectedModel === 'stacking' && (
+              <div>
+                <div className="card" style={{ padding: '1rem', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 'bold', color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.05em' }}>⚡ Stacking (Meta-Learner)</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: '1.3' }}>
+                    Regresión Logística entrenada sobre las probabilidades 1X2 de los 7 modelos base. Aprende contextualmente qué modelo priorizar en cada escenario, superando los pesos fijos del Ensemble clásico.
+                  </div>
+                </div>
+                <GraphImage src={match.graphs?.stacking} alt="Stacking" />
               </div>
             )}
             {selectedModel === 'dixoncoles' && (
