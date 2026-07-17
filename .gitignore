@@ -6,3 +6,4 @@ catboost_info/
 *.log
 .DS_Store
 public/graphs/
+adk-samples/
