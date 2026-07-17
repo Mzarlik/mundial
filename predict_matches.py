@@ -668,13 +668,12 @@ def dc_nb_matrix(dcm, h, a, host, elo_h, elo_a):
     return M / M.sum()
 
 # --- MODELO MCMC BAYESIANO ---
-def fit_mcmc(train, final_elos, elo_by_team=None, draws=1000, tune=1000, seed=1):
+def fit_mcmc(train, final_elos, elo_by_team=None, draws=1000, tune=1000, seed=1, form_by_team=None):
     """
-    Ajusta un modelo predictivo bayesiano jerárquico de Poisson con diferencial ELO.
-    Utiliza PyMC para estimar la distribución posterior de las habilidades de ataque
-    y defensa a través de muestreo por cadenas de Montecarlo (MCMC NUTS).
-    Incopora prioris informadas basadas en el rating ELO de cada selección y
-    el diferencial ELO como covariable directa en la tasa de goles.
+    Ajusta un modelo predictivo bayesiano jerárquico Negative-Binomial con
+    diferencial ELO, forma reciente y valor de mercado como covariables.
+    Utiliza PyMC para estimar la distribución posterior de las habilidades de
+    ataque y defensa a través de muestreo por cadenas de Montecarlo (MCMC NUTS).
     """
     cnt = pd.concat([train.home_team, train.away_team]).value_counts()
     keep = set(cnt[cnt >= MIN_PARTIDOS_BAYES].index)
@@ -702,6 +701,37 @@ def fit_mcmc(train, final_elos, elo_by_team=None, draws=1000, tune=1000, seed=1)
     else:
         ediff = np.zeros(len(tb))
     
+    # Covariables adicionales: forma reciente y valor de mercado
+    cov_std = {}
+    if form_by_team is not None:
+        form_rows = [get_form_at_date(r.home_team, r.date, form_by_team) for r in tb.itertuples()]
+        form_rows_a = [get_form_at_date(r.away_team, r.date, form_by_team) for r in tb.itertuples()]
+        form_diff = np.array([f[0] - fa[0] for f, fa in zip(form_rows, form_rows_a)])
+        gf5_diff = np.array([f[1] - fa[1] for f, fa in zip(form_rows, form_rows_a)])
+        ga5_diff = np.array([f[2] - fa[2] for f, fa in zip(form_rows, form_rows_a)])
+        
+        # Sanitizar NaN (form5 puede ser NaN al inicio del historial de un equipo)
+        form_diff = np.nan_to_num(form_diff, nan=0.0)
+        gf5_diff = np.nan_to_num(gf5_diff, nan=0.0)
+        ga5_diff = np.nan_to_num(ga5_diff, nan=0.0)
+        
+        cov_std['form_diff'] = max(np.std(form_diff), 1e-6)
+        cov_std['gf5_diff'] = max(np.std(gf5_diff), 1e-6)
+        cov_std['ga5_diff'] = max(np.std(ga5_diff), 1e-6)
+        form_diff /= cov_std['form_diff']
+        gf5_diff /= cov_std['gf5_diff']
+        ga5_diff /= cov_std['ga5_diff']
+    else:
+        form_diff = np.zeros(len(tb))
+        gf5_diff = np.zeros(len(tb))
+        ga5_diff = np.zeros(len(tb))
+    
+    mv_h = np.array([np.log(MARKET_VALUES.get(t, 50.0) + 1) for t in tb.home_team])
+    mv_a = np.array([np.log(MARKET_VALUES.get(t, 50.0) + 1) for t in tb.away_team])
+    mv_diff = np.nan_to_num(mv_h - mv_a, nan=0.0)
+    cov_std['mv_diff'] = max(np.std(mv_diff), 1e-6)
+    mv_diff /= cov_std['mv_diff']
+    
     # Time-decay weights (idéntico a XGBoost: exponencial + triple peso a últimos 25)
     n_samples = len(tb)
     decay_lambda = 0.0003
@@ -721,27 +751,44 @@ def fit_mcmc(train, final_elos, elo_by_team=None, draws=1000, tune=1000, seed=1)
         ac = pm.Deterministic('ac', att - att.mean())
         dc_ = pm.Deterministic('dc_', dfn - dfn.mean())
         
-        gh_rate = pm.math.exp(base + home*lm + ac[hi] - dc_[ai] + delta * ediff)
-        ga_rate = pm.math.exp(base + ac[ai] - dc_[hi] - delta * ediff)
+        beta_form = pm.Normal('beta_form', 0, 0.2)
+        beta_mv = pm.Normal('beta_mv', 0, 0.2)
+        beta_gf5 = pm.Normal('beta_gf5', 0, 0.2)
+        beta_ga5 = pm.Normal('beta_ga5', 0, 0.2)
+        
+        # Parámetro de dispersión r para Binomial Negativa
+        r_disp = pm.HalfNormal('r_disp', 5.0)
+        
+        gh_log_rate = base + home*lm + ac[hi] - dc_[ai] + delta * ediff + beta_form * form_diff + beta_mv * mv_diff + beta_gf5 * gf5_diff + beta_ga5 * ga5_diff
+        ga_log_rate = base + ac[ai] - dc_[hi] - delta * ediff - beta_form * form_diff - beta_mv * mv_diff - beta_gf5 * gf5_diff - beta_ga5 * ga5_diff
+        gh_rate = pm.math.exp(pm.math.clip(gh_log_rate, -5.0, 3.5))
+        ga_rate = pm.math.exp(pm.math.clip(ga_log_rate, -5.0, 3.5))
         
         w_data = pm.Data('w', time_weights)
-        pm.Potential('weighted_gh', (w_data * pm.logp(pm.Poisson.dist(mu=gh_rate), hs)).sum())
-        pm.Potential('weighted_ga', (w_data * pm.logp(pm.Poisson.dist(mu=ga_rate), as_)).sum())
+        pm.Potential('weighted_gh', (w_data * pm.logp(pm.NegativeBinomial.dist(mu=gh_rate, alpha=r_disp), hs)).sum())
+        pm.Potential('weighted_ga', (w_data * pm.logp(pm.NegativeBinomial.dist(mu=ga_rate, alpha=r_disp), as_)).sum())
         
-        trace = pm.sample(draws, tune=tune, chains=4, cores=4, target_accept=0.95,
+        trace = pm.sample(draws, tune=tune, chains=2, cores=1, target_accept=0.95,
                           init='jitter+adapt_diag', progressbar=False, random_seed=seed)
         
         # Auditoría de convergencia Gelman-Rubin
-        summary = az.summary(trace, var_names=['att', 'dfn', 'home', 'base', 'delta'])
+        summary = az.summary(trace, var_names=['att', 'dfn', 'home', 'base', 'delta', 'beta_form', 'beta_mv', 'beta_gf5', 'beta_ga5', 'r_disp'])
         max_rhat = float(pd.to_numeric(summary['r_hat'], errors='coerce').max())
         if max_rhat > 1.05:
             print(f"  [ADVERTENCIA MCMC] Las cadenas no han convergido (Max R-hat = {max_rhat:.4f} > 1.05).")
             
-    return {'trace': trace, 'idxb': idxb, 'keep': keep}
+    return {'trace': trace, 'idxb': idxb, 'keep': keep, 'cov_std': cov_std}
 
-def mcmc_matrix_mean(mc, h, a, host, dc_model, elo_h=None, elo_a=None):
+def mcmc_matrix_mean(mc, h, a, host, dc_model, elo_h=None, elo_a=None, form_diff=0.0, mv_diff=0.0, gf5_diff=0.0, ga5_diff=0.0):
     post = mc['trace'].posterior
     idxb = mc['idxb']
+    cov_std = mc.get('cov_std', {})
+    
+    # Escalar covariables con los mismos factores usados en entrenamiento
+    form_diff_s = form_diff / cov_std.get('form_diff', 1.0)
+    mv_diff_s = mv_diff / cov_std.get('mv_diff', 1.0)
+    gf5_diff_s = gf5_diff / cov_std.get('gf5_diff', 1.0)
+    ga5_diff_s = ga5_diff / cov_std.get('ga5_diff', 1.0)
     
     # Aplanar las dimensiones de chains y draws para muestreo Bayesiano real
     chains = post.dims['chain']
@@ -758,6 +805,18 @@ def mcmc_matrix_mean(mc, h, a, host, dc_model, elo_h=None, elo_a=None):
     home_flat = post['home'].values.reshape(total_samples)
     base_flat = post['base'].values.reshape(total_samples)
     delta_flat = post['delta'].values.reshape(total_samples)
+    
+    # Extraer betas de covariables (con fallback si no existen)
+    tiene_betas = 'beta_form' in post
+    if tiene_betas:
+        beta_form_flat = post['beta_form'].values.reshape(total_samples)
+        beta_mv_flat = post['beta_mv'].values.reshape(total_samples)
+        beta_gf5_flat = post['beta_gf5'].values.reshape(total_samples)
+        beta_ga5_flat = post['beta_ga5'].values.reshape(total_samples)
+        
+    tiene_r_disp = 'r_disp' in post
+    if tiene_r_disp:
+        r_disp_flat = post['r_disp'].values.reshape(total_samples)
     
     ediff = ((elo_h - elo_a) / 100.0) if (elo_h is not None and elo_a is not None) else 0.0
     
@@ -794,6 +853,14 @@ def mcmc_matrix_mean(mc, h, a, host, dc_model, elo_h=None, elo_a=None):
         l = np.exp(base_val + home_val * host + att_h - dfn_a + delta_val * ediff)
         m = np.exp(base_val + att_a - dfn_h - delta_val * ediff)
         
+        if tiene_betas:
+            beta_form_v = beta_form_flat[idx]
+            beta_mv_v = beta_mv_flat[idx]
+            beta_gf5_v = beta_gf5_flat[idx]
+            beta_ga5_v = beta_ga5_flat[idx]
+            l *= np.exp(beta_form_v * form_diff_s + beta_mv_v * mv_diff_s + beta_gf5_v * gf5_diff_s + beta_ga5_v * ga5_diff_s)
+            m *= np.exp(-beta_form_v * form_diff_s - beta_mv_v * mv_diff_s - beta_gf5_v * gf5_diff_s - beta_ga5_v * ga5_diff_s)
+        
         # Aplicar modificadores de Opta (xG) igual que en Dixon-Coles
         w = 0.30
         h_att_mod = 1.0 - w + w * OPTA_ATT_MODIFIER.get(h, 1.0)
@@ -803,7 +870,14 @@ def mcmc_matrix_mean(mc, h, a, host, dc_model, elo_h=None, elo_a=None):
         l = l * np.sqrt(h_att_mod * a_dfn_mod)
         m = m * np.sqrt(a_att_mod * h_dfn_mod)
         
-        M_sample = np.outer(poisson.pmf(range(MAXG), l), poisson.pmf(range(MAXG), m))
+        if tiene_r_disp:
+            r_disp_val = r_disp_flat[idx]
+            pmf_h = nbinom.pmf(range(MAXG), n=r_disp_val, p=r_disp_val / (l + r_disp_val))
+            pmf_a = nbinom.pmf(range(MAXG), n=r_disp_val, p=r_disp_val / (m + r_disp_val))
+            M_sample = np.outer(pmf_h, pmf_a)
+        else:
+            M_sample = np.outer(poisson.pmf(range(MAXG), l), poisson.pmf(range(MAXG), m))
+            
         M_sum += M_sample / M_sample.sum()
         
     M = M_sum / len(sample_indices)
@@ -1893,7 +1967,7 @@ if __name__ == '__main__':
     print("[INFO] Muestreando MCMC Bayesiano global (PyMC)... Esto puede tardar ~2-4 min...")
     # Evitar fuga de datos en prioris de MCMC usando ratings ELO al corte de MATCH_DATE
     elo_at_cutoff = {t: get_elo_at_date(t, MATCH_DATE, elo_by_team, final_elos) for t in final_elos}
-    mc_final = fit_mcmc(df_all[(df_all.date >= DESDE_BAYES) & (df_all.date < MATCH_DATE)], elo_at_cutoff, elo_by_team=elo_by_team, draws=MCMC_DRAWS, tune=MCMC_TUNE)
+    mc_final = fit_mcmc(df_all[(df_all.date >= DESDE_BAYES) & (df_all.date < MATCH_DATE)], elo_at_cutoff, elo_by_team=elo_by_team, draws=MCMC_DRAWS, tune=MCMC_TUNE, form_by_team=form_by_team)
     
     print("[INFO] Entrenando regresores XGBoost globales...")
     X_f, yh_f, ya_f, th_f, ta_f = build_dataset(dc_final, MATCH_DATE, df_all, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis)
@@ -2037,7 +2111,15 @@ if __name__ == '__main__':
             scoreN_hits['Dixon-Coles NB'][N] += check_topN_score_hit(M_dcnb, goals_h, goals_a, N)
         
         # MCMC
-        M_mc = mcmc_matrix_mean(mc_final, h_eng, a_eng, host, dc_final, elo_h, elo_a)
+        fh_mc, gf5h_mc, ga5h_mc = get_form_at_date(h_eng, match_date, form_by_team)
+        fa_mc, gf5a_mc, ga5a_mc = get_form_at_date(a_eng, match_date, form_by_team)
+        form_diff_mc = fh_mc - fa_mc
+        gf5_diff_mc = gf5h_mc - gf5a_mc
+        ga5_diff_mc = ga5h_mc - ga5a_mc
+        mv_h_mc = np.log(MARKET_VALUES.get(h_eng, 50.0) + 1)
+        mv_a_mc = np.log(MARKET_VALUES.get(a_eng, 50.0) + 1)
+        mv_diff_mc = mv_h_mc - mv_a_mc
+        M_mc = mcmc_matrix_mean(mc_final, h_eng, a_eng, host, dc_final, elo_h, elo_a, form_diff=form_diff_mc, mv_diff=mv_diff_mc, gf5_diff=gf5_diff_mc, ga5_diff=ga5_diff_mc)
         p_mc = matrix_to_1x2(M_mc)
         res['MCMC Bayesiano'][0] += int(np.argmax(p_mc) == o)
         res['MCMC Bayesiano'][1] += rps_1x2(p_mc, o)
@@ -2278,7 +2360,7 @@ if __name__ == '__main__':
     names = [s[0] for s in summary_metrics]
     accs = [s[1] for s in summary_metrics]
     rpss = [s[2] for s in summary_metrics]
-    cols = ['#94a3b8', '#f43f5e', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#0ea5e9', '#f59e0b']
+    cols = ['#94a3b8', '#f43f5e', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#0ea5e9', '#f59e0b', '#06b6d4']
     
     # 1. Accuracy 1X2 General
     ax0.bar(names, accs, color=cols, width=0.52, edgecolor='white', linewidth=1.5)
@@ -2374,7 +2456,15 @@ if __name__ == '__main__':
         # sin importar si el optimizador les dio un peso de 0%.
         M_dc = dc_matrix(dc_final, h_eng, a_eng, host, elo_h, elo_a)
         M_dcnb = dc_nb_matrix(dc_nb_final, h_eng, a_eng, host, elo_h, elo_a)
-        M_mc = mcmc_matrix_mean(mc_final, h_eng, a_eng, host, dc_final, elo_h, elo_a)
+        fh_mc, gf5h_mc, ga5h_mc = get_form_at_date(h_eng, match_date, form_by_team)
+        fa_mc, gf5a_mc, ga5a_mc = get_form_at_date(a_eng, match_date, form_by_team)
+        form_diff_mc = fh_mc - fa_mc
+        gf5_diff_mc = gf5h_mc - gf5a_mc
+        ga5_diff_mc = ga5h_mc - ga5a_mc
+        mv_h_mc = np.log(MARKET_VALUES.get(h_eng, 50.0) + 1)
+        mv_a_mc = np.log(MARKET_VALUES.get(a_eng, 50.0) + 1)
+        mv_diff_mc = mv_h_mc - mv_a_mc
+        M_mc = mcmc_matrix_mean(mc_final, h_eng, a_eng, host, dc_final, elo_h, elo_a, form_diff=form_diff_mc, mv_diff=mv_diff_mc, gf5_diff=gf5_diff_mc, ga5_diff=ga5_diff_mc)
         
         M_xgb, lh_xgb, la_xgb = xgb_matrix(reg_home, reg_away, dc_final, h_eng, a_eng, host, match_date,
                                           form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, v, theta=theta_param)
@@ -2405,8 +2495,8 @@ if __name__ == '__main__':
         stack_feat = np.concatenate([p_dc_ens, p_dcnb_ens, p_mc_ens, p_xgb_ens, p_mlp_ens, p_cb_ens, p_mfa_ens])
         meta_p = meta_learner.predict_proba(stack_scaler.transform([stack_feat]))[0]
         
-        # Matriz base: promedio ponderado estático para el path de marcadores
-        w_ens = [0.0170, 0.3762, 0.0163, 0.2760, 0.1123, 0.1806, 0.0216]
+        # Matriz base: promedio ponderado dinámico para el path de marcadores (utilizando pesos optimizados SLSQP)
+        w_ens = w_opt_score
         M_raw = (M_dc * w_ens[0] + M_dcnb * w_ens[1] + M_mc * w_ens[2] + M_xgb * w_ens[3] + M_mlp * w_ens[4] + M_cb * w_ens[5] + M_mfa * w_ens[6])
         M_raw = M_raw / M_raw.sum()
         

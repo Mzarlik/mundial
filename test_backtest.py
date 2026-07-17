@@ -80,7 +80,7 @@ def evaluate_tournament(df_all, start_date, end_date, tournament_name):
     time_weights = time_weights / np.mean(time_weights)
     
     print("[INFO] Muestreando MCMC Bayesiano (PyMC)... Esto puede tardar ~1 min (draws=1500, tune=1500)...")
-    mc_model = pm.fit_mcmc(df_train[df_train.date >= pm.DESDE_BAYES], final_elos, elo_by_team=elo_by_team, draws=1500, tune=1500)
+    mc_model = pm.fit_mcmc(df_train[df_train.date >= pm.DESDE_BAYES], final_elos, elo_by_team=elo_by_team, draws=1500, tune=1500, form_by_team=form_by_team)
     
     print("[INFO] Training XGBoost (early stopping)...")
     model_h, model_a = pm.train_xgb_goals(X_train, yh_train, ya_train, sample_weight=time_weights)
@@ -117,7 +117,15 @@ def evaluate_tournament(df_all, start_date, end_date, tournament_name):
         # 2. MCMC Bayesiano
         elo_h_mc = pm.get_elo_at_date(h, row.date, elo_by_team, final_elos)
         elo_a_mc = pm.get_elo_at_date(a, row.date, elo_by_team, final_elos)
-        M_mc = pm.mcmc_matrix_mean(mc_model, h, a, host, dc_model, elo_h_mc, elo_a_mc)
+        fh_mc, gf5h_mc, ga5h_mc = pm.get_form_at_date(h, row.date, form_by_team)
+        fa_mc, gf5a_mc, ga5a_mc = pm.get_form_at_date(a, row.date, form_by_team)
+        form_diff_mc = fh_mc - fa_mc
+        gf5_diff_mc = gf5h_mc - gf5a_mc
+        ga5_diff_mc = ga5h_mc - ga5a_mc
+        mv_h_mc = np.log(pm.MARKET_VALUES.get(h, 50.0) + 1)
+        mv_a_mc = np.log(pm.MARKET_VALUES.get(a, 50.0) + 1)
+        mv_diff_mc = mv_h_mc - mv_a_mc
+        M_mc = pm.mcmc_matrix_mean(mc_model, h, a, host, dc_model, elo_h_mc, elo_a_mc, form_diff=form_diff_mc, mv_diff=mv_diff_mc, gf5_diff=gf5_diff_mc, ga5_diff=ga5_diff_mc)
         
         # 3. XGBoost
         M_xgb, _, _ = pm.xgb_matrix(model_h, model_a, dc_model, h, a, host, row.date, form_by_team, elo_by_team, final_elos, h2h_dict, 1.0, pi_by_team, final_pis)

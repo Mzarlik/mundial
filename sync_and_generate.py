@@ -278,6 +278,7 @@ export const MATCHES = [
             f'ensemble:"/graphs/{day_id}/{match_id}_ensemble.png", '
             f'catboost:"/graphs/{day_id}/{match_id}_catboost.png", '
             f'dixoncoles:"/graphs/{day_id}/{match_id}_dixoncoles.png", '
+            f'stacking:"/graphs/{day_id}/{match_id}_stacking.png", '
             f'mfa:"/graphs/{day_id}/{match_id}_mfa.png"}}'
         )
         

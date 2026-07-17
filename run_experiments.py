@@ -278,7 +278,8 @@ def main():
                 df_all[(df_all.date >= predict_matches.DESDE_BAYES) & (df_all.date < predict_matches.MATCH_DATE)], 
                 final_elos, elo_by_team=elo_by_team,
                 draws=config['mcmc_draws'], 
-                tune=config['mcmc_draws']
+                tune=config['mcmc_draws'],
+                form_by_team=form_by_team
             )
 
             # Precalcular medias MCMC para descartar el trace masivo y liberar RAM
@@ -356,7 +357,15 @@ def main():
                 # MCMC
                 elo_h_mc = predict_matches.get_elo_at_date(h_eng, predict_matches.MATCH_DATE, elo_by_team, final_elos)
                 elo_a_mc = predict_matches.get_elo_at_date(a_eng, predict_matches.MATCH_DATE, elo_by_team, final_elos)
-                M_mc = predict_matches.mcmc_matrix_mean(mc_final, h_eng, a_eng, host, dc_final, elo_h_mc, elo_a_mc)
+                fh_mc, gf5h_mc, ga5h_mc = predict_matches.get_form_at_date(h_eng, predict_matches.MATCH_DATE, form_by_team)
+                fa_mc, gf5a_mc, ga5a_mc = predict_matches.get_form_at_date(a_eng, predict_matches.MATCH_DATE, form_by_team)
+                form_diff_mc = fh_mc - fa_mc
+                gf5_diff_mc = gf5h_mc - gf5a_mc
+                ga5_diff_mc = ga5h_mc - ga5a_mc
+                mv_h_mc = np.log(predict_matches.MARKET_VALUES.get(h_eng, 50.0) + 1)
+                mv_a_mc = np.log(predict_matches.MARKET_VALUES.get(a_eng, 50.0) + 1)
+                mv_diff_mc = mv_h_mc - mv_a_mc
+                M_mc = predict_matches.mcmc_matrix_mean(mc_final, h_eng, a_eng, host, dc_final, elo_h_mc, elo_a_mc, form_diff=form_diff_mc, mv_diff=mv_diff_mc, gf5_diff=gf5_diff_mc, ga5_diff=ga5_diff_mc)
                 p_mc = predict_matches.matrix_to_1x2(M_mc)
                 res['MCMC Bayesiano'][0] += int(np.argmax(p_mc) == o)
                 res['MCMC Bayesiano'][1] += predict_matches.rps_1x2(p_mc, o)

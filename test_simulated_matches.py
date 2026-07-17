@@ -99,7 +99,7 @@ def main():
     # Modelos
     dc_final = pm.fit_dixon_coles(df_all[(df_all.date >= pm.DESDE) & (df_all.date < pm.MATCH_DATE)], pm.MATCH_DATE)
     dc_nb_final = pm.fit_dixon_coles_nb(df_all[(df_all.date >= pm.DESDE) & (df_all.date < pm.MATCH_DATE)], pm.MATCH_DATE)
-    mc_final = pm.fit_mcmc(df_all[(df_all.date >= pm.DESDE_BAYES) & (df_all.date < pm.MATCH_DATE)], final_elos, elo_by_team=elo_by_team, draws=1500, tune=1500)
+    mc_final = pm.fit_mcmc(df_all[(df_all.date >= pm.DESDE_BAYES) & (df_all.date < pm.MATCH_DATE)], final_elos, elo_by_team=elo_by_team, draws=1500, tune=1500, form_by_team=form_by_team)
     X_f, yh_f, ya_f, th_f, ta_f = pm.build_dataset(dc_final, pm.MATCH_DATE, df_all, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis)
     n_samples = len(X_f)
     decay_lambda = 0.0003
@@ -127,7 +127,15 @@ def main():
         M_dcnb = pm.dc_nb_matrix(dc_nb_final, h_eng, a_eng, 0.0)
         elo_h_mc = pm.get_elo_at_date(h_eng, pm.MATCH_DATE, elo_by_team, final_elos)
         elo_a_mc = pm.get_elo_at_date(a_eng, pm.MATCH_DATE, elo_by_team, final_elos)
-        M_mc = pm.mcmc_matrix_mean(mc_final, h_eng, a_eng, 0.0, dc_final, elo_h_mc, elo_a_mc)
+        fh_mc, gf5h_mc, ga5h_mc = pm.get_form_at_date(h_eng, pm.MATCH_DATE, form_by_team)
+        fa_mc, gf5a_mc, ga5a_mc = pm.get_form_at_date(a_eng, pm.MATCH_DATE, form_by_team)
+        form_diff_mc = fh_mc - fa_mc
+        gf5_diff_mc = gf5h_mc - gf5a_mc
+        ga5_diff_mc = ga5h_mc - ga5a_mc
+        mv_h_mc = np.log(pm.MARKET_VALUES.get(h_eng, 50.0) + 1)
+        mv_a_mc = np.log(pm.MARKET_VALUES.get(a_eng, 50.0) + 1)
+        mv_diff_mc = mv_h_mc - mv_a_mc
+        M_mc = pm.mcmc_matrix_mean(mc_final, h_eng, a_eng, 0.0, dc_final, elo_h_mc, elo_a_mc, form_diff=form_diff_mc, mv_diff=mv_diff_mc, gf5_diff=gf5_diff_mc, ga5_diff=ga5_diff_mc)
         M_xgb, _, _ = pm.xgb_matrix(reg_home, reg_away, dc_final, h_eng, a_eng, 0.0, pm.MATCH_DATE,
                                       form_by_team, elo_by_team, final_elos, h2h_dict, 1.0, pi_by_team, final_pis)
         M_mlp, _, _ = pm.mlp_matrix(scaler_f, mlp_home, mlp_away, dc_final, h_eng, a_eng, 0.0, pm.MATCH_DATE,
@@ -194,7 +202,15 @@ def main():
         M_dcnb = pm.dc_nb_matrix(dc_nb_final, h_eng, a_eng, 0.0)
         elo_h_mc = pm.get_elo_at_date(h_eng, pm.MATCH_DATE, elo_by_team, final_elos)
         elo_a_mc = pm.get_elo_at_date(a_eng, pm.MATCH_DATE, elo_by_team, final_elos)
-        M_mc = pm.mcmc_matrix_mean(mc_final, h_eng, a_eng, 0.0, dc_final, elo_h_mc, elo_a_mc)
+        fh_mc, gf5h_mc, ga5h_mc = pm.get_form_at_date(h_eng, pm.MATCH_DATE, form_by_team)
+        fa_mc, gf5a_mc, ga5a_mc = pm.get_form_at_date(a_eng, pm.MATCH_DATE, form_by_team)
+        form_diff_mc = fh_mc - fa_mc
+        gf5_diff_mc = gf5h_mc - gf5a_mc
+        ga5_diff_mc = ga5h_mc - ga5a_mc
+        mv_h_mc = np.log(pm.MARKET_VALUES.get(h_eng, 50.0) + 1)
+        mv_a_mc = np.log(pm.MARKET_VALUES.get(a_eng, 50.0) + 1)
+        mv_diff_mc = mv_h_mc - mv_a_mc
+        M_mc = pm.mcmc_matrix_mean(mc_final, h_eng, a_eng, 0.0, dc_final, elo_h_mc, elo_a_mc, form_diff=form_diff_mc, mv_diff=mv_diff_mc, gf5_diff=gf5_diff_mc, ga5_diff=ga5_diff_mc)
         M_xgb, _, _ = pm.xgb_matrix(reg_home, reg_away, dc_final, h_eng, a_eng, 0.0, pm.MATCH_DATE,
                                           form_by_team, elo_by_team, final_elos, h2h_dict, 1.0, pi_by_team, final_pis)
         M_mlp, _, _ = pm.mlp_matrix(scaler_f, mlp_home, mlp_away, dc_final, h_eng, a_eng, 0.0, pm.MATCH_DATE,
