@@ -80,7 +80,7 @@ def evaluate_tournament(df_all, start_date, end_date, tournament_name):
     time_weights = time_weights / np.mean(time_weights)
     
     print("[INFO] Muestreando MCMC Bayesiano (PyMC)... Esto puede tardar ~1 min (draws=1500, tune=1500)...")
-    mc_model = pm.fit_mcmc(df_train[df_train.date >= pm.DESDE_BAYES], final_elos, draws=1500, tune=1500)
+    mc_model = pm.fit_mcmc(df_train[df_train.date >= pm.DESDE_BAYES], final_elos, elo_by_team=elo_by_team, draws=1500, tune=1500)
     
     print("[INFO] Training XGBoost (early stopping)...")
     model_h, model_a = pm.train_xgb_goals(X_train, yh_train, ya_train, sample_weight=time_weights)
@@ -115,7 +115,9 @@ def evaluate_tournament(df_all, start_date, end_date, tournament_name):
         M_dc = pm.dc_matrix(dc_model, h, a, host)
         
         # 2. MCMC Bayesiano
-        M_mc = pm.mcmc_matrix_mean(mc_model, h, a, host, dc_model)
+        elo_h_mc = pm.get_elo_at_date(h, row.date, elo_by_team, final_elos)
+        elo_a_mc = pm.get_elo_at_date(a, row.date, elo_by_team, final_elos)
+        M_mc = pm.mcmc_matrix_mean(mc_model, h, a, host, dc_model, elo_h_mc, elo_a_mc)
         
         # 3. XGBoost
         M_xgb, _, _ = pm.xgb_matrix(model_h, model_a, dc_model, h, a, host, row.date, form_by_team, elo_by_team, final_elos, h2h_dict, 1.0, pi_by_team, final_pis)

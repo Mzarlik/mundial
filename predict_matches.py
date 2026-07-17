@@ -208,14 +208,14 @@ def load_opta_modifiers(script_dir):
 
 # Configuración global de los modelos (Optimizados por Grid Search)
 DESDE = pd.Timestamp('2018-01-01')       # Ventana de datos históricos para Dixon-Coles, XGBoost, MLP y CatBoost
-DESDE_BAYES = pd.Timestamp('2021-01-01') # Ventana para MCMC Bayesiano (Ciclos mundialistas completos)
+DESDE_BAYES = pd.Timestamp('2019-01-01') # Ventana para MCMC Bayesiano (Ciclos mundialistas completos)
 VAL_CUTOFF = pd.Timestamp('2025-09-01')  # Fecha límite para separar el conjunto de entrenamiento y validación
 MATCH_DATE = pd.Timestamp('2026-06-22')  # Fecha base de las predicciones del Mundial
 
 HALF_LIFE = 180                          # Decaimiento dinámico Dixon-Coles óptimo
 THETA_KNOCKOUT = -0.40                   # Cópula Frank para fase de eliminación directa
 THETA_GROUPS = -0.20                     # Cópula Frank para fase de grupos
-ELO_SCALE_FACTOR = 1500.0                # Escala de prioris informadas en MCMC Bayesiano
+ELO_SCALE_FACTOR = 700.0                 # Escala de prioris informadas en MCMC Bayesiano
 MCMC_DRAWS = 1500                        # Iteraciones NUTS optimizadas para MCMC
 MCMC_TUNE = 1500                         # Iteraciones de tuning NUTS optimizadas
 CB_DEPTH = 3                             # Profundidad de CatBoost optimizada
@@ -668,17 +668,21 @@ def dc_nb_matrix(dcm, h, a, host, elo_h, elo_a):
     return M / M.sum()
 
 # --- MODELO MCMC BAYESIANO ---
-def fit_mcmc(train, final_elos, draws=1000, tune=1000, seed=1):
+def fit_mcmc(train, final_elos, elo_by_team=None, draws=1000, tune=1000, seed=1):
     """
-    Ajusta un modelo predictivo bayesiano jerárquico de Poisson.
+    Ajusta un modelo predictivo bayesiano jerárquico de Poisson con diferencial ELO.
     Utiliza PyMC para estimar la distribución posterior de las habilidades de ataque
     y defensa a través de muestreo por cadenas de Montecarlo (MCMC NUTS).
-    Incopora prioris informadas basadas en el rating ELO de cada selección.
+    Incopora prioris informadas basadas en el rating ELO de cada selección y
+    el diferencial ELO como covariable directa en la tasa de goles.
     """
     cnt = pd.concat([train.home_team, train.away_team]).value_counts()
     keep = set(cnt[cnt >= MIN_PARTIDOS_BAYES].index)
-    tb = train[train.home_team.isin(keep) & train.away_team.isin(keep)]
+    tb = train[train.home_team.isin(keep) & train.away_team.isin(keep)].copy()
     teams = sorted(keep); idxb = {t:i for i,t in enumerate(teams)}; n = len(teams)
+    
+    # Ordenar cronológicamente para aplicar time-decay weights
+    tb = tb.sort_values('date').reset_index(drop=True)
     hi = tb.home_team.map(idxb).values; ai = tb.away_team.map(idxb).values
     hs = tb.home_score.values; as_ = tb.away_score.values
     lm = (tb.neutral == False).values.astype(float)
@@ -690,30 +694,52 @@ def fit_mcmc(train, final_elos, draws=1000, tune=1000, seed=1):
         elo_means.append((current_elo - 1500.0) / ELO_SCALE_FACTOR)
     elo_means = np.array(elo_means)
     
+    # Diferencial ELO por partido como covariable directa (delta * ediff)
+    if elo_by_team is not None:
+        tb['elo_h'] = tb.apply(lambda r: get_elo_at_date(r.home_team, r.date, elo_by_team, final_elos), axis=1)
+        tb['elo_a'] = tb.apply(lambda r: get_elo_at_date(r.away_team, r.date, elo_by_team, final_elos), axis=1)
+        ediff = (tb['elo_h'] - tb['elo_a']).values / 100.0
+    else:
+        ediff = np.zeros(len(tb))
+    
+    # Time-decay weights (idéntico a XGBoost: exponencial + triple peso a últimos 25)
+    n_samples = len(tb)
+    decay_lambda = 0.0003
+    time_weights = np.exp(-decay_lambda * (n_samples - np.arange(n_samples)))
+    for idx_w in range(n_samples):
+        if idx_w >= (n_samples - 25):
+            time_weights[idx_w] *= 3.0
+    time_weights = time_weights / np.mean(time_weights)
+    
     with pm.Model():
         sa = pm.HalfNormal('sa', 0.5); sd = pm.HalfNormal('sd', 0.5)
         att = pm.Normal('att', mu=elo_means, sigma=sa, shape=n)
         dfn = pm.Normal('dfn', mu=-elo_means, sigma=sd, shape=n)
         home = pm.Normal('home', 0.25, 0.2)
-        base = pm.Normal('base', 0, 0.5)
+        base = pm.Normal('base', 0, 1.0)
+        delta = pm.Normal('delta', 0, 0.2)
         ac = pm.Deterministic('ac', att - att.mean())
         dc_ = pm.Deterministic('dc_', dfn - dfn.mean())
         
-        pm.Poisson('gh', pm.math.exp(base + home*lm + ac[hi] - dc_[ai]), observed=hs)
-        pm.Poisson('ga', pm.math.exp(base + ac[ai] - dc_[hi]), observed=as_)
+        gh_rate = pm.math.exp(base + home*lm + ac[hi] - dc_[ai] + delta * ediff)
+        ga_rate = pm.math.exp(base + ac[ai] - dc_[hi] - delta * ediff)
+        
+        w_data = pm.Data('w', time_weights)
+        pm.Potential('weighted_gh', (w_data * pm.logp(pm.Poisson.dist(mu=gh_rate), hs)).sum())
+        pm.Potential('weighted_ga', (w_data * pm.logp(pm.Poisson.dist(mu=ga_rate), as_)).sum())
         
         trace = pm.sample(draws, tune=tune, chains=4, cores=4, target_accept=0.95,
                           init='jitter+adapt_diag', progressbar=False, random_seed=seed)
         
         # Auditoría de convergencia Gelman-Rubin
-        summary = az.summary(trace, var_names=['att', 'dfn', 'home', 'base'])
+        summary = az.summary(trace, var_names=['att', 'dfn', 'home', 'base', 'delta'])
         max_rhat = float(pd.to_numeric(summary['r_hat'], errors='coerce').max())
         if max_rhat > 1.05:
             print(f"  [ADVERTENCIA MCMC] Las cadenas no han convergido (Max R-hat = {max_rhat:.4f} > 1.05).")
             
     return {'trace': trace, 'idxb': idxb, 'keep': keep}
 
-def mcmc_matrix_mean(mc, h, a, host, dc_model):
+def mcmc_matrix_mean(mc, h, a, host, dc_model, elo_h=None, elo_a=None):
     post = mc['trace'].posterior
     idxb = mc['idxb']
     
@@ -722,8 +748,8 @@ def mcmc_matrix_mean(mc, h, a, host, dc_model):
     draws = post.dims['draw']
     total_samples = chains * draws
     
-    # Tomamos 100 muestras espaciadas uniformemente para velocidad e integración óptima de la posterior
-    N_samples = 100
+    # Tomamos 300 muestras espaciadas uniformemente para velocidad e integración estable de la posterior
+    N_samples = 300
     step = max(1, total_samples // N_samples)
     sample_indices = list(range(0, total_samples, step))[:N_samples]
     
@@ -731,6 +757,9 @@ def mcmc_matrix_mean(mc, h, a, host, dc_model):
     dc_flat = post['dc_'].values.reshape(total_samples, -1)
     home_flat = post['home'].values.reshape(total_samples)
     base_flat = post['base'].values.reshape(total_samples)
+    delta_flat = post['delta'].values.reshape(total_samples)
+    
+    ediff = ((elo_h - elo_a) / 100.0) if (elo_h is not None and elo_a is not None) else 0.0
     
     M_sum = np.zeros((MAXG, MAXG))
     
@@ -760,9 +789,19 @@ def mcmc_matrix_mean(mc, h, a, host, dc_model):
                 
         home_val = home_flat[idx]
         base_val = base_flat[idx]
+        delta_val = delta_flat[idx]
         
-        l = np.exp(base_val + home_val * host + att_h - dfn_a)
-        m = np.exp(base_val + att_a - dfn_h)
+        l = np.exp(base_val + home_val * host + att_h - dfn_a + delta_val * ediff)
+        m = np.exp(base_val + att_a - dfn_h - delta_val * ediff)
+        
+        # Aplicar modificadores de Opta (xG) igual que en Dixon-Coles
+        w = 0.30
+        h_att_mod = 1.0 - w + w * OPTA_ATT_MODIFIER.get(h, 1.0)
+        a_dfn_mod = 1.0 - w + w * OPTA_DFN_MODIFIER.get(a, 1.0)
+        a_att_mod = 1.0 - w + w * OPTA_ATT_MODIFIER.get(a, 1.0)
+        h_dfn_mod = 1.0 - w + w * OPTA_DFN_MODIFIER.get(h, 1.0)
+        l = l * np.sqrt(h_att_mod * a_dfn_mod)
+        m = m * np.sqrt(a_att_mod * h_dfn_mod)
         
         M_sample = np.outer(poisson.pmf(range(MAXG), l), poisson.pmf(range(MAXG), m))
         M_sum += M_sample / M_sample.sum()
@@ -899,15 +938,7 @@ def clip_lambda(val):
 
 def train_mlp_goals(X, yh, ya, sample_weight=None):
     # Red Neuronal v3: arquitectura más profunda (128,64,32) con relu + adam + early_stopping.
-    # Se resamplean los datos según sample_weight para emular ponderación temporal
-    # (sklearn MLPRegressor no soporta sample_weight directamente).
-    if sample_weight is not None:
-        n = len(X)
-        rng = np.random.RandomState(42)
-        idx = rng.choice(n, size=n, p=sample_weight / sample_weight.sum(), replace=True)
-        X = X[idx]
-        yh = yh[idx]
-        ya = ya[idx]
+    # sklearn MLPRegressor no soporta sample_weight, así que se ignora.
     scaler = StandardScaler().fit(X)
     X_s = scaler.transform(X)
     params = dict(
@@ -1862,7 +1893,7 @@ if __name__ == '__main__':
     print("[INFO] Muestreando MCMC Bayesiano global (PyMC)... Esto puede tardar ~2-4 min...")
     # Evitar fuga de datos en prioris de MCMC usando ratings ELO al corte de MATCH_DATE
     elo_at_cutoff = {t: get_elo_at_date(t, MATCH_DATE, elo_by_team, final_elos) for t in final_elos}
-    mc_final = fit_mcmc(df_all[(df_all.date >= DESDE_BAYES) & (df_all.date < MATCH_DATE)], elo_at_cutoff, draws=MCMC_DRAWS, tune=MCMC_TUNE)
+    mc_final = fit_mcmc(df_all[(df_all.date >= DESDE_BAYES) & (df_all.date < MATCH_DATE)], elo_at_cutoff, elo_by_team=elo_by_team, draws=MCMC_DRAWS, tune=MCMC_TUNE)
     
     print("[INFO] Entrenando regresores XGBoost globales...")
     X_f, yh_f, ya_f, th_f, ta_f = build_dataset(dc_final, MATCH_DATE, df_all, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis)
@@ -2006,7 +2037,7 @@ if __name__ == '__main__':
             scoreN_hits['Dixon-Coles NB'][N] += check_topN_score_hit(M_dcnb, goals_h, goals_a, N)
         
         # MCMC
-        M_mc = mcmc_matrix_mean(mc_final, h_eng, a_eng, host, dc_final)
+        M_mc = mcmc_matrix_mean(mc_final, h_eng, a_eng, host, dc_final, elo_h, elo_a)
         p_mc = matrix_to_1x2(M_mc)
         res['MCMC Bayesiano'][0] += int(np.argmax(p_mc) == o)
         res['MCMC Bayesiano'][1] += rps_1x2(p_mc, o)
@@ -2083,13 +2114,19 @@ if __name__ == '__main__':
         e[o] = 1.
         return 0.5 * ((p[0] - e[0])**2 + (p[0]+p[1] - e[0]-e[1])**2)
         
+    L2_ALPHA = 0.02
+    n_models_opt = 7
+    uniform_w = 1.0 / n_models_opt
+    
     def eval_w(w):
         tot = 0.0
         for M_dc_t, M_dcnb_t, M_mc_t, M_xg_t, M_ml_t, M_cb_t, M_mfa_t, o_t, _, _ in opt_data:
             M_ens_t = (M_dc_t * w[0] + M_dcnb_t * w[1] + M_mc_t * w[2] + M_xg_t * w[3] + M_ml_t * w[4] + M_cb_t * w[5] + M_mfa_t * w[6])
             p_t = matrix_to_1x2(M_ens_t)
             tot += rps_opt_1x2(p_t, o_t)
-        return tot / len(opt_data)
+        tot /= len(opt_data)
+        reg = L2_ALPHA * np.sum((np.array(w) - uniform_w)**2)
+        return tot + reg
         
     cons = ({'type': 'eq', 'fun': lambda w: 1.0 - sum(w)})
     bounds = [(0.0, 1.0) for _ in range(7)]
@@ -2099,8 +2136,8 @@ if __name__ == '__main__':
     
     # Añadimos tol=1e-6 para evitar que SLSQP se rinda rápido
     res_opt = minimize(eval_w, w0, method='SLSQP', bounds=bounds, constraints=cons, tol=1e-6)
-    w_opt_1x2 = [0.0170, 0.3762, 0.0163, 0.2760, 0.1123, 0.1806, 0.0216]
-    w_opt_score = [0.0170, 0.3762, 0.0163, 0.2760, 0.1123, 0.1806, 0.0216]
+    w_opt_1x2 = res_opt.x.copy()
+    w_opt_score = res_opt.x.copy()
     
     print("\n[OPTIMIZACIÓN] Ponderación de Ensemble con Separación de Tareas:")
     print("  --> Para Resultados 1X2 (Ganador/Empate):")
@@ -2171,7 +2208,7 @@ if __name__ == '__main__':
         scoreN_hits['Stacking'][N] = 0
         for i in range(len(y_stack)):
             M_dc_t, M_dcnb_t, M_mc_t, M_xg_t, M_ml_t, M_cb_t, M_mfa_t, o_t, gh_t, ga_t = opt_data[i]
-            w_ens_t = [0.0170, 0.3762, 0.0163, 0.2760, 0.1123, 0.1806, 0.0216]
+            w_ens_t = w_opt_score
             M_raw_t = (M_dc_t * w_ens_t[0] + M_dcnb_t * w_ens_t[1] + M_mc_t * w_ens_t[2] + M_xg_t * w_ens_t[3] + M_ml_t * w_ens_t[4] + M_cb_t * w_ens_t[5] + M_mfa_t * w_ens_t[6])
             M_raw_t = M_raw_t / M_raw_t.sum()
             ens_p_t = np.array(matrix_to_1x2(M_raw_t))
@@ -2337,7 +2374,7 @@ if __name__ == '__main__':
         # sin importar si el optimizador les dio un peso de 0%.
         M_dc = dc_matrix(dc_final, h_eng, a_eng, host, elo_h, elo_a)
         M_dcnb = dc_nb_matrix(dc_nb_final, h_eng, a_eng, host, elo_h, elo_a)
-        M_mc = mcmc_matrix_mean(mc_final, h_eng, a_eng, host, dc_final)
+        M_mc = mcmc_matrix_mean(mc_final, h_eng, a_eng, host, dc_final, elo_h, elo_a)
         
         M_xgb, lh_xgb, la_xgb = xgb_matrix(reg_home, reg_away, dc_final, h_eng, a_eng, host, match_date,
                                           form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, v, theta=theta_param)

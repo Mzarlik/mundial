@@ -276,7 +276,7 @@ def main():
             print(f"  -> Muestreando MCMC Bayesiano (draws={config['mcmc_draws']})...")
             mc_final = predict_matches.fit_mcmc(
                 df_all[(df_all.date >= predict_matches.DESDE_BAYES) & (df_all.date < predict_matches.MATCH_DATE)], 
-                final_elos, 
+                final_elos, elo_by_team=elo_by_team,
                 draws=config['mcmc_draws'], 
                 tune=config['mcmc_draws']
             )
@@ -354,7 +354,9 @@ def main():
                 res['Dixon-Coles NB'][1] += predict_matches.rps_1x2(p_dcnb, o)
 
                 # MCMC
-                M_mc = predict_matches.mcmc_matrix_mean(mc_final, h_eng, a_eng, host, dc_final)
+                elo_h_mc = predict_matches.get_elo_at_date(h_eng, predict_matches.MATCH_DATE, elo_by_team, final_elos)
+                elo_a_mc = predict_matches.get_elo_at_date(a_eng, predict_matches.MATCH_DATE, elo_by_team, final_elos)
+                M_mc = predict_matches.mcmc_matrix_mean(mc_final, h_eng, a_eng, host, dc_final, elo_h_mc, elo_a_mc)
                 p_mc = predict_matches.matrix_to_1x2(M_mc)
                 res['MCMC Bayesiano'][0] += int(np.argmax(p_mc) == o)
                 res['MCMC Bayesiano'][1] += predict_matches.rps_1x2(p_mc, o)
