@@ -474,26 +474,70 @@ def get_pi_at_date(team, date, pi_by_team, final_pis):
         return 0.0
     return history[idx-1][1]
 
+# --- AUXILIARES DE LOCALÍA Y PONDERACIÓN ---
+def get_tournament_weight(t):
+    if not isinstance(t, str):
+        return 1.0
+    t_lower = t.lower()
+    if 'world cup' in t_lower:
+        return 2.5
+    elif 'copa américa' in t_lower or 'euro' in t_lower or 'nations league' in t_lower or 'conmebol' in t_lower:
+        return 1.5
+    elif 'friendly' in t_lower or 'amistoso' in t_lower:
+        return 0.6
+    return 1.0
+
+def get_neutral_venue_advantage(team, other_team, tournament):
+    if not isinstance(tournament, str) or 'world cup' not in tournament.lower():
+        return 0.0
+    t_lower = team.lower()
+    if t_lower in ['mexico', 'méxico', 'usa', 'united states', 'estados unidos']:
+        return 0.80
+    if t_lower == 'canada':
+        return 0.70
+    if t_lower in [
+        'france', 'spain', 'germany', 'england', 'portugal', 'belgium', 'croatia', 'sweden',
+        'norway', 'austria', 'czechia', 'switzerland', 'netherlands', 'bosnia', 'bosnia and herzegovina',
+        'scotland', 'egypt', 'senegal', 'morocco', 'tunisia', 'algeria', 'ivory coast', 'ghana',
+        'cape verde', 'dr congo', 'iraq', 'jordan'
+    ]:
+        return -0.10
+    if t_lower in ['japan', 'south korea', 'australia', 'saudi arabia', 'uzbekistan', 'qatar']:
+        return -0.20
+    return 0.0
+
 # --- MODELO DIXON-COLES ---
 def fit_dixon_coles(train, cutoff, elo_by_team, final_elos, half_life=HALF_LIFE):
     """
     Ajusta el modelo probabilístico de Dixon-Coles con diferencia de ELO integrada.
     Calcula los parámetros de ataque (att) y defensa (dfn) de cada equipo, la ventaja
     de localía (home), el parámetro de ajuste de empates de pocos goles (rho), y el peso del ELO (delta),
-    utilizando una regresión de Poisson ponderada por tiempo (decaimiento exponencial).
+    utilizando una regresión de Poisson ponderada por tiempo (decaimiento exponencial) e importancia del torneo.
     """
     train = train.copy()
-    train['w'] = 0.5 ** ((cutoff - train['date']).dt.days / half_life)
+    t_weights = train['tournament'].apply(get_tournament_weight).values
+    train['w'] = (0.5 ** ((cutoff - train['date']).dt.days / half_life)) * t_weights
     train['elo_h'] = train.apply(lambda r: get_elo_at_date(r.home_team, r.date, elo_by_team, final_elos), axis=1)
     train['elo_a'] = train.apply(lambda r: get_elo_at_date(r.away_team, r.date, elo_by_team, final_elos), axis=1)
     train['elo_diff_scaled'] = (train['elo_h'] - train['elo_a']) / 100.0
     ediff = train['elo_diff_scaled'].values
     
+    # Precalcular las ventajas de localía para cada partido (neutral o no)
+    def calc_home_advantages(row):
+        if not row.neutral:
+            return 1.0, 0.0
+        eff_h = get_neutral_venue_advantage(row.home_team, row.away_team, row.tournament)
+        eff_a = get_neutral_venue_advantage(row.away_team, row.home_team, row.tournament)
+        return eff_h, eff_a
+        
+    advantages = train.apply(calc_home_advantages, axis=1)
+    lm_h = np.array([adv[0] for adv in advantages])
+    lm_a = np.array([adv[1] for adv in advantages])
+    
     teams = sorted(set(train['home_team']) | set(train['away_team']))
     idx = {t:i for i,t in enumerate(teams)}; n = len(teams)
     hi = train['home_team'].map(idx).values; ai = train['away_team'].map(idx).values
     hs = train['home_score'].values; as_ = train['away_score'].values; w = train['w'].values
-    lm = (train['neutral'] == False).values.astype(float)
     
     def tau(x, y, l, m, r):
         t = np.ones_like(l)
@@ -512,8 +556,8 @@ def fit_dixon_coles(train, cutoff, elo_by_team, final_elos, half_life=HALF_LIFE)
         r = p[2*n]
         delta = p[2*n+1]
         
-        l = np.exp(at[hi] - dn[ai] + h*lm + delta * ediff)
-        m = np.exp(at[ai] - dn[hi] - delta * ediff)
+        l = np.exp(at[hi] - dn[ai] + h * lm_h + delta * ediff)
+        m = np.exp(at[ai] - dn[hi] + h * lm_a - delta * ediff)
         t = np.clip(tau(hs, as_, l, m, r), 1e-10, None)
         l2_penalty = 0.05 * ((at ** 2).sum() + (dn ** 2).sum())
         return -(w * (np.log(t) + poisson.logpmf(hs, l) + poisson.logpmf(as_, m))).sum() + l2_penalty
@@ -542,8 +586,16 @@ def dc_matrix(dcm, h, a, host, elo_h, elo_a):
     att, dfn, home, rho, delta = dcm['att'], dcm['dfn'], dcm['home'], dcm['rho'], dcm.get('delta', 0.0)
     ediff = (elo_h - elo_a) / 100.0
     
-    l = np.exp(att[idx[h]] - dfn[idx[a]] + (home if host else 0) + delta * ediff)
-    m = np.exp(att[idx[a]] - dfn[idx[h]] - delta * ediff)
+    # Estimar ventajas de localía para campo neutral en el Mundial
+    if host:
+        eff_h = 1.0
+        eff_a = 0.0
+    else:
+        eff_h = get_neutral_venue_advantage(h, a, 'FIFA World Cup')
+        eff_a = get_neutral_venue_advantage(a, h, 'FIFA World Cup')
+        
+    l = np.exp(att[idx[h]] - dfn[idx[a]] + home * eff_h + delta * ediff)
+    m = np.exp(att[idx[a]] - dfn[idx[h]] + home * eff_a - delta * ediff)
     
     # Aplicar modificadores de Opta
     w = 0.30 # Peso de suavizado
@@ -571,17 +623,29 @@ def fit_dixon_coles_nb(train, cutoff, elo_by_team, final_elos, half_life=HALF_LI
     parámetros de dispersión alpha_h y alpha_a, y el coeficiente del ELO (delta).
     """
     train = train.copy()
-    train['w'] = 0.5 ** ((cutoff - train['date']).dt.days / half_life)
+    t_weights = train['tournament'].apply(get_tournament_weight).values
+    train['w'] = (0.5 ** ((cutoff - train['date']).dt.days / half_life)) * t_weights
     train['elo_h'] = train.apply(lambda r: get_elo_at_date(r.home_team, r.date, elo_by_team, final_elos), axis=1)
     train['elo_a'] = train.apply(lambda r: get_elo_at_date(r.away_team, r.date, elo_by_team, final_elos), axis=1)
     train['elo_diff_scaled'] = (train['elo_h'] - train['elo_a']) / 100.0
     ediff = train['elo_diff_scaled'].values
     
+    # Precalcular las ventajas de localía para cada partido (neutral o no)
+    def calc_home_advantages(row):
+        if not row.neutral:
+            return 1.0, 0.0
+        eff_h = get_neutral_venue_advantage(row.home_team, row.away_team, row.tournament)
+        eff_a = get_neutral_venue_advantage(row.away_team, row.home_team, row.tournament)
+        return eff_h, eff_a
+        
+    advantages = train.apply(calc_home_advantages, axis=1)
+    lm_h = np.array([adv[0] for adv in advantages])
+    lm_a = np.array([adv[1] for adv in advantages])
+    
     teams = sorted(set(train['home_team']) | set(train['away_team']))
     idx = {t:i for i,t in enumerate(teams)}; n = len(teams)
     hi = train['home_team'].map(idx).values; ai = train['away_team'].map(idx).values
     hs = train['home_score'].values; as_ = train['away_score'].values; w = train['w'].values
-    lm = (train['neutral'] == False).values.astype(float)
     
     def tau(x, y, l, m, r):
         t = np.ones_like(l)
@@ -602,8 +666,8 @@ def fit_dixon_coles_nb(train, cutoff, elo_by_team, final_elos, half_life=HALF_LI
         alpha_a = np.exp(p[2*n+2])
         delta = p[2*n+3]
         
-        l = np.exp(at[hi] - dn[ai] + h*lm + delta * ediff)
-        m = np.exp(at[ai] - dn[hi] - delta * ediff)
+        l = np.exp(at[hi] - dn[ai] + h * lm_h + delta * ediff)
+        m = np.exp(at[ai] - dn[hi] + h * lm_a - delta * ediff)
         t = np.clip(tau(hs, as_, l, m, r), 1e-10, None)
         
         n_h = 1.0 / alpha_h
@@ -652,8 +716,16 @@ def dc_nb_matrix(dcm, h, a, host, elo_h, elo_a):
     alpha_h, alpha_a = dcm['alpha_h'], dcm['alpha_a']
     ediff = (elo_h - elo_a) / 100.0
     
-    l = np.exp(att[idx[h]] - dfn[idx[a]] + (home if host else 0) + delta * ediff)
-    m = np.exp(att[idx[a]] - dfn[idx[h]] - delta * ediff)
+    # Estimar ventajas de localía para campo neutral en el Mundial
+    if host:
+        eff_h = 1.0
+        eff_a = 0.0
+    else:
+        eff_h = get_neutral_venue_advantage(h, a, 'FIFA World Cup')
+        eff_a = get_neutral_venue_advantage(a, h, 'FIFA World Cup')
+        
+    l = np.exp(att[idx[h]] - dfn[idx[a]] + home * eff_h + delta * ediff)
+    m = np.exp(att[idx[a]] - dfn[idx[h]] + home * eff_a - delta * ediff)
     
     # Aplicar modificadores de Opta
     w = 0.30 # Peso de suavizado
@@ -691,14 +763,34 @@ def fit_mcmc(train, final_elos, elo_by_team=None, draws=1000, tune=1000, seed=1,
     tb = tb.sort_values('date').reset_index(drop=True)
     hi = tb.home_team.map(idxb).values; ai = tb.away_team.map(idxb).values
     hs = tb.home_score.values; as_ = tb.away_score.values
-    lm = (tb.neutral == False).values.astype(float)
+    # Precalcular las ventajas de localía para cada partido en el subset de MCMC
+    def calc_mcmc_home_advantages(row):
+        if not row.neutral:
+            return 1.0, 0.0
+        eff_h = get_neutral_venue_advantage(row.home_team, row.away_team, row.tournament)
+        eff_a = get_neutral_venue_advantage(row.away_team, row.home_team, row.tournament)
+        return eff_h, eff_a
+        
+    advantages_mcmc = tb.apply(calc_mcmc_home_advantages, axis=1)
+    lm_h = np.array([adv[0] for adv in advantages_mcmc])
+    lm_a = np.array([adv[1] for adv in advantages_mcmc])
     
-    # Prioris informadas basadas en ELO (escalado ELO -> goles esperados relativos)
-    elo_means = []
+    # Prioris informadas basadas en ELO y modificadores xG de Opta
+    elo_means_att = []
+    elo_means_dfn = []
     for t in teams:
         current_elo = final_elos.get(t, 1500.0)
-        elo_means.append((current_elo - 1500.0) / ELO_SCALE_FACTOR)
-    elo_means = np.array(elo_means)
+        base_elo = (current_elo - 1500.0) / ELO_SCALE_FACTOR
+        
+        # Integrar modificadores de Opta en el log-space de la priori
+        att_mod = np.log(OPTA_ATT_MODIFIER.get(t, 1.0) + 1e-5)
+        dfn_mod = np.log(OPTA_DFN_MODIFIER.get(t, 1.0) + 1e-5)
+        
+        elo_means_att.append(base_elo + 0.35 * att_mod)
+        elo_means_dfn.append(-base_elo + 0.35 * dfn_mod)
+        
+    elo_means_att = np.array(elo_means_att)
+    elo_means_dfn = np.array(elo_means_dfn)
     
     # Diferencial ELO por partido como covariable directa (delta * ediff)
     if elo_by_team is not None:
@@ -750,8 +842,8 @@ def fit_mcmc(train, final_elos, elo_by_team=None, draws=1000, tune=1000, seed=1,
     
     with pm.Model():
         sa = pm.HalfNormal('sa', 0.5); sd = pm.HalfNormal('sd', 0.5)
-        att = pm.Normal('att', mu=elo_means, sigma=sa, shape=n)
-        dfn = pm.Normal('dfn', mu=-elo_means, sigma=sd, shape=n)
+        att = pm.Normal('att', mu=elo_means_att, sigma=sa, shape=n)
+        dfn = pm.Normal('dfn', mu=elo_means_dfn, sigma=sd, shape=n)
         home = pm.Normal('home', 0.25, 0.2)
         base = pm.Normal('base', 0, 1.0)
         delta = pm.Normal('delta', 0, 0.2)
@@ -766,8 +858,8 @@ def fit_mcmc(train, final_elos, elo_by_team=None, draws=1000, tune=1000, seed=1,
         # Parámetro de dispersión r para Binomial Negativa
         r_disp = pm.HalfNormal('r_disp', 5.0)
         
-        gh_log_rate = base + home*lm + ac[hi] - dc_[ai] + delta * ediff + beta_form * form_diff + beta_mv * mv_diff + beta_gf5 * gf5_diff + beta_ga5 * ga5_diff
-        ga_log_rate = base + ac[ai] - dc_[hi] - delta * ediff - beta_form * form_diff - beta_mv * mv_diff - beta_gf5 * gf5_diff - beta_ga5 * ga5_diff
+        gh_log_rate = base + home * lm_h + ac[hi] - dc_[ai] + delta * ediff + beta_form * form_diff + beta_mv * mv_diff + beta_gf5 * gf5_diff + beta_ga5 * ga5_diff
+        ga_log_rate = base + home * lm_a + ac[ai] - dc_[hi] - delta * ediff - beta_form * form_diff - beta_mv * mv_diff - beta_gf5 * gf5_diff - beta_ga5 * ga5_diff
         gh_rate = pm.math.exp(pm.math.clip(gh_log_rate, -5.0, 3.5))
         ga_rate = pm.math.exp(pm.math.clip(ga_log_rate, -5.0, 3.5))
         
@@ -860,8 +952,15 @@ def mcmc_matrix_mean(mc, h, a, host, dc_model, elo_h=None, elo_a=None, form_diff
         base_val = base_flat[idx]
         delta_val = delta_flat[idx]
         
-        l = np.exp(base_val + home_val * host + att_h - dfn_a + delta_val * ediff)
-        m = np.exp(base_val + att_a - dfn_h - delta_val * ediff)
+        if host:
+            eff_h = 1.0
+            eff_a = 0.0
+        else:
+            eff_h = get_neutral_venue_advantage(h, a, 'FIFA World Cup')
+            eff_a = get_neutral_venue_advantage(a, h, 'FIFA World Cup')
+            
+        l = np.exp(base_val + home_val * eff_h + att_h - dfn_a + delta_val * ediff)
+        m = np.exp(base_val + home_val * eff_a + att_a - dfn_h - delta_val * ediff)
         
         if tiene_betas:
             beta_form_v = beta_form_flat[idx]
@@ -965,6 +1064,11 @@ def make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, 
         temp = st_info.get("effective_temp_c", 20.0)
         taxing = st_info.get("taxing_score", 0.1)
         
+    # Squad Value Density: Valor de plantilla ajustado por la edad promedio
+    v_dens_h = mv_h / max(age_h, 18.0)
+    v_dens_a = mv_a / max(age_a, 18.0)
+    v_dens_diff = v_dens_h - v_dens_a
+    
     # Devolvemos un vector purgado de ruido con datos climáticos, de altitud y de plantilla agregados
     return [
         lam, mu, att[idx[h]] - att[idx[a]], dfn[idx[h]] - dfn[idx[a]], float(host),
@@ -972,7 +1076,8 @@ def make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, 
         elo_h, elo_a, elo_diff, pi_h, pi_a, h2h_gd, float(is_comp),
         mv_h, mv_a, mv_diff,
         age_h, age_a, age_diff, squad_h, squad_a, squad_diff,
-        float(altitude), float(temp), float(taxing)
+        float(altitude), float(temp), float(taxing),
+        float(v_dens_h), float(v_dens_a), float(v_dens_diff)
     ]
 
 def build_dataset(dcm, fecha_max, df_all, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis):
@@ -1000,12 +1105,14 @@ def train_xgb_goals(X, yh, ya, sample_weight=None):
     params = {
         'objective': 'reg:tweedie',
         'tweedie_variance_power': 1.5,
-        'max_depth': 4,
+        'max_depth': 3,
         'learning_rate': 0.03,
         'n_estimators': 120,
-        'reg_alpha': 0.5,
-        'reg_lambda': 1.8,
-        'subsample': 0.85,
+        'reg_alpha': 1.5,
+        'reg_lambda': 3.5,
+        'subsample': 0.70,
+        'colsample_bytree': 0.65,
+        'min_child_weight': 4,
         'random_state': 42,
         'n_jobs': -1
     }
@@ -2392,7 +2499,7 @@ if __name__ == '__main__':
     cal_rps = 0.0
     for p_xg, o in zip(xgb_cal_probs, xgb_cal_outcomes):
         p_cal = np.array([iso.predict([p_xg[cls]])[0] for cls, iso in enumerate(xgb_calibrators)])
-        p_cal = np.clip(p_cal, 1e-10, None)
+        p_cal = np.clip(p_cal, 0.02, 0.96)
         p_cal = p_cal / p_cal.sum()
         cal_hits += int(np.argmax(p_cal) == o)
         cal_rps += rps_1x2(p_cal, o)
@@ -2466,7 +2573,7 @@ if __name__ == '__main__':
     def calibrate_matrix(M, calibrators):
         p_raw = matrix_to_1x2(M)
         p_cal = np.array([iso.predict([p_raw[i]])[0] for i, iso in enumerate(calibrators)])
-        p_cal = np.clip(p_cal, 1e-10, None)
+        p_cal = np.clip(p_cal, 0.02, 0.96)
         p_cal = p_cal / p_cal.sum()
         M_cal = M.copy()
         for i in range(M.shape[0]):

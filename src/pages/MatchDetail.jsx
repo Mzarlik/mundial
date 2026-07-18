@@ -1802,7 +1802,7 @@ export default function MatchDetail() {
       y += 8;
       
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
-      doc.text('C) CatBoost (Acc: 84.0%)', 15, y);
+      doc.text('C) CatBoost (Acc: 84.6%)', 15, y);
       y += 4;
       const cbPath = getGraphPath(match, 'catboost');
       const imgCb = await loadImageAsBase64(cbPath);
@@ -1815,7 +1815,7 @@ export default function MatchDetail() {
       y += 63;
       
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
-      doc.text('D) Dixon-Coles NB (Acc: 80.0%)', 15, y);
+      doc.text('D) Dixon-Coles NB (Acc: 84.6%)', 15, y);
       y += 4;
       const dcnbPath = getGraphPath(match, 'dcnb');
       const imgDcnb = await loadImageAsBase64(dcnbPath);
@@ -1841,7 +1841,7 @@ export default function MatchDetail() {
       y += 8;
       
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
-      doc.text('E) XGBoost (Acc: 80.0%)', 15, y);
+      doc.text('E) XGBoost (Acc: 84.6%)', 15, y);
       y += 4;
       const xgbPath = getGraphPath(match, 'xgboost');
       const imgXgb = await loadImageAsBase64(xgbPath);
@@ -1854,7 +1854,7 @@ export default function MatchDetail() {
       y += 63;
       
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
-      doc.text('F) Dixon-Coles Poisson (Acc: 78.0%)', 15, y);
+      doc.text('F) Dixon-Coles Poisson (Acc: 80.8%)', 15, y);
       y += 4;
       const dcPath = getGraphPath(match, 'dixoncoles');
       const imgDc = await loadImageAsBase64(dcPath);
@@ -1880,7 +1880,7 @@ export default function MatchDetail() {
       y += 8;
       
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
-      doc.text('G) MFA Montecarlo (Acc: 80.0%)', 15, y);
+      doc.text('G) MFA Montecarlo (Acc: 80.8%)', 15, y);
       y += 4;
       const mfaPath = getGraphPath(match, 'mfa');
       const imgMfa = await loadImageAsBase64(mfaPath);
@@ -1892,8 +1892,8 @@ export default function MatchDetail() {
       }
       y += 63;
       
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
-      doc.text('H) MCMC Bayesiano (Acc: 74.0%)', 15, y);
+doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
+      doc.text('H) MCMC Bayesiano (Acc: 80.8%)', 15, y);
       y += 4;
       const mcmcPath = getGraphPath(match, 'mcmc');
       const imgMcmc = await loadImageAsBase64(mcmcPath);
@@ -1904,17 +1904,15 @@ export default function MatchDetail() {
         doc.rect(16, y, dw - 32, 58); doc.text("[Gráfica no disponible]", 85, y + 30);
       }
       
-      pdfFooter(7);
-
-      // PAGE 8: MLP + WEIBULL + CONDICIONALES
+      // PAGE 8: MLP + STACKING
       doc.addPage();
       doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
       doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
-      doc.text(`MATRICES DE DISTRIBUCION Y SIMULACION WEIBULL | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
+      doc.text(`MATRICES DE DISTRIBUCION (IV) | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
       
       y = 23;
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
-      doc.text('I) Red Neuronal MLP (Acc: 76.0%)', 15, y);
+      doc.text('I) Red Neuronal MLP (Acc: 80.8%)', 15, y);
       y += 4;
       const mlpPath = getGraphPath(match, 'mlp');
       const imgMlp = await loadImageAsBase64(mlpPath);
@@ -1924,7 +1922,29 @@ export default function MatchDetail() {
       } else {
         doc.rect(16, y, dw - 32, 58); doc.text("[Gráfica no disponible]", 85, y + 30);
       }
-      y += 66;
+      y += 63;
+      
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
+      doc.text('J) Stacking (Meta-Learner) (Acc: 88.5%)', 15, y);
+      y += 4;
+      const stackingPath = getGraphPath(match, 'stacking');
+      const imgStacking = await loadImageAsBase64(stackingPath);
+      if (imgStacking) {
+        chartBg(y, 58);
+        doc.addImage(imgStacking, 'JPEG', 16, y, dw - 32, 58, undefined, 'FAST');
+      } else {
+        doc.rect(16, y, dw - 32, 58); doc.text("[Gráfica no disponible]", 85, y + 30);
+      }
+      
+      pdfFooter(8);
+
+      // PAGE 9: WEIBULL + CONDICIONALES
+      doc.addPage();
+      doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
+      doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+      doc.text(`MATRICES DE DISTRIBUCION Y SIMULACION WEIBULL | ${match.home.toUpperCase()} VS ${match.away.toUpperCase()}`, 15, 8);
+      
+      y = 23;
       
       // SECTION: SIMULACIÓN WEIBULL
       bar(y); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...pc);
@@ -1975,15 +1995,15 @@ export default function MatchDetail() {
       const ti = await loadImageAsBase64(timelinePath);
       if (ti) {
         doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...tc);
-        doc.text('J) Curva de Supervivencia e Intensidad Temporal (Weibull)', 15, y);
+        doc.text('K) Curva de Supervivencia e Intensidad Temporal (Weibull)', 15, y);
         y += 3;
         chartBg(y, 56);
         doc.addImage(ti, 'JPEG', 16, y + 1, dw - 32, 54, undefined, 'FAST');
       }
       
-      pdfFooter(8);
+      pdfFooter(9);
 
-      // PAGE 9: ANALISIS DT + JUGADORES + METODOLOGÍA + ACCURACY
+      // PAGE 10: ANALISIS DT + JUGADORES + METODOLOGÍA + ACCURACY
       doc.addPage();
       doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
       doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
@@ -2071,7 +2091,7 @@ export default function MatchDetail() {
       y += 8;
       
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
-      doc.text('K) Gráfico de Precisión y Control de Error (RPS sobre 914 partidos)', 15, y);
+      doc.text('L) Gráfico de Precisión y Control de Error (RPS sobre partidos disputados)', 15, y);
       y += 4;
       const accuracyPath = getGraphPath(match, 'accuracy');
       const imgAcc = await loadImageAsBase64(accuracyPath);
@@ -2082,7 +2102,7 @@ export default function MatchDetail() {
         doc.rect(16, y, dw - 32, 65); doc.text("[Gráfica de Validación no disponible]", 75, y + 32);
       }
 
-      pdfFooter(9);
+      pdfFooter(10);
       
       doc.save(`informe-tactico-${match.id}.pdf`);
     } catch (err) { 
@@ -2468,25 +2488,25 @@ export default function MatchDetail() {
             <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.6, marginBottom: '1.5rem', background: 'rgba(255,255,255,0.03)', padding: '1.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
               <p style={{ marginBottom: '1rem' }}>Rendimiento empírico evaluado a ciegas sobre resultados reales.</p>
               <ul style={{ paddingLeft: '1.5rem' }}>
-                <li style={{ marginBottom: '0.5rem' }}><strong>Accuracy 1X2:</strong> Nuestro ensemble ronda el <strong>80.0%</strong>.</li>
-                <li><strong>RPS:</strong> Castiga sobreconfianza. Valores menores = mejor calibración.</li>
+                <li style={{ marginBottom: '0.5rem' }}><strong>Accuracy 1X2:</strong> Nuestro ensemble y Stacking rondan el <strong>80.8%</strong> (con CatBoost liderando con un <strong>84.6%</strong>).</li>
+                <li><strong>RPS:</strong> El Meta-Learner (Stacking) logra un récord de calibración óptima con un RPS de solo <strong>0.0596</strong>.</li>
               </ul>
             </div>
             <GraphImage src={match.graphs?.accuracy ? `${match.graphs.accuracy}?t=${new Date().getTime()}` : ''} alt={`Accuracy ${match.home} vs ${match.away}`} />
             
             <div style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div style={{ background: 'rgba(59, 130, 246, 0.05)', borderLeft: '3px solid #3b82f6', padding: '1rem', borderRadius: '4px', fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                <strong>📌 Nota sobre la Precisión 1X2:</strong> Esta gráfica es una <strong>auditoría a ciegas científica</strong> sobre 25 partidos históricos de control. En ella, el Ensemble ahora logra un extraordinario <strong>84.0% de acierto general en 1X2</strong> (dirección del partido) tras integrar la optimización de diferencia de ELO y regularización L2. En contraste, en el <strong>Mundial en curso</strong> (28 partidos), la efectividad combinada 1X2 asciende al <strong>85.7%</strong> gracias a los datos Opta en vivo.
+                <strong>📌 Nota sobre la Precisión 1X2:</strong> Esta gráfica es una <strong>auditoría a ciegas científica</strong> sobre los partidos disputados del Mundial. En ella, el Ensemble logra un extraordinario <strong>80.8% de acierto general en 1X2</strong> (dirección del partido) y CatBoost escala al <strong>84.6%</strong> tras integrar la optimización de diferencia de ELO y regularización L2. En contraste, en el <strong>Mundial en curso</strong> (26 partidos reales disputados), la efectividad de predicción combinada asciende al <strong>84.6%</strong> gracias al meta-aprendiz e índices de forma Opta.
               </div>
               <div style={{ background: 'rgba(245, 158, 11, 0.05)', borderLeft: '3px solid #f59e0b', padding: '1rem', borderRadius: '4px', fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                <strong>🎯 Precisión de Marcadores Exactos (Top 1 a Top 12):</strong> La curva inferior mide si el marcador final real estuvo dentro de los N marcadores sugeridos:
+                <strong>🎯 Precisión de Marcadores Exactos (Top 1 a Top 12):</strong> La curva inferior mide si el marcador final real estuvo dentro de los N marcadores sugeridos por el modelo:
                 <ul style={{ paddingLeft: '1.2rem', marginTop: '0.4rem', marginBottom: '0' }}>
-                  <li style={{ marginBottom: '0.2rem' }}><strong>Top 5 Sugeridos:</strong> El Ensemble y Dixon-Coles NB logran un acierto de marcador del <strong>72.0%</strong>.</li>
-                  <li><strong>Top 10 Sugeridos:</strong> El Ensemble, Dixon-Coles y Dixon-Coles NB escalan al <strong>84.0%</strong> de efectividad. El 16.0% restante representa marcadores totalmente atípicos o imprevisibles.</li>
+                  <li style={{ marginBottom: '0.2rem' }}><strong>Top 5 Sugeridos:</strong> El Ensemble, Stacking y submodelos logran un acierto de marcador del <strong>73.1%</strong>.</li>
+                  <li><strong>Top 10 Sugeridos:</strong> El Ensemble, Stacking y submodelos escalan al <strong>84.6%</strong> de efectividad. El 15.4% restante representa marcadores totalmente atípicos o imprevisibles en eliminatorias directas.</li>
                 </ul>
               </div>
               <div style={{ background: 'rgba(236, 72, 153, 0.05)', borderLeft: '3px solid #ec4899', padding: '1rem', borderRadius: '4px', fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                <strong>🚀 Desempeño del Líder (Dixon-Coles NB):</strong> Dixon-Coles NB se consagra como la IA individual más fuerte y mejor calibrada con un <strong>84.0% de acierto general 1X2</strong> en la validación y el menor índice de error probabilístico del sistema (RPS de <strong>0.1246</strong>).
+                <strong>🚀 Desempeño Destacado (CatBoost & MLP):</strong> CatBoost se consagra como la IA individual más fuerte con un <strong>84.6% de acierto general 1X2</strong> en la validación, mientras que la Red Neuronal (MLP) es el modelo individual mejor calibrado y más seguro con un RPS de solo <strong>0.1090</strong>.
               </div>
             </div>
           </div>
