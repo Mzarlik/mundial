@@ -530,9 +530,12 @@ def fit_dixon_coles(train, cutoff, elo_by_team, final_elos, half_life=HALF_LIFE)
     }
 
 def dc_matrix(dcm, h, a, host, elo_h, elo_a):
+    if dcm is None:
+        M = np.outer(poisson.pmf(range(MAXG), 1.2), poisson.pmf(range(MAXG), 1.2))
+        return M / M.sum()
+        
     idx = dcm['idx']
     if h not in idx or a not in idx:
-        # Fallback si el equipo no está en Dixon-Coles
         M = np.outer(poisson.pmf(range(MAXG), 1.2), poisson.pmf(range(MAXG), 1.2))
         return M / M.sum()
         
@@ -636,6 +639,10 @@ def fit_dixon_coles_nb(train, cutoff, elo_by_team, final_elos, half_life=HALF_LI
     }
 
 def dc_nb_matrix(dcm, h, a, host, elo_h, elo_a):
+    if dcm is None:
+        M = np.outer(poisson.pmf(range(MAXG), 1.2), poisson.pmf(range(MAXG), 1.2))
+        return M / M.sum()
+        
     idx = dcm['idx']
     if h not in idx or a not in idx:
         M = np.outer(poisson.pmf(range(MAXG), 1.2), poisson.pmf(range(MAXG), 1.2))
@@ -780,6 +787,9 @@ def fit_mcmc(train, final_elos, elo_by_team=None, draws=1000, tune=1000, seed=1,
     return {'trace': trace, 'idxb': idxb, 'keep': keep, 'cov_std': cov_std}
 
 def mcmc_matrix_mean(mc, h, a, host, dc_model, elo_h=None, elo_a=None, form_diff=0.0, mv_diff=0.0, gf5_diff=0.0, ga5_diff=0.0):
+    if mc is None:
+        return dc_matrix(dc_model, h, a, host, elo_h or 1500, elo_a or 1500)
+        
     post = mc['trace'].posterior
     idxb = mc['idxb']
     cov_std = mc.get('cov_std', {})
@@ -1049,6 +1059,9 @@ def train_catboost_goals(X, yh, ya, teams_h, teams_a, sample_weight=None):
     return cb_h, cb_a
 
 def mlp_matrix(scaler, rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue=None, theta=-0.25, sharpen=1.0):
+    if scaler is None or rh is None or ra is None:
+        return dc_matrix(dcm, h, a, host, 1500, 1500), 1.2, 1.2
+        
     f = make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue)
     if f is None:
         M = frank_copula_matrix(1.2, 1.2, theta=theta)
@@ -1068,6 +1081,9 @@ def mlp_matrix(scaler, rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team,
     return M / M.sum(), lh, la
 
 def xgb_matrix(rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue=None, theta=-0.25):
+    if rh is None or ra is None:
+        return dc_matrix(dcm, h, a, host, 1500, 1500), 1.2, 1.2
+        
     f = make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue)
     if f is None:
         M = frank_copula_matrix(1.2, 1.2, theta=theta)
@@ -1082,6 +1098,9 @@ def xgb_matrix(rh, ra, dcm, h, a, host, date, form_by_team, elo_by_team, final_e
     return M / M.sum(), lh, la
 
 def catboost_matrix(cb_h, cb_a, dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue=None, theta=-0.25):
+    if cb_h is None or cb_a is None:
+        return dc_matrix(dcm, h, a, host, 1500, 1500), 1.2, 1.2
+        
     f = make_features(dcm, h, a, host, date, form_by_team, elo_by_team, final_elos, h2h_dict, is_comp, pi_by_team, final_pis, venue)
     if f is None:
         M = frank_copula_matrix(1.2, 1.2, theta=theta)
@@ -1094,6 +1113,8 @@ def catboost_matrix(cb_h, cb_a, dcm, h, a, host, date, form_by_team, elo_by_team
     
     lh = float(cb_h.predict(df_x)[0])
     la = float(cb_a.predict(df_x)[0])
+    lh = clip_lambda(lh)
+    la = clip_lambda(la)
     M = frank_copula_matrix(lh, la, theta=theta)
     return M / M.sum(), lh, la
 
@@ -1860,6 +1881,20 @@ if __name__ == '__main__':
     t_start = time.time()
     script_dir = os.path.dirname(os.path.abspath(__file__))
     
+    # =========================================================================
+    # CONFIGURACIÓN DE EJECUCIÓN MODULAR DE MODELOS
+    # =========================================================================
+    # Activa o desactiva qué modelos se deben entrenar/ejecutar para agilizar pruebas.
+    # Si un modelo está desactivado, el sistema usará Dixon-Coles como fallback.
+    RUN_DIXON_COLES = True
+    RUN_DIXON_COLES_NB = True
+    RUN_MCMC_BAYES = True      # Pon en False para omitir PyMC (~2-4 min)
+    RUN_XGBOOST = True
+    RUN_MLP = True
+    RUN_CATBOOST = True
+    RUN_MFA = True
+    # =========================================================================
+    
     # 1. Cargar partidos de matches.js
     js_path = os.path.join(script_dir, 'src', 'config', 'matches.js')
     matches = parse_matches(js_path)
@@ -1957,46 +1992,70 @@ if __name__ == '__main__':
     for pair in h2h_dict:
         h2h_dict[pair].sort(key=lambda x: x[0])
         
-    # 4. Ajustar modelos GLOBALES finales
-    print("\n[INFO] Ajustando Dixon-Coles global...")
-    dc_final = fit_dixon_coles(df_all[(df_all.date >= DESDE) & (df_all.date < MATCH_DATE)], MATCH_DATE, elo_by_team, final_elos)
+    # 4. Ajustar modelos GLOBALES finales de forma modular
+    dc_final = None
+    if RUN_DIXON_COLES:
+        print("\n[INFO] Ajustando Dixon-Coles global...")
+        dc_final = fit_dixon_coles(df_all[(df_all.date >= DESDE) & (df_all.date < MATCH_DATE)], MATCH_DATE, elo_by_team, final_elos)
     
-    print("[INFO] Ajustando Dixon-Coles NB (Binomial Negativa) global...")
-    dc_nb_final = fit_dixon_coles_nb(df_all[(df_all.date >= DESDE) & (df_all.date < MATCH_DATE)], MATCH_DATE, elo_by_team, final_elos)
+    dc_nb_final = None
+    if RUN_DIXON_COLES_NB:
+        print("[INFO] Ajustando Dixon-Coles NB (Binomial Negativa) global...")
+        dc_nb_final = fit_dixon_coles_nb(df_all[(df_all.date >= DESDE) & (df_all.date < MATCH_DATE)], MATCH_DATE, elo_by_team, final_elos)
     
-    print("[INFO] Muestreando MCMC Bayesiano global (PyMC)... Esto puede tardar ~2-4 min...")
-    # Evitar fuga de datos en prioris de MCMC usando ratings ELO al corte de MATCH_DATE
-    elo_at_cutoff = {t: get_elo_at_date(t, MATCH_DATE, elo_by_team, final_elos) for t in final_elos}
-    mc_final = fit_mcmc(df_all[(df_all.date >= DESDE_BAYES) & (df_all.date < MATCH_DATE)], elo_at_cutoff, elo_by_team=elo_by_team, draws=MCMC_DRAWS, tune=MCMC_TUNE, form_by_team=form_by_team)
+    mc_final = None
+    if RUN_MCMC_BAYES:
+        print("[INFO] Muestreando MCMC Bayesiano global (PyMC)... Esto puede tardar ~2-4 min...")
+        # Evitar fuga de datos en prioris de MCMC usando ratings ELO al corte de MATCH_DATE
+        elo_at_cutoff = {t: get_elo_at_date(t, MATCH_DATE, elo_by_team, final_elos) for t in final_elos}
+        mc_final = fit_mcmc(df_all[(df_all.date >= DESDE_BAYES) & (df_all.date < MATCH_DATE)], elo_at_cutoff, elo_by_team=elo_by_team, draws=MCMC_DRAWS, tune=MCMC_TUNE, form_by_team=form_by_team)
     
-    print("[INFO] Entrenando regresores XGBoost globales...")
-    X_f, yh_f, ya_f, th_f, ta_f = build_dataset(dc_final, MATCH_DATE, df_all, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis)
+    # Preparar dataset para modelos supervisados si alguno está activo
+    reg_home, reg_away = None, None
+    scaler_f, mlp_home, mlp_away = None, None, None
+    cb_home, cb_away = None, None
     
-    # Calcular pesos temporales (Time-Decay)
-    n_samples = len(X_f)
-    decay_lambda = 0.0003
-    time_weights = np.exp(-decay_lambda * (n_samples - np.arange(n_samples)))
-    
-    # Aplicar peso x3 a los partidos reales del Mundial
-    for idx_train in range(len(X_f)):
-        if idx_train >= (len(X_f) - 25):
-            time_weights[idx_train] *= 3.0
+    if RUN_XGBOOST or RUN_MLP or RUN_CATBOOST:
+        print("[INFO] Generando dataset de características de entrenamiento...")
+        # Para construir el dataset requerimos el modelo de Dixon-Coles clásico. Si está apagado, lo ajustamos al vuelo de forma local para las variables.
+        dc_ref = dc_final
+        if dc_ref is None:
+            dc_ref = fit_dixon_coles(df_all[(df_all.date >= DESDE) & (df_all.date < MATCH_DATE)], MATCH_DATE, elo_by_team, final_elos)
             
-    time_weights = time_weights / np.mean(time_weights)
-
-    reg_home, reg_away = train_xgb_goals(X_f, yh_f, ya_f, sample_weight=time_weights)
-    print(f"[INFO] XGBoost entrenado con {len(X_f)} partidos.")
-    
-    print("[INFO] Entrenando Red Neuronal (MLP) global con sample_weights + class-balancing...")
-    outcomes = np.where(yh_f > ya_f, 0, np.where(yh_f == ya_f, 1, 2))
-    class_counts = np.bincount(outcomes)
-    class_weights = 1.0 / (class_counts / max(class_counts))
-    class_sample_weights = np.array([class_weights[o] for o in outcomes])
-    class_sample_weights = class_sample_weights / class_sample_weights.mean()
-    combined_weights = time_weights * class_sample_weights
-    scaler_f, mlp_home, mlp_away = train_mlp_goals(X_f, yh_f, ya_f, sample_weight=combined_weights)
-    print("[INFO] Entrenando CatBoost global...")
-    cb_home, cb_away = train_catboost_goals(X_f, yh_f, ya_f, th_f, ta_f, sample_weight=time_weights)
+        X_f, yh_f, ya_f, th_f, ta_f = build_dataset(dc_ref, MATCH_DATE, df_all, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis)
+        
+        # Calcular pesos temporales (Time-Decay)
+        n_samples = len(X_f)
+        decay_lambda = 0.0003
+        time_weights = np.exp(-decay_lambda * (n_samples - np.arange(n_samples)))
+        
+        # Aplicar peso x3 a los partidos reales del Mundial
+        for idx_train in range(len(X_f)):
+            if idx_train >= (len(X_f) - 25):
+                time_weights[idx_train] *= 3.0
+                
+        time_weights = time_weights / np.mean(time_weights)
+        
+        if RUN_XGBOOST:
+            print("[INFO] Entrenando regresores XGBoost globales...")
+            reg_home, reg_away = train_xgb_goals(X_f, yh_f, ya_f, sample_weight=time_weights)
+            print(f"[INFO] XGBoost entrenado con {len(X_f)} partidos.")
+            
+        if RUN_MLP:
+            print("[INFO] Entrenando Red Neuronal (MLP) global con sample_weights + class-balancing...")
+            outcomes = np.where(yh_f > ya_f, 0, np.where(yh_f == ya_f, 1, 2))
+            class_counts = np.bincount(outcomes)
+            class_weights = 1.0 / (class_counts / max(class_counts))
+            class_sample_weights = np.array([class_weights[o] for o in outcomes])
+            class_sample_weights = class_sample_weights / class_sample_weights.mean()
+            combined_weights = time_weights * class_sample_weights
+            scaler_f, mlp_home, mlp_away = train_mlp_goals(X_f, yh_f, ya_f, sample_weight=combined_weights)
+            print("[INFO] Red Neuronal MLP entrenada.")
+            
+        if RUN_CATBOOST:
+            print("[INFO] Entrenando CatBoost global...")
+            cb_home, cb_away = train_catboost_goals(X_f, yh_f, ya_f, th_f, ta_f, sample_weight=time_weights)
+            print("[INFO] CatBoost entrenado.")
     
     print("\n[INFO] Ejecutando simulación de validación basada en tus partidos jugados...")
     simulated_results = {}
