@@ -99,7 +99,7 @@ def main():
 
     # 2. Modificar train_catboost_goals para usar CB_DEPTH y forzar thread_count=-1
     source_cb = inspect.getsource(predict_matches.train_catboost_goals)
-    source_cb = source_cb.replace("depth=4", "depth=CB_DEPTH, thread_count=-1")
+    source_cb = source_cb.replace("depth=4", "depth=CB_DEPTH")
     local_cb = {}
     exec(source_cb, predict_matches.__dict__, local_cb)
     predict_matches.train_catboost_goals = local_cb['train_catboost_goals']

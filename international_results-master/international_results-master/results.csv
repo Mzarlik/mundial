@@ -49185,7 +49185,7 @@ date,home_team,away_team,home_score,away_score,tournament,city,country,neutral
 2026-03-28,San Marino,Faroe Islands,1.0,2.0,Friendly,Serravalle,San Marino,False
 2026-03-28,Scotland,Japan,0.0,1.0,Friendly,Glasgow,Scotland,False
 2026-03-28,Senegal,Peru,2.0,0.0,Friendly,Paris,France,True
-2026-03-28,United States,Belgium,2.0,5.0,Friendly,Atlanta,United States,False
+2026-03-28,United States,Belgium,1.0,4.0,Friendly,Atlanta,United States,False
 2026-03-28,Kyrgyzstan,Madagascar,2.0,5.0,Friendly,Antalya,Turkey,True
 2026-03-28,Botswana,Zimbabwe,0.0,3.0,Mukuru 4 Nations,Francistown,Botswana,False
 2026-03-28,Namibia,Comoros,0.0,0.0,FIFA Series,Astana,Kazakhstan,True
@@ -49476,33 +49476,3 @@ date,home_team,away_team,home_score,away_score,tournament,city,country,neutral
 2026-06-27,DR Congo,Uzbekistan,3.0,1.0,FIFA World Cup,Atlanta,United States,True
 2026-06-27,Panama,England,0.0,2.0,FIFA World Cup,East Rutherford,United States,True
 2026-06-27,Croatia,Ghana,2.0,1.0,FIFA World Cup,Philadelphia,United States,True
-2026-06-15,South Africa,Canada,0.0,1.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,Brazil,Japan,2.0,1.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,Germany,Paraguay,1.0,1.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,Netherlands,Morocco,1.0,1.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,Ivory Coast,Norway,1.0,2.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,France,Sweden,3.0,0.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,Mexico,Ecuador,2.0,0.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,England,DR Congo,2.0,1.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,Belgium,Senegal,3.0,2.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,United States,Bosnia and Herzegovina,2.0,0.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,Portugal,Croatia,2.0,1.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,Australia,Egypt,1.0,1.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,Argentina,Cape Verde,3.0,2.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,Colombia,Ghana,1.0,0.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,Spain,Austria,3.0,0.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,Switzerland,Algeria,2.0,0.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,Paraguay,France,0.0,1.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,Canada,Morocco,0.0,3.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,Brazil,Norway,1.0,2.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,Mexico,England,2.0,3.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,Portugal,Spain,0.0,1.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,United States,Belgium,1.0,4.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,Argentina,Egypt,3.0,2.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,Switzerland,Colombia,0.0,0.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,France,Morocco,2.0,0.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,Spain,Belgium,2.0,1.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,Norway,England,1.0,2.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,Argentina,Switzerland,3.0,1.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,France,Spain,0.0,2.0,FIFA World Cup,Dallas,United States,True
-2026-06-15,England,Argentina,1.0,2.0,FIFA World Cup,Dallas,United States,True

@@ -11,7 +11,7 @@ export default function Home() {
         </p>
         <div style={{marginTop:'2.5rem',display:'flex',gap:'1rem',justifyContent:'center',flexWrap:'wrap'}}>
           <Link to="/cuadro" className="btn btn-accent" style={{padding: '1rem 2rem'}}>🏆 Simulador de Llaves</Link>
-          <Link to="/parleys" className="btn btn-outline" style={{padding: '1rem 2rem'}}>🧪 Laboratorios Estocásticos</Link>
+          <Link to="/suizo" className="btn btn-outline" style={{padding: '1rem 2rem'}}>🧪 Laboratorios Estocásticos</Link>
         </div>
       </div>
       

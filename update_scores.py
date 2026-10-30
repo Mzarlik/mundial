@@ -1,7 +1,8 @@
 import pandas as pd
 import os
 
-csv_path = r"C:\Users\Malpi\Documents\GitHub\mundial\international_results-master\international_results-master\results.csv"
+script_dir = os.path.dirname(os.path.abspath(__file__))
+csv_path = os.path.join(script_dir, "international_results-master", "international_results-master", "results.csv")
 
 # Transcribed matches from the screenshots
 updates = [

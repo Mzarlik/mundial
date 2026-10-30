@@ -1333,8 +1333,8 @@ export default function MatchDetail() {
       
       const homeAvg = getTeamOptaStats(match.home, playerStats);
       const awayAvg = getTeamOptaStats(match.away, playerStats);
-      const homeGoals = getTeamTournamentGoals(match.home, MATCHES);
-      const awayGoals = getTeamTournamentGoals(match.away, MATCHES);
+      const homeGoals = getTeamTournamentGoals(match.home, allPredictions, MATCHES);
+      const awayGoals = getTeamTournamentGoals(match.away, allPredictions, MATCHES);
       const homeMods = getOptaModifiers(match.home, homeAvg, homeGoals);
       const awayMods = getOptaModifiers(match.away, awayAvg, awayGoals);
       
@@ -1453,7 +1453,7 @@ export default function MatchDetail() {
         doc.text('Datos de valor de mercado no cargados o no disponibles.', 18, y + 6);
       }
       
-      const totalPages = 9;
+      const totalPages = 10;
       const pdfFooter = (pg) => {
         doc.setDrawColor(200, 210, 220); doc.line(15, dh - 18, dw - 15, dh - 18);
         doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5); doc.setTextColor(150, 150, 150);
@@ -1647,25 +1647,29 @@ export default function MatchDetail() {
       
       card(y - 2, 40); doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...tc);
       const getTopPlayers = (teamName, expectedGoals) => {
-        const engTeam = SPANISH_TO_ENGLISH[teamName] || teamName;
-        const teamKeyLower = engTeam.toLowerCase();
+        const keywords = getKeywords(teamName);
         const playersMap = {};
         let teamMatchesPlayed = 0;
         Object.keys(playerStats).forEach(matchKey => {
           const entry = playerStats[matchKey];
-          const isHome = entry.teams[0].toLowerCase() === teamKeyLower;
-          const isAway = entry.teams[1].toLowerCase() === teamKeyLower;
+          if (!entry || !entry.teams || !entry.players) return;
+          const homeKeywords = getKeywords(entry.teams[0]);
+          const awayKeywords = getKeywords(entry.teams[1]);
+          const isHome = homeKeywords.some(kw => keywords.includes(kw));
+          const isAway = awayKeywords.some(kw => keywords.includes(kw));
           if (isHome || isAway) {
             teamMatchesPlayed++;
+            const targetTeam = isHome ? entry.teams[0] : entry.teams[1];
             entry.players.forEach(p => {
-              if (p.team.toLowerCase() === teamKeyLower) {
-                const name = p.name;
-                if (!playersMap[name]) {
-                  playersMap[name] = { name: p.name, position: p.position || 'MF', totalShots: 0, totalXG: 0, matches: 0 };
+              if (p.team === targetTeam) {
+                const cleanName = p.name ? p.name.replace(/^(Starter|Substitute)\s*/i, '').trim() : '';
+                if (!cleanName) return;
+                if (!playersMap[cleanName]) {
+                  playersMap[cleanName] = { name: cleanName, position: p.position || 'MF', totalShots: 0, totalXG: 0, matches: 0 };
                 }
-                playersMap[name].totalShots += (p.shots_inside_box || 0) + (p.shots_outside_box || 0);
-                playersMap[name].totalXG += p.expected_goals || 0.0;
-                playersMap[name].matches++;
+                playersMap[cleanName].totalShots += (p.shots_inside_box || 0) + (p.shots_outside_box || 0);
+                playersMap[cleanName].totalXG += p.expected_goals || 0.0;
+                playersMap[cleanName].matches++;
               }
             });
           }
@@ -1904,6 +1908,8 @@ doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
         doc.rect(16, y, dw - 32, 58); doc.text("[Gráfica no disponible]", 85, y + 30);
       }
       
+      pdfFooter(7);
+
       // PAGE 8: MLP + STACKING
       doc.addPage();
       doc.setFillColor(...pc); doc.rect(0, 0, dw, 12, 'F'); 
@@ -1965,14 +1971,16 @@ doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...tc);
       y += 26;
       
       // Knockout classification (if applicable)
-      const isKnockout = match.day === 'dieciseisavos' || match.day === 'octavos' || match.day === 'cuartos' || match.day === 'semis' || match.day === 'final';
+      const isKnockout = match.day === 'dieciseisavos' || match.day === 'octavos' || match.day === 'cuartos' || match.day === 'semis' || match.day === 'tercer_lugar' || match.day === 'final';
       if (isKnockout) {
         card(y - 2, 28); 
         const probEtH = prediction.prob_et_home ?? 0.05, probEtA = prediction.prob_et_away ?? 0.05;
-        const probPkH = prediction.prob_pk_home ?? 0.25, probPkA = prediction.prob_pk_away ?? 0.25;
+        const probEtD = Math.max(0, 1 - probEtH - probEtA);
         const shootoutH = prediction.shootout_home ?? 0.50, shootoutA = prediction.shootout_away ?? 0.50;
-        const homeAdv = (pH + pD * (probEtH + shootoutH * (1 - probEtH - probEtA))) * 100;
-        const awayAdv = (pA + pD * (probEtA + shootoutA * (1 - probEtH - probEtA))) * 100;
+        const probPkH = probEtD * shootoutH;
+        const probPkA = probEtD * shootoutA;
+        const homeAdv = (pH + pD * (probEtH + probPkH)) * 100;
+        const awayAdv = (pA + pD * (probEtA + probPkA)) * 100;
         
         doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...bc);
         doc.text(`PROYECCION DE CLASIFICACION (CUADRO ELIMINATORIO):`, 18, y + 3);

@@ -10,6 +10,7 @@ import Parlays from './pages/Parlays';
 import Bracket from './pages/Bracket';
 import SwissSystem from './pages/SwissSystem';
 import PlayerStats from './pages/PlayerStats';
+import Support from './pages/Support';
 
 /**
  * Componente Principal (App) que define la estructura básica de la aplicación:
@@ -50,6 +51,7 @@ export default function App() {
           <Route path="/cuadro" element={<Bracket />} />
           <Route path="/suizo" element={<SwissSystem />} />
           <Route path="/estadisticas-jugadores" element={<PlayerStats />} />
+          <Route path="/soporte" element={<Support />} />
         </Routes>
       </main>
     </div>

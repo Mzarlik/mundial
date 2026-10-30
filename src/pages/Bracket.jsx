@@ -109,7 +109,7 @@ export default function Bracket() {
     'usa-bel': 'Bélgica',         // Jugado, avanzó Bélgica (1-4 vs EE.UU.)
     'arg-egy': 'Argentina',
     'fra-mar': 'Francia',         // Jugado, avanzó Francia (2-0 vs Marruecos)       // Jugado, avanzó Argentina (3-2 vs Egipto)
-    'sui-col': 'Suiza',        // Jugado, avanzó Colombia (0-0, ganó penales vs Suiza)
+    'sui-col': 'Suiza',        // Jugado, avanzó Suiza (0-0, ganó penales vs Colombia)
     'esp-bel': 'España',          // Jugado, avanzó España (2-1 vs Bélgica)
     'nor-eng': 'Inglaterra',      // Jugado, avanzó Inglaterra (1-2 AET vs Noruega)
     'arg-sui': 'Argentina',       // Jugado, avanzó Argentina (3-1 AET vs Suiza)
@@ -188,11 +188,16 @@ export default function Bracket() {
   const semiL = simulateEloMatch(qL1.winner, qL2.winner, 'fra-esp');
   const semiR = simulateEloMatch(qR1.winner, qR2.winner, 'eng-arg');
 
+  const finalMatchObj = MATCHES.find(m => m.day === 'final');
+  const thirdPlaceMatchObj = MATCHES.find(m => m.day === 'tercer_lugar');
+  const finalId = finalMatchObj ? finalMatchObj.id : 'esp-arg';
+  const thirdId = thirdPlaceMatchObj ? thirdPlaceMatchObj.id : 'fra-eng';
+
   // 4. Tercer Lugar
-  const thirdPlace = simulateEloMatch(semiL.loser, semiR.loser, 'match-63');
+  const thirdPlace = simulateEloMatch(semiL.loser, semiR.loser, thirdId);
 
   // 5. Gran Final
-  const grandFinal = simulateEloMatch(semiL.winner, semiR.winner, 'final');
+  const grandFinal = simulateEloMatch(semiL.winner, semiR.winner, finalId);
 
   const getMatchBySlugId = (slugId) => {
     return r32Matches.find(m => m.id === slugId) || {
@@ -389,13 +394,13 @@ export default function Bracket() {
               </div>
               <div>
                 <div className="bracket-round-title">Gran Final</div>
-                {renderSimMatch(semiL.winner, semiR.winner, grandFinal, false, null, 'match-64')}
+                {renderSimMatch(semiL.winner, semiR.winner, grandFinal, false, null, finalId)}
               </div>
 
               {/* TERCER LUGAR */}
               <div style={{ marginTop: '2rem', padding: '1rem', borderTop: '1px dashed rgba(255,255,255,0.2)' }}>
                 <div className="bracket-round-title" style={{ fontSize: '0.8rem', color: '#9ca3af' }}>Tercer Lugar</div>
-                {renderSimMatch(semiL.loser, semiR.loser, thirdPlace, false, null, 'match-63')}
+                {renderSimMatch(semiL.loser, semiR.loser, thirdPlace, false, null, thirdId)}
               </div>
             </div>
           </div>
@@ -505,7 +510,7 @@ export default function Bracket() {
               5. Gran Final
             </h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', marginTop: '1rem' }}>
-              {renderSimMatch(semiL.winner, semiR.winner, grandFinal, false, null, 'match-64')}
+              {renderSimMatch(semiL.winner, semiR.winner, grandFinal, false, null, finalId)}
             </div>
           </div>
 
@@ -514,7 +519,7 @@ export default function Bracket() {
               Partido por el Tercer Lugar
             </h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', marginTop: '1rem' }}>
-              {renderSimMatch(semiL.loser, semiR.loser, thirdPlace, false, null, 'match-63')}
+              {renderSimMatch(semiL.loser, semiR.loser, thirdPlace, false, null, thirdId)}
             </div>
           </div>
         </div>

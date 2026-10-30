@@ -122,6 +122,23 @@ export default function Sidebar({ open, onClose }) {
           <ChartIcon size={16} />
           <span>Estadísticas de Jugadores</span>
         </NavLink>
+        <NavLink 
+          to="/como-probar" 
+          style={({ isActive }) => ({ 
+            color: isActive ? '#fff' : '#38bdf8', 
+            background: isActive ? 'rgba(56, 189, 248, 0.08)' : undefined,
+            borderLeft: isActive ? '3px solid #38bdf8' : '3px solid transparent',
+            borderRight: 'none',
+            paddingLeft: isActive ? '1.75rem' : '1.5rem',
+            fontWeight: 'bold',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px'
+          })}
+        >
+          <span style={{ fontSize: '15px' }}>🔬</span>
+          <span>Validación de Modelos</span>
+        </NavLink>
         
         <div className="sidebar-section-label">Resultados por día</div>
         <button className="sidebar-toggle-btn" onClick={() => setDaysOpen(!daysOpen)}>

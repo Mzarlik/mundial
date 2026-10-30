@@ -35,9 +35,9 @@ def evaluate_tournament(df_all, start_date, end_date, tournament_name):
         return
         
     print("[INFO] Computing DC, Elo, Pi, Form on historical data...")
-    dc_model = pm.fit_dixon_coles(df_train, cutoff)
     _, elo_by_team, final_elos = pm.compute_elo_ratings(df_train)
     _, pi_by_team, final_pis = pm.compute_pi_ratings(df_train)
+    dc_model = pm.fit_dixon_coles(df_train, cutoff, elo_by_team, final_elos)
     
     long_list = []
     for r in df_train[df_train.date >= pm.DESDE].itertuples():
@@ -112,7 +112,9 @@ def evaluate_tournament(df_all, start_date, end_date, tournament_name):
         host = 1.0 if row.country == h else 0.0
         
         # 1. Dixon-Coles
-        M_dc = pm.dc_matrix(dc_model, h, a, host)
+        elo_h_mc = pm.get_elo_at_date(h, row.date, elo_by_team, final_elos)
+        elo_a_mc = pm.get_elo_at_date(a, row.date, elo_by_team, final_elos)
+        M_dc = pm.dc_matrix(dc_model, h, a, host, elo_h_mc, elo_a_mc)
         
         # 2. MCMC Bayesiano
         elo_h_mc = pm.get_elo_at_date(h, row.date, elo_by_team, final_elos)

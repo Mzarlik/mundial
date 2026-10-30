@@ -97,8 +97,8 @@ def main():
         h2h_dict[pair].sort(key=lambda x: x[0])
         
     # Modelos
-    dc_final = pm.fit_dixon_coles(df_all[(df_all.date >= pm.DESDE) & (df_all.date < pm.MATCH_DATE)], pm.MATCH_DATE)
-    dc_nb_final = pm.fit_dixon_coles_nb(df_all[(df_all.date >= pm.DESDE) & (df_all.date < pm.MATCH_DATE)], pm.MATCH_DATE)
+    dc_final = pm.fit_dixon_coles(df_all[(df_all.date >= pm.DESDE) & (df_all.date < pm.MATCH_DATE)], pm.MATCH_DATE, elo_by_team, final_elos)
+    dc_nb_final = pm.fit_dixon_coles_nb(df_all[(df_all.date >= pm.DESDE) & (df_all.date < pm.MATCH_DATE)], pm.MATCH_DATE, elo_by_team, final_elos)
     mc_final = pm.fit_mcmc(df_all[(df_all.date >= pm.DESDE_BAYES) & (df_all.date < pm.MATCH_DATE)], final_elos, elo_by_team=elo_by_team, draws=1500, tune=1500, form_by_team=form_by_team)
     X_f, yh_f, ya_f, th_f, ta_f = pm.build_dataset(dc_final, pm.MATCH_DATE, df_all, form_by_team, elo_by_team, final_elos, h2h_dict, pi_by_team, final_pis)
     n_samples = len(X_f)
@@ -123,8 +123,10 @@ def main():
         h_eng = pm.SPANISH_TO_ENGLISH.get(h, h)
         a_eng = pm.SPANISH_TO_ENGLISH.get(a, a)
         
-        M_dc = pm.dc_matrix(dc_final, h_eng, a_eng, 0.0)
-        M_dcnb = pm.dc_nb_matrix(dc_nb_final, h_eng, a_eng, 0.0)
+        elo_h_mc = pm.get_elo_at_date(h_eng, pm.MATCH_DATE, elo_by_team, final_elos)
+        elo_a_mc = pm.get_elo_at_date(a_eng, pm.MATCH_DATE, elo_by_team, final_elos)
+        M_dc = pm.dc_matrix(dc_final, h_eng, a_eng, 0.0, elo_h_mc, elo_a_mc)
+        M_dcnb = pm.dc_nb_matrix(dc_nb_final, h_eng, a_eng, 0.0, elo_h_mc, elo_a_mc)
         elo_h_mc = pm.get_elo_at_date(h_eng, pm.MATCH_DATE, elo_by_team, final_elos)
         elo_a_mc = pm.get_elo_at_date(a_eng, pm.MATCH_DATE, elo_by_team, final_elos)
         fh_mc, gf5h_mc, ga5h_mc = pm.get_form_at_date(h_eng, pm.MATCH_DATE, form_by_team)
@@ -147,7 +149,7 @@ def main():
         elo_a = pm.get_elo_at_date(a_eng, pm.MATCH_DATE, elo_by_team, final_elos)
         fh = pm.get_form_at_date(h_eng, pm.MATCH_DATE, form_by_team)
         fa = pm.get_form_at_date(a_eng, pm.MATCH_DATE, form_by_team)
-        form_h_val = fh[2] if fh else 0.5
+        form_h_val = fh[0] if fh else 0.5
         form_a_val = fa[2] if fa else 0.5
         M_mfa, _, _ = pm.montecarlo_mfa_matrix(h_eng, a_eng, elo_h, elo_a, form_h_val, form_a_val, 0.0)
         
@@ -198,8 +200,10 @@ def main():
         h_eng = pm.SPANISH_TO_ENGLISH.get(h, h)
         a_eng = pm.SPANISH_TO_ENGLISH.get(a, a)
         
-        M_dc = pm.dc_matrix(dc_final, h_eng, a_eng, 0.0)
-        M_dcnb = pm.dc_nb_matrix(dc_nb_final, h_eng, a_eng, 0.0)
+        elo_h_mc = pm.get_elo_at_date(h_eng, pm.MATCH_DATE, elo_by_team, final_elos)
+        elo_a_mc = pm.get_elo_at_date(a_eng, pm.MATCH_DATE, elo_by_team, final_elos)
+        M_dc = pm.dc_matrix(dc_final, h_eng, a_eng, 0.0, elo_h_mc, elo_a_mc)
+        M_dcnb = pm.dc_nb_matrix(dc_nb_final, h_eng, a_eng, 0.0, elo_h_mc, elo_a_mc)
         elo_h_mc = pm.get_elo_at_date(h_eng, pm.MATCH_DATE, elo_by_team, final_elos)
         elo_a_mc = pm.get_elo_at_date(a_eng, pm.MATCH_DATE, elo_by_team, final_elos)
         fh_mc, gf5h_mc, ga5h_mc = pm.get_form_at_date(h_eng, pm.MATCH_DATE, form_by_team)
@@ -222,7 +226,7 @@ def main():
         elo_a = pm.get_elo_at_date(a_eng, pm.MATCH_DATE, elo_by_team, final_elos)
         fh = pm.get_form_at_date(h_eng, pm.MATCH_DATE, form_by_team)
         fa = pm.get_form_at_date(a_eng, pm.MATCH_DATE, form_by_team)
-        form_h_val = fh[2] if fh else 0.5
+        form_h_val = fh[0] if fh else 0.5
         form_a_val = fa[2] if fa else 0.5
         M_mfa, _, _ = pm.montecarlo_mfa_matrix(h_eng, a_eng, elo_h, elo_a, form_h_val, form_a_val, 0.0)
         

@@ -1,3 +1,23 @@
+const calcPoissonOver = (k, lambda) => {
+  let sum = 0;
+  let term = Math.exp(-lambda);
+  for (let i = 0; i <= Math.floor(k); i++) {
+    if (i > 0) term *= lambda / i;
+    sum += term;
+  }
+  return Math.min(0.95, Math.max(0.05, 1 - sum));
+};
+
+const calcPoissonUnder = (k, lambda) => {
+  let sum = 0;
+  let term = Math.exp(-lambda);
+  for (let i = 0; i <= Math.floor(k); i++) {
+    if (i > 0) term *= lambda / i;
+    sum += term;
+  }
+  return Math.min(0.95, Math.max(0.05, sum));
+};
+
 import React, { useState, useEffect } from 'react';
 import { MATCHES, flagUrl, DAYS } from '../config/matches';
 import { Link } from 'react-router-dom';
@@ -9,31 +29,35 @@ const getPlayerProps = (match, playerStats, predictions) => {
   if (!pred) return null;
   
   const calculateTopPlayer = (teamName, expectedGoals) => {
-    const engTeam = SPANISH_TO_ENGLISH[teamName] || teamName;
-    const teamKeyLower = engTeam.toLowerCase();
+    const keywords = getKeywords(teamName);
     const playersMap = {};
     let teamMatchesPlayed = 0;
     
     Object.keys(playerStats).forEach(matchKey => {
       const entry = playerStats[matchKey];
-      const isHome = entry.teams[0].toLowerCase() === teamKeyLower;
-      const isAway = entry.teams[1].toLowerCase() === teamKeyLower;
+      if (!entry || !entry.teams || !entry.players) return;
+      const homeKeywords = getKeywords(entry.teams[0]);
+      const awayKeywords = getKeywords(entry.teams[1]);
+      const isHome = homeKeywords.some(kw => keywords.includes(kw));
+      const isAway = awayKeywords.some(kw => keywords.includes(kw));
       if (isHome || isAway) {
         teamMatchesPlayed++;
+        const targetTeam = isHome ? entry.teams[0] : entry.teams[1];
         entry.players.forEach(p => {
-          if (p.team.toLowerCase() === teamKeyLower) {
-            const name = p.name;
-            if (!playersMap[name]) {
-              playersMap[name] = {
-                name: p.name,
+          if (p.team === targetTeam) {
+            const cleanName = p.name ? p.name.replace(/^(Starter|Substitute)\s*/i, '').trim() : '';
+            if (!cleanName) return;
+            if (!playersMap[cleanName]) {
+              playersMap[cleanName] = {
+                name: cleanName,
                 totalShots: 0,
                 totalXG: 0,
                 matches: 0
               };
             }
-            playersMap[name].totalShots += (p.shots_inside_box || 0) + (p.shots_outside_box || 0);
-            playersMap[name].totalXG += p.expected_goals || 0.0;
-            playersMap[name].matches++;
+            playersMap[cleanName].totalShots += (p.shots_inside_box || 0) + (p.shots_outside_box || 0);
+            playersMap[cleanName].totalXG += p.expected_goals || 0.0;
+            playersMap[cleanName].matches++;
           }
         });
       }
@@ -259,7 +283,7 @@ export default function Parlays() {
     }
 
     // Clasificación a la siguiente ronda (solo eliminatorias)
-    if (match.day === 'dieciseisavos' || match.day === 'octavos' || match.day === 'cuartos' || match.day === 'semifinal' || match.day === 'final') {
+    if (match.day === 'dieciseisavos' || match.day === 'octavos' || match.day === 'cuartos' || match.day === 'semis' || match.day === 'semifinal' || match.day === 'tercer_lugar' || match.day === 'final') {
       const eloH = pred.home_elo || 1500;
       const eloA = pred.away_elo || 1500;
       const wHome = 1.0 / (1.0 + Math.pow(10, (eloA - eloH) / 400.0));
@@ -305,28 +329,33 @@ export default function Parlays() {
       if (homeAvg && awayAvg) {
         const totC = homeAvg.avgCorners + awayAvg.avgCorners;
         
-        // Córners Totales
+        // Córners Totales (Modelado Poisson Dinámico)
         if (totC > 8.5) {
-          candidates.push({ pick: 'Total: Más de 8.5 Córners', prob: 0.78, type: 'Córners Totales', shortType: '+8.5 Corners', color: '#fbbf24', bg: 'rgba(251, 191, 36, 0.15)' });
+          const probOver = Math.round(calcPoissonOver(8.5, totC) * 100) / 100;
+          candidates.push({ pick: 'Total: Más de 8.5 Córners', prob: probOver, type: 'Córners Totales', shortType: '+8.5 Corners', color: '#fbbf24', bg: 'rgba(251, 191, 36, 0.15)' });
         } else if (totC < 8.0) {
-          candidates.push({ pick: 'Total: Menos de 9.5 Córners', prob: 0.70, type: 'Córners Totales', shortType: '-9.5 Corners', color: '#10b981', bg: 'rgba(16, 185, 129, 0.15)' });
+          const probUnder = Math.round(calcPoissonUnder(9.5, totC) * 100) / 100;
+          candidates.push({ pick: 'Total: Menos de 9.5 Córners', prob: probUnder, type: 'Córners Totales', shortType: '-9.5 Corners', color: '#10b981', bg: 'rgba(16, 185, 129, 0.15)' });
         }
         
-        // Córners por Equipo
+        // Córners por Equipo (Modelado Poisson Individual)
         if (homeAvg.avgCorners > 4.5) {
-          candidates.push({ pick: `Córners ${match.home}: Más de 3.5`, prob: 0.76, type: 'Córners Equipo', shortType: `${match.home} +3.5 C`, color: '#60a5fa', bg: 'rgba(96, 165, 250, 0.15)' });
+          const probH = Math.round(calcPoissonOver(3.5, homeAvg.avgCorners) * 100) / 100;
+          candidates.push({ pick: `Córners ${match.home}: Más de 3.5`, prob: probH, type: 'Córners Equipo', shortType: `${match.home} +3.5 C`, color: '#60a5fa', bg: 'rgba(96, 165, 250, 0.15)' });
         }
         if (awayAvg.avgCorners > 4.5) {
-          candidates.push({ pick: `Córners ${match.away}: Más de 3.5`, prob: 0.76, type: 'Córners Equipo', shortType: `${match.away} +3.5 C`, color: '#fb7185', bg: 'rgba(251, 113, 133, 0.15)' });
+          const probA = Math.round(calcPoissonOver(3.5, awayAvg.avgCorners) * 100) / 100;
+          candidates.push({ pick: `Córners ${match.away}: Más de 3.5`, prob: probA, type: 'Córners Equipo', shortType: `${match.away} +3.5 C`, color: '#fb7185', bg: 'rgba(251, 113, 133, 0.15)' });
         }
 
-        // Combo: Pases + Remates
+        // Combo: Pases + Remates (Escalado empírico continuo)
         const totPasses = homeAvg.avgPasses + awayAvg.avgPasses;
         const totShots = homeAvg.avgShots + awayAvg.avgShots;
         if (totPasses > 600 && totShots > 16) {
+          const pScore = Math.min(0.92, 0.70 + ((totPasses - 600) / 400) * 0.1 + ((totShots - 16) / 20) * 0.1);
           candidates.push({ 
             pick: `Combo: +600 Pases e +16 Remates`, 
-            prob: 0.82, 
+            prob: Math.round(pScore * 100) / 100, 
             type: 'Pases y Remates', 
             shortType: 'Combo Opta', 
             color: '#a78bfa', 

@@ -49,15 +49,27 @@ if os.path.exists(mv_path):
     try:
         df_mv = pd.read_csv(mv_path)
         alias_map = {
-            'United States': 'USA', 'South Korea': 'South Korea',
-            'Ivory Coast': 'Ivory Coast', 'DR Congo': 'DR Congo',
-            'Republic of Ireland': 'Republic of Ireland'
+            'United States': ['USA', 'United States'],
+            'USA': ['United States', 'USA'],
+            'Turkiye': ['Turkey', 'Turkiye', 'Türkiye'],
+            'Turkey': ['Turkiye', 'Turkey', 'Türkiye'],
+            'Czechia': ['Czech Republic', 'Czechia'],
+            'Czech Republic': ['Czechia', 'Czech Republic'],
+            'Bosnia-Herzegovina': ['Bosnia and Herzegovina', 'Bosnia', 'Bosnia-Herzegovina'],
+            'Bosnia and Herzegovina': ['Bosnia-Herzegovina', 'Bosnia', 'Bosnia and Herzegovina'],
+            'Bosnia': ['Bosnia and Herzegovina', 'Bosnia-Herzegovina'],
+            'Democratic Republic of the Congo': ['DR Congo', 'Democratic Republic of the Congo'],
+            'DR Congo': ['Democratic Republic of the Congo', 'DR Congo'],
+            'Republic of Ireland': ['Ireland', 'Republic of Ireland'],
+            'South Korea': ['Korea Republic', 'South Korea'],
+            'Ivory Coast': ["Côte d'Ivoire", "Cote d'Ivoire", "Ivory Coast"]
         }
         for row in df_mv.itertuples():
-            t_name = alias_map.get(row.team, row.team)
-            MARKET_VALUES[t_name] = getattr(row, 'market_value_num', 0.0)
-            AVG_AGE[t_name] = getattr(row, 'avg_age', 27.0)
-            SQUAD_SIZE[t_name] = getattr(row, 'squad_size', 23.0)
+            names = [row.team] + alias_map.get(row.team, [])
+            for t_name in names:
+                MARKET_VALUES[t_name] = getattr(row, 'market_value_num', 0.0)
+                AVG_AGE[t_name] = getattr(row, 'avg_age', 27.0)
+                SQUAD_SIZE[t_name] = getattr(row, 'squad_size', 26.0)
     except Exception as e:
         pass
 
@@ -292,6 +304,7 @@ def parse_matches(js_path):
         home_code = re.search(r"homeCode\s*:\s*['\"]([^'\"]*)['\"]", obj_str)
         away_code = re.search(r"awayCode\s*:\s*['\"]([^'\"]*)['\"]", obj_str)
         match_date_reg = re.search(r"date\s*:\s*['\"]([^'\"]*)['\"]", obj_str)
+        venue_match = re.search(r"venue\s*:\s*['\"]([^'\"]*)['\"]", obj_str)
         
         mcmc_path = re.search(r"mcmc\s*:\s*['\"]([^'\"]*)['\"]", obj_str)
         xgb_path = re.search(r"xgboost\s*:\s*['\"]([^'\"]*)['\"]", obj_str)
@@ -305,6 +318,7 @@ def parse_matches(js_path):
                 'home': home.group(1),
                 'away': away.group(1),
                 'date': match_date_reg.group(1) if match_date_reg else '2026-07-10',
+                'venue': venue_match.group(1) if venue_match else None,
                 'homeCode': home_code.group(1) if home_code else 'default',
                 'awayCode': away_code.group(1) if away_code else 'default',
                 'mcmc_file': mcmc_path.group(1).split('/')[-1] if mcmc_path else f"{match_id.group(1)}_mcmc.png",
@@ -507,7 +521,7 @@ def get_neutral_venue_advantage(team, other_team, tournament):
     return 0.0
 
 # --- MODELO DIXON-COLES ---
-def fit_dixon_coles(train, cutoff, elo_by_team, final_elos, half_life=HALF_LIFE):
+def fit_dixon_coles(train, cutoff, elo_by_team=None, final_elos=None, half_life=HALF_LIFE):
     """
     Ajusta el modelo probabilístico de Dixon-Coles con diferencia de ELO integrada.
     Calcula los parámetros de ataque (att) y defensa (dfn) de cada equipo, la ventaja
@@ -517,9 +531,12 @@ def fit_dixon_coles(train, cutoff, elo_by_team, final_elos, half_life=HALF_LIFE)
     train = train.copy()
     t_weights = train['tournament'].apply(get_tournament_weight).values
     train['w'] = (0.5 ** ((cutoff - train['date']).dt.days / half_life)) * t_weights
-    train['elo_h'] = train.apply(lambda r: get_elo_at_date(r.home_team, r.date, elo_by_team, final_elos), axis=1)
-    train['elo_a'] = train.apply(lambda r: get_elo_at_date(r.away_team, r.date, elo_by_team, final_elos), axis=1)
-    train['elo_diff_scaled'] = (train['elo_h'] - train['elo_a']) / 100.0
+    if elo_by_team is not None and final_elos is not None:
+        train['elo_h'] = train.apply(lambda r: get_elo_at_date(r.home_team, r.date, elo_by_team, final_elos), axis=1)
+        train['elo_a'] = train.apply(lambda r: get_elo_at_date(r.away_team, r.date, elo_by_team, final_elos), axis=1)
+        train['elo_diff_scaled'] = (train['elo_h'] - train['elo_a']) / 100.0
+    else:
+        train['elo_diff_scaled'] = 0.0
     ediff = train['elo_diff_scaled'].values
     
     # Precalcular las ventajas de localía para cada partido (neutral o no)
@@ -573,7 +590,7 @@ def fit_dixon_coles(train, cutoff, elo_by_team, final_elos, half_life=HALF_LIFE)
         'idx': idx, 'teams': teams
     }
 
-def dc_matrix(dcm, h, a, host, elo_h, elo_a):
+def dc_matrix(dcm, h, a, host, elo_h=None, elo_a=None):
     if dcm is None:
         M = np.outer(poisson.pmf(range(MAXG), 1.2), poisson.pmf(range(MAXG), 1.2))
         return M / M.sum()
@@ -584,7 +601,7 @@ def dc_matrix(dcm, h, a, host, elo_h, elo_a):
         return M / M.sum()
         
     att, dfn, home, rho, delta = dcm['att'], dcm['dfn'], dcm['home'], dcm['rho'], dcm.get('delta', 0.0)
-    ediff = (elo_h - elo_a) / 100.0
+    ediff = (elo_h - elo_a) / 100.0 if (elo_h is not None and elo_a is not None) else 0.0
     
     # Estimar ventajas de localía para campo neutral en el Mundial
     if host:
@@ -615,7 +632,7 @@ def matrix_to_1x2(M):
     return [np.tril(M, -1).sum(), np.trace(M), np.triu(M, 1).sum()]
 
 # --- MODELO DIXON-COLES CON BINOMIAL NEGATIVA (DC-NB) ---
-def fit_dixon_coles_nb(train, cutoff, elo_by_team, final_elos, half_life=HALF_LIFE):
+def fit_dixon_coles_nb(train, cutoff, elo_by_team=None, final_elos=None, half_life=HALF_LIFE):
     """
     Ajusta el modelo de Dixon-Coles utilizando distribuciones Binomial Negativa (NB) bivariadas con diferencia de ELO integrada.
     Permite modelar la sobredispersión (varianza > media) de goles en partidos reales.
@@ -625,9 +642,12 @@ def fit_dixon_coles_nb(train, cutoff, elo_by_team, final_elos, half_life=HALF_LI
     train = train.copy()
     t_weights = train['tournament'].apply(get_tournament_weight).values
     train['w'] = (0.5 ** ((cutoff - train['date']).dt.days / half_life)) * t_weights
-    train['elo_h'] = train.apply(lambda r: get_elo_at_date(r.home_team, r.date, elo_by_team, final_elos), axis=1)
-    train['elo_a'] = train.apply(lambda r: get_elo_at_date(r.away_team, r.date, elo_by_team, final_elos), axis=1)
-    train['elo_diff_scaled'] = (train['elo_h'] - train['elo_a']) / 100.0
+    if elo_by_team is not None and final_elos is not None:
+        train['elo_h'] = train.apply(lambda r: get_elo_at_date(r.home_team, r.date, elo_by_team, final_elos), axis=1)
+        train['elo_a'] = train.apply(lambda r: get_elo_at_date(r.away_team, r.date, elo_by_team, final_elos), axis=1)
+        train['elo_diff_scaled'] = (train['elo_h'] - train['elo_a']) / 100.0
+    else:
+        train['elo_diff_scaled'] = 0.0
     ediff = train['elo_diff_scaled'].values
     
     # Precalcular las ventajas de localía para cada partido (neutral o no)
@@ -702,7 +722,7 @@ def fit_dixon_coles_nb(train, cutoff, elo_by_team, final_elos, half_life=HALF_LI
         'idx': idx, 'teams': teams
     }
 
-def dc_nb_matrix(dcm, h, a, host, elo_h, elo_a):
+def dc_nb_matrix(dcm, h, a, host, elo_h=None, elo_a=None):
     if dcm is None:
         M = np.outer(poisson.pmf(range(MAXG), 1.2), poisson.pmf(range(MAXG), 1.2))
         return M / M.sum()
@@ -714,7 +734,7 @@ def dc_nb_matrix(dcm, h, a, host, elo_h, elo_a):
         
     att, dfn, home, rho, delta = dcm['att'], dcm['dfn'], dcm['home'], dcm['rho'], dcm.get('delta', 0.0)
     alpha_h, alpha_a = dcm['alpha_h'], dcm['alpha_a']
-    ediff = (elo_h - elo_a) / 100.0
+    ediff = (elo_h - elo_a) / 100.0 if (elo_h is not None and elo_a is not None) else 0.0
     
     # Estimar ventajas de localía para campo neutral en el Mundial
     if host:
@@ -2062,6 +2082,7 @@ if __name__ == '__main__':
     ])
     real_matches['date'] = pd.to_datetime(real_matches['date'])
     df_all = pd.concat([df_all, real_matches], ignore_index=True)
+    df_all = df_all.drop_duplicates(subset=['date', 'home_team', 'away_team'], keep='last')
     
     # 3. Calcular ratings ELO, Pi y forma
     df_all, elo_by_team, final_elos = compute_elo_ratings(df_all)

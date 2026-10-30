@@ -117,24 +117,24 @@ def main():
                 team_h = CSV_TO_RESULTS.get(row['Local'], row['Local'])
                 team_a = CSV_TO_RESULTS.get(row['Visitante'], row['Visitante'])
                 
-                # Buscar si el partido de junio de 2026 ya está listado en results.csv
-                mask = df_results['date'].astype(str).str.startswith('2026-06') & (df_results['home_team'] == team_h) & (df_results['away_team'] == team_a)
+                # Buscar si el partido de 2026 ya está listado en results.csv
+                mask = df_results['date'].astype(str).str.startswith('2026') & (df_results['home_team'] == team_h) & (df_results['away_team'] == team_a)
                 if mask.sum() > 0:
                     df_results.loc[mask, 'home_score'] = hs
                     df_results.loc[mask, 'away_score'] = as_
                     updated_count += 1
                 else:
                     # Intentar buscar con localía invertida
-                    mask_rev = df_results['date'].astype(str).str.startswith('2026-06') & (df_results['home_team'] == team_a) & (df_results['away_team'] == team_h)
+                    mask_rev = df_results['date'].astype(str).str.startswith('2026') & (df_results['home_team'] == team_a) & (df_results['away_team'] == team_h)
                     if mask_rev.sum() > 0:
                         df_results.loc[mask_rev, 'home_score'] = as_
                         df_results.loc[mask_rev, 'away_score'] = hs
                         updated_count += 1
-                    else:
-                        # Si no existe en el historial, insertamos una nueva fila para alimentar los modelos predictivos
-                        print(f"[WARNING] Partido no encontrado en results.csv, insertando nuevo: {team_h} vs {team_a}")
+                    elif idx < 72:
+                        # Si es fase de grupos y no existe en el historial, insertamos una nueva fila
+                        print(f"[WARNING] Partido de grupos no encontrado en results.csv, insertando nuevo: {team_h} vs {team_a}")
                         new_row = {
-                            'date': '2026-06-15', # Fecha ficticia en junio del 2026
+                            'date': '2026-06-15',
                             'home_team': team_h,
                             'away_team': team_a,
                             'home_score': hs,
@@ -265,8 +265,15 @@ export const MATCHES = [
                 match_date = '2026-07-19'
 
         # Rotar Estadios e Instantes
-        venue = VENUES[idx % len(VENUES)]
-        time = TIMES[idx % len(TIMES)]
+        if idx == 102:
+            venue = 'Hard Rock Stadium, Miami Gardens'
+            time = '20:00'
+        elif idx >= 103:
+            venue = 'MetLife Stadium, East Rutherford'
+            time = '20:00'
+        else:
+            venue = VENUES[idx % len(VENUES)]
+            time = TIMES[idx % len(TIMES)]
         
         # Estructurar las rutas locales de gráficos generados por los modelos de Machine Learning
         graphs_str = (
@@ -285,7 +292,7 @@ export const MATCHES = [
         colab = "https://github.com/Malpi/mundial"
         
         # Escribir la línea formateada en JS (incluyendo la fecha)
-        js_content += f'  {{id:"{match_id}",day:"{day_id}",date:"{match_date}",homeCode:"{flag_h}",awayCode:"{flag_a}",home:"{loc_esp}",away:"{vis_esp}",group:"{group_name}",time:"time",venue:"{venue}",\n   {graphs_str},colabLink:"{colab}"}},\n'
+        js_content += f'  {{id:"{match_id}",day:"{day_id}",date:"{match_date}",homeCode:"{flag_h}",awayCode:"{flag_a}",home:"{loc_esp}",away:"{vis_esp}",group:"{group_name}",time:"{time}",venue:"{venue}",\n   {graphs_str},colabLink:"{colab}"}},\n'
         
     js_content += """];
 

@@ -96,19 +96,25 @@ def scrape_top_national_teams():
                 team_name = row.text.strip().split('\n')[1].strip() if len(row.text.strip().split('\n')) > 1 else "Unknown"
             
             try:
-                squad_size = cols[3].text.strip()
-                avg_age = cols[4].text.strip()
-                market_val_str = cols[-1].text.strip() # El valor de mercado está en la última columna
+                market_val_str = cols[-1].text.strip()
+                market_val_num = parse_market_value(market_val_str)
+                
+                # Búsqueda dinámica de tamaño de plantilla y edad promedio entre columnas
+                squad_size = 26
+                avg_age = 26.5
+                for c in cols[2:-1]:
+                    txt = c.text.strip().replace(',', '.')
+                    if txt.isdigit() and 18 <= int(txt) <= 40:
+                        squad_size = int(txt)
+                    elif re.match(r'^\d{2}\.\d+$', txt) and 18.0 <= float(txt) <= 36.0:
+                        avg_age = float(txt)
             except IndexError:
                 continue
             
-            # Parsear el valor de mercado a número
-            market_val_num = parse_market_value(market_val_str)
-            
             teams_data.append({
                 'team': team_name,
-                'squad_size': int(squad_size) if squad_size.isdigit() else 0,
-                'avg_age': float(avg_age.replace(',', '.')) if avg_age.replace(',', '.').replace('.', '', 1).isdigit() else 0.0,
+                'squad_size': squad_size,
+                'avg_age': avg_age,
                 'market_value_str': market_val_str,
                 'market_value_num': market_val_num
             })

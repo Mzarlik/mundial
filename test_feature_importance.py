@@ -31,12 +31,12 @@ def main():
     train_mask = df_all['date'] < pm.VAL_CUTOFF
     df_train = df_all[train_mask].copy()
     
-    # Fit DC
-    dc_model = pm.fit_dixon_coles(df_train, pm.VAL_CUTOFF)
-    
     print("[INFO] Calculando ratings Elo y Pi...")
-    df_all, elo_by_team, final_elos = pm.compute_elo_ratings(df_train)
-    df_all, pi_by_team, final_pis = pm.compute_pi_ratings(df_all)
+    df_train_elo, elo_by_team, final_elos = pm.compute_elo_ratings(df_train)
+    df_all_pi, pi_by_team, final_pis = pm.compute_pi_ratings(df_all)
+    
+    # Fit DC with precalculated ELO ratings
+    dc_model = pm.fit_dixon_coles(df_train[df_train.date >= pm.DESDE], pm.VAL_CUTOFF, elo_by_team, final_elos)
     
     print("[INFO] Calculando rachas de forma...")
     long_list = []
@@ -76,13 +76,14 @@ def main():
         'Poisson_Lam', 'Poisson_Mu', 'Att_Diff', 'Def_Diff', 'Is_Host', 
         'Form_H1', 'Form_H2', 'Form_H3', 'Form_A1', 'Form_A2', 'Form_A3', 
         'Elo_H', 'Elo_A', 'Elo_Diff', 'Pi_H', 'Pi_A', 'H2H_GD', 'Is_Comp', 
-        'MV_H', 'MV_A', 'MV_Diff', 'Age_H', 'Age_A', 'Age_Diff', 'Squad_H', 'Squad_A', 'Squad_Diff'
+        'MV_H', 'MV_A', 'MV_Diff', 'Age_H', 'Age_A', 'Age_Diff', 'Squad_H', 'Squad_A', 'Squad_Diff',
+        'Altitude', 'Temp', 'Taxing', 'V_Dens_H', 'V_Dens_A', 'V_Dens_Diff'
     ]
     
     print(f"[INFO] Training XGBoost with {X.shape[0]} matches and {X.shape[1]} features...")
     
     # Use exact same parameters as predict_matches
-    params = dict(objective='count:poisson', n_estimators=1500, max_depth=4,
+    params = dict(objective='count:poisson', n_estimators=500, n_jobs=-1, max_depth=4,
                   learning_rate=0.03, subsample=0.8, colsample_bytree=0.8, 
                   min_child_weight=2, reg_lambda=1.5, random_state=42)
     

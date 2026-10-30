@@ -26,6 +26,9 @@
   --font-display: 'Outfit', sans-serif;
   --font-body: 'Inter', sans-serif;
   --sidebar-w: 280px;
+  --card-bg: var(--bg-card);
+  --border-color: var(--border);
+  --bg-darker: #07090d;
 }
 
 *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
